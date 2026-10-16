@@ -1,0 +1,34 @@
+{
+ "id": "DEBT-0008",
+ "created": "2026-09-09T20:06:09Z",
+ "green": true,
+ "git_head": "773e0d7fafcfb00d04dc35acea1669a08938ff00",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "src/app/sources/page.tsx",
+  "src/lib/claims/filters.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/sources/page.test.ts",
+  "tests/offline/absence/pages.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "fb8aa4963b9fe45ac028ab5198e4e84e1508467c56a1a17f0e1b75722adfd150",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims tests/offline/sources tests/offline/absence tests/offline/queues",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-53172\n\n \u2713 |offline| tests/offline/queues/filters.test.ts (40 tests) 16ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 26ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (24 tests) 8ms\n \u2713 |offline| tests/offline/sources/read.test.ts (26 tests) 10ms\n \u2713 |offline| tests/offline/sources/names.test.ts (9 tests) 7ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (23 tests) 205ms\n \u2713 |offline| tests/offline/absence/blank-cells.test.ts (10 tests) 133ms\n \u2713 |offline| tests/offline/sources/page.test.ts (61 tests) 754ms\n \u2713 |offline| tests/offline/absence/in-window.test.ts (14 tests) 691ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (275 tests) 2377ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  412ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  950ms\n \u2713 |offline| tests/offline/queues/page.test.ts (116 tests) 3010ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  386ms\n \u2713 |offline| tests/offline/claims/page.test.ts (125 tests) 3126ms\n\n Test Files  12 passed (12)\n      Tests  741 passed (741)\n   Start at  13:05:50\n   Duration  4.29s (transform 2.46s, setup 0ms, collect 6.40s, tests 10.36s, environment 2ms, prepare 1.09s)\n\n(node:53179) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "! grep -q \"filter.source_id === undefined ? \\\"registry\\\" : \\\"narrowing\\\"\" src/app/sources/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

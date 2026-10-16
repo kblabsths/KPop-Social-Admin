@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0035",
+ "created": "2026-09-02T21:41:02Z",
+ "green": true,
+ "git_head": "2e06cb212edaa65458600fadf7d3df929d4b5156",
+ "scope": [
+  "tests/live/parity.ts",
+  "tests/offline/live-guard.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "de30e12db5fb742e724ad46e8ee9514e1076599d78e7d240fe0488637e7f1a5e",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22339\n\n \u2713 |offline| tests/offline/live-guard.test.ts (74 tests) 1097ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  1019ms\n\n Test Files  1 passed (1)\n      Tests  74 passed (74)\n   Start at  14:41:00\n   Duration  1.68s (transform 108ms, setup 0ms, collect 300ms, tests 1.10s, environment 0ms, prepare 89ms)\n\n(node:22349) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

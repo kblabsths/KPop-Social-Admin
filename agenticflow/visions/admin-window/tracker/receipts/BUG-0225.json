@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0225",
+ "created": "2026-09-15T06:02:30Z",
+ "green": true,
+ "git_head": "6545378141dd26adba2b496a10e9096dda731de1",
+ "scope": [
+  "tests/handoff",
+  "tests/offline/handoff/extract.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "5c7713439b3420f7feb5af7ccd247887d6ff0d0e62f30c295202fc8df60bce71",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=handoff",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-37461\n\n \u2713 |handoff| tests/handoff/sibling-codes.test.ts (12 tests) 36ms\n\n Test Files  1 passed (1)\n      Tests  12 passed (12)\n   Start at  23:02:23\n   Duration  308ms (transform 52ms, setup 0ms, collect 61ms, tests 36ms, environment 0ms, prepare 56ms)\n\n(node:37468) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -rqi 'crlf' tests/handoff",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

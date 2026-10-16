@@ -1,0 +1,69 @@
+{
+ "id": "BUG-0155",
+ "created": "2026-09-10T01:42:41Z",
+ "green": true,
+ "git_head": "744a33326a2ac1aae82991b2c9ed86cee115f287",
+ "scope": [
+  "src/lib/url/text.ts",
+  "src/lib/url/spellable.ts",
+  "src/lib/records/id.ts",
+  "src/lib/db/runs.ts",
+  "src/app/cycles/page.tsx",
+  "src/components/cycles/adapter-runs.tsx",
+  "src/components/cycles/latest-run.tsx",
+  "src/components/ui/window-line.tsx",
+  "tests/offline/cycles/page.test.ts",
+  "tests/offline/runs/read.test.ts",
+  "tests/offline/runs/page.test.ts",
+  "tests/offline/url/narrowing.test.ts",
+  "tests/offline/db/layering.test.ts",
+  "tests/offline/records/page.test.ts",
+  "tests/offline/sources/page.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "36440ea10faabd488b9405b8c263932a28de74050bbecdeda6e8747643af8409",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles tests/offline/runs tests/offline/url tests/offline/db/layering.test.ts tests/offline/records/page.test.ts tests/offline/queues/filters.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-18372\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (21 tests) 8ms\n \u2713 |offline| tests/offline/runs/read.test.ts (41 tests) 13ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (41 tests) 17ms\n \u2713 |offline| tests/offline/url/narrowing.test.ts (22 tests) 349ms\n \u2713 |offline| tests/offline/db/layering.test.ts (28 tests) 782ms\n \u2713 |offline| tests/offline/records/page.test.ts (139 tests) 535ms\n \u2713 |offline| tests/offline/runs/page.test.ts (32 tests) 693ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (168 tests) 3252ms\n\n Test Files  8 passed (8)\n      Tests  492 passed (492)\n   Start at  18:42:27\n   Duration  4.26s (transform 1.37s, setup 0ms, collect 3.08s, tests 5.65s, environment 1ms, prepare 1.01s)\n\n(node:18379) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "grep -B1 'name it queried, not one the browser collapsed' tests/offline/cycles/page.test.ts | grep -q 'it($'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'export function canonicalUrlText' src/lib/url/text.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q canonicalUrlText src/lib/db/runs.ts && grep -q canonicalUrlText src/app/cycles/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rq sourceNarrowing src",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q trimInkPadding src/lib/records/id.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rl \"export function trimInkPadding\" src | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

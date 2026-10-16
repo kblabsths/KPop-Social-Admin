@@ -1,0 +1,406 @@
+import { describe, expect, it } from "vitest";
+import {
+  factOf,
+  isLive,
+  readItemEvidence,
+  readReviewItem,
+} from "@/lib/db/review-item";
+import { T } from "@/lib/db/tables";
+import {
+  ID,
+  fieldProvenanceRow,
+  observationRow,
+  reviewItemDataConflict,
+  reviewItemEntityLink,
+  reviewItemSourcePattern,
+  sourceRow,
+} from "../../fixtures/rows";
+import {
+  permissionDenied,
+  stubClient,
+  type Script,
+} from "../../fixtures/stub-client";
+
+/**
+ * The review-item detail's READS (campaign admin-window/TASK-0011).
+ *
+ * The page test asserts what reaches the screen; this file asserts the
+ * properties the screen rests on — the read KINDS (ARCHITECTURE.md §4.3), the
+ * two-step join (§4.2), and the latest-decision rule (§6 trap 7). They are
+ * asserted against the query the stub client recorded, so "this is a complete
+ * read" is checked rather than claimed in a comment.
+ */
+
+const CLAIM_A = observationRow();
+const CLAIM_B = observationRow({
+  observation_id: ID.observationB,
+  source_id: ID.sourceBandsintown,
+  value: "TWICE World Tour",
+});
+
+function healthy(overrides: Script = {}): Script {
+  return {
+    [T.observations]: { data: [CLAIM_A, CLAIM_B] },
+    [T.fieldProvenance]: { data: [fieldProvenanceRow()], count: 1 },
+    [T.sources]: { data: [sourceRow()] },
+    ...overrides,
+  };
+}
+
+/** Every method a recorded query called, in order. */
+function stepsOn(client: ReturnType<typeof stubClient>, table: string) {
+  return client.calls
+    .filter((call) => call.table === table)
+    .map((call) => call.steps.map((step) => step.method));
+}
+
+describe("the fact a review item names", () => {
+  it("is the fact columns for a per-fact item, in the provenance spelling", () => {
+    // `review_items` spells the canonical table `domain`; `field_provenance`
+    // and `observations` spell it `entity_type` (§6 trap 1).
+    const item = reviewItemDataConflict();
+    expect(factOf(item)).toEqual({
+      entityType: item.domain,
+      entityId: item.entity_id,
+      field: item.field,
+    });
+  });
+
+  it("is nothing for a per-source item, and nothing for a record that has no row", () => {
+    expect(factOf(reviewItemSourcePattern())).toBeNull();
+    expect(factOf(reviewItemEntityLink())).toBeNull();
+  });
+});
+
+describe("live claims", () => {
+  it("counts pending and applied, and nothing else", () => {
+    // `contracts/data-model.md`: live means `pending` or `applied`; the other
+    // three are terminal and a decision resting on one has no current value.
+    for (const status of ["pending", "applied"] as const) {
+      expect(isLive(observationRow({ status })), status).toBe(true);
+    }
+    for (const status of ["superseded", "rejected", "quarantined"] as const) {
+      expect(isLive(observationRow({ status })), status).toBe(false);
+    }
+  });
+});
+
+describe("the item read", () => {
+  it("addresses one row by its primary key", async () => {
+    const client = stubClient({ [T.reviewItems]: { data: reviewItemDataConflict() } });
+    const result = await readReviewItem(
+      ID.reviewItemDataConflict,
+      client.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("ok");
+    expect(stepsOn(client, T.reviewItems)).toEqual([
+      ["select", "eq", "maybeSingle"],
+    ]);
+  });
+
+  it("comes back ok with no row when the table holds none", async () => {
+    const client = stubClient({ [T.reviewItems]: { data: null } });
+    const result = await readReviewItem("nope", client.asSupabaseClient());
+    expect(result).toEqual({ kind: "ok", data: null });
+  });
+});
+
+describe("the evidence read", () => {
+  it("resolves the ids by an in() over the id set, deduplicated and in fold order", async () => {
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationB, ID.observationA, ID.observationB],
+    });
+    const client = stubClient(healthy());
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    // Fold order, and the repeat folded id is one claim, not two.
+    expect(result.data.claims.map((claim) => claim.observation.observation_id)).toEqual(
+      [ID.observationB, ID.observationA],
+    );
+    // The second leg of the two-step join (§4.2), bounded by the ids it filtered on.
+    expect(stepsOn(client, T.observations)[0]).toEqual([
+      "select",
+      "in",
+      "limit",
+    ]);
+  });
+
+  it("keeps a claim whose source row is missing, with its id verbatim and no tier", async () => {
+    // The claim is real whether or not the registry row was read; borrowing a
+    // tier from anywhere would be a fact this app never read (§6 trap 5).
+    const item = reviewItemDataConflict();
+    const client = stubClient(healthy({ [T.sources]: { data: [] } }));
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.claims).toHaveLength(2);
+    expect(result.data.claims[0].source).toBe(CLAIM_A.source_id);
+    expect(result.data.claims[0].tier).toBeNull();
+  });
+
+  it("reports the ids that resolved to no claim", async () => {
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, "01920000-0000-7000-8000-0000000009ff"],
+    });
+    const client = stubClient(healthy({ [T.observations]: { data: [CLAIM_A] } }));
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.claims).toHaveLength(1);
+    expect(result.data.unresolved).toEqual([
+      "01920000-0000-7000-8000-0000000009ff",
+    ]);
+  });
+
+  /**
+   * The accounting a surface divides — admin-window/BUG-0021.
+   *
+   * `evidence` is appended to on every fold (`contracts/resolver.md` §11) and
+   * carries no uniqueness, so `stored` and `distinct` genuinely differ. The
+   * invariant the whole sentence on the page rests on is asserted here at its
+   * source: the two lists cover the distinct ids exactly — no id in both, none
+   * in neither, and a repeat counted once.
+   */
+  it("reports how many ids were stored and how many it looked at", async () => {
+    const missing = "01920000-0000-7000-8000-0000000009ff";
+    const item = reviewItemDataConflict({
+      evidence: [ID.observationA, missing, ID.observationA, ID.observationB, missing],
+    });
+    const client = stubClient(healthy());
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.ids).toEqual({ stored: 5, distinct: 3 });
+    expect(
+      result.data.claims.length + result.data.unresolved.length,
+      "resolved + unresolved must cover exactly the distinct ids",
+    ).toBe(result.data.ids.distinct);
+    expect(result.data.unresolved).toEqual([missing]);
+  });
+
+  /**
+   * The `sources` leg alone degrades — admin-window/BUG-0021 (QA's second
+   * finding on TASK-0011).
+   *
+   * The registry only LABELS a claim: without it the read's documented
+   * fallback already renders (the source id verbatim, no tier), which is what
+   * it does when the registry row is merely absent. Returning the refusal
+   * instead of the claims would report an item with no evidence when it has
+   * all of it, so the refusal rides along and the caller reports it beside.
+   */
+  it("keeps the claims when the source registry refuses, and carries the refusal", async () => {
+    const failure = permissionDenied(T.sources);
+    const client = stubClient(healthy({ [T.sources]: { error: failure } }));
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      client.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.claims).toHaveLength(2);
+    expect(result.data.claims[0].source).toBe(CLAIM_A.source_id);
+    expect(result.data.claims[0].tier).toBeNull();
+
+    const refusal = result.data.sourcesUnavailable;
+    expect(refusal?.kind).toBe("error");
+    if (refusal?.kind !== "error") return;
+    // The object that refused is named, and the database's own words are kept
+    // (admin-window/BUG-0016).
+    expect(refusal.reading).toBe(T.sources);
+    expect(refusal.message).toContain(failure.message);
+  });
+
+  it("carries no refusal when every leg answered", async () => {
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      stubClient(healthy()).asSupabaseClient(),
+    );
+    expect(result.kind === "ok" && result.data.sourcesUnavailable).toBeNull();
+  });
+});
+
+describe("the canonical side", () => {
+  it("reads the decision log COMPLETE, ordered by applied_at then its key", async () => {
+    const client = stubClient(healthy());
+    await readItemEvidence(reviewItemDataConflict(), client.asSupabaseClient());
+    const call = client.calls.find((one) => one.table === T.fieldProvenance);
+
+    expect(call?.steps.map((step) => step.method)).toEqual([
+      "select",
+      "eq",
+      "eq",
+      "eq",
+      "order",
+      "order",
+      "range",
+    ]);
+    // A complete read asks for the exact count and orders down to the key, or
+    // "the latest decision" is not knowable (ARCHITECTURE.md §4.3, §6 trap 7).
+    expect(call?.steps[0].args[1]).toEqual({ count: "exact" });
+    expect(call?.steps.filter((step) => step.method === "order").map((step) => step.args)).toEqual(
+      [
+        ["applied_at", { ascending: false }],
+        ["provenance_id", { ascending: false }],
+      ],
+    );
+  });
+
+  it("refuses rather than naming the latest decision out of a truncated log", async () => {
+    // The count exceeds the rows returned: something truncated the log, so
+    // "the latest" would be a guess. The read refuses with the real number.
+    const client = stubClient(
+      healthy({
+        [T.fieldProvenance]: { data: [fieldProvenanceRow()], count: 4000 },
+      }),
+    );
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      client.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading).toBe(T.fieldProvenance);
+    expect(result.message).toContain("4000");
+  });
+
+  it("reads no decision log at all for an item that names no fact", async () => {
+    const client = stubClient({
+      [T.observations]: { data: [CLAIM_B] },
+      [T.sources]: { data: [sourceRow()] },
+    });
+    const result = await readItemEvidence(
+      reviewItemSourcePattern(),
+      client.asSupabaseClient(),
+    );
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.data.canonical.kind).toBe("no_fact");
+    expect(client.tablesRead()).not.toContain(T.fieldProvenance);
+  });
+
+  it("distinguishes a record that has no row from a fact nothing has been applied to", async () => {
+    const noRow = await readItemEvidence(
+      reviewItemEntityLink(),
+      stubClient({
+        [T.observations]: { data: [CLAIM_B] },
+        [T.sources]: { data: [sourceRow()] },
+      }).asSupabaseClient(),
+    );
+    expect(noRow.kind === "ok" && noRow.data.canonical.kind).toBe("no_row");
+
+    const noDecision = await readItemEvidence(
+      reviewItemDataConflict(),
+      stubClient(healthy({ [T.fieldProvenance]: { data: [], count: 0 } })).asSupabaseClient(),
+    );
+    expect(noDecision.kind === "ok" && noDecision.data.canonical.kind).toBe(
+      "no_decision",
+    );
+  });
+
+  it("fetches the winning claim when the evidence does not already carry it", async () => {
+    // The decision names an observation this item never folded in; it is read
+    // by id rather than left out of the canonical card.
+    const winner = observationRow({
+      observation_id: "01920000-0000-7000-8000-000000000303",
+      value: "TWICE 5TH WORLD TOUR: READY TO BE",
+    });
+    const item = reviewItemDataConflict({ evidence: [ID.observationB] });
+    const client = stubClient(
+      healthy({
+        [T.observations]: [{ data: [CLAIM_B] }, { data: [winner] }],
+        [T.fieldProvenance]: {
+          data: [fieldProvenanceRow({ observation_id: winner.observation_id })],
+          count: 1,
+        },
+      }),
+    );
+    const result = await readItemEvidence(item, client.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok" || result.data.canonical.kind !== "decided") return;
+    expect(result.data.canonical.decided.observation?.observation_id).toBe(
+      winner.observation_id,
+    );
+    expect(result.data.canonical.decided.live).toBe(true);
+    // ...and it is not smuggled into the evidence list.
+    expect(result.data.claims).toHaveLength(1);
+  });
+});
+
+/**
+ * The offline suite scripts the ANSWER, not the schema: the stub client hands
+ * back whatever a test wrote regardless of the columns the query asked for, so
+ * a select naming a column the table does not have is green here and 42703 on
+ * staging — which is exactly what shipped (admin-window/BUG-0024:
+ * `observations.entity_type`, dropped by scraper migration `20260819000002`,
+ * left every review item rendering zero evidence rows).
+ *
+ * The fixtures in `tests/fixtures/rows.ts` state each table's real columns, so
+ * they can stand in for the schema here: every column these reads name must be
+ * one the fixture row carries. A select may ask for FEWER columns than the
+ * table has — `field_provenance.admin_locked` is deliberately not read — so
+ * this is a subset check, and it fails only on a column that does not exist.
+ */
+describe("the columns the evidence reads name", () => {
+  /** The column list each recorded query on `table` asked its `select` for. */
+  function columnsSelectedOn(
+    client: ReturnType<typeof stubClient>,
+    table: string,
+  ): string[][] {
+    return client.calls
+      .filter((call) => call.table === table)
+      .map((call) => call.steps.find((step) => step.method === "select"))
+      .filter((step): step is NonNullable<typeof step> => step !== undefined)
+      .map((step) =>
+        String(step.args[0])
+          .split(",")
+          .map((column) => column.trim())
+          .filter((column) => column !== ""),
+      );
+  }
+
+  it("names only columns those tables actually have", async () => {
+    const client = stubClient(healthy());
+    const result = await readItemEvidence(
+      reviewItemDataConflict(),
+      client.asSupabaseClient(),
+    );
+    expect(result.kind).toBe("ok");
+
+    const columnsOf: Record<string, string[]> = {
+      [T.observations]: Object.keys(observationRow()),
+      [T.fieldProvenance]: Object.keys(fieldProvenanceRow()),
+      [T.sources]: Object.keys(sourceRow()),
+    };
+
+    for (const [table, actual] of Object.entries(columnsOf)) {
+      const selects = columnsSelectedOn(client, table);
+      // Every one of the three legs ran, or the check proves nothing.
+      expect(selects.length, `no read of ${table} was recorded`).toBeGreaterThan(0);
+      for (const selected of selects) {
+        expect(selected.length, `${table}: an empty select`).toBeGreaterThan(0);
+        expect(
+          selected.filter((column) => !actual.includes(column)),
+          `${table}: selected a column the table does not have`,
+        ).toEqual([]);
+      }
+    }
+  });
+
+  it("still names the column that carries the canonical table on each side", () => {
+    // The two spellings, after the drop: the evidence side has only `domain`,
+    // the decision log keeps `entity_type`, and they hold the same value.
+    expect(Object.keys(observationRow())).toContain("domain");
+    expect(Object.keys(observationRow())).not.toContain("entity_type");
+    expect(Object.keys(fieldProvenanceRow())).toContain("entity_type");
+  });
+});

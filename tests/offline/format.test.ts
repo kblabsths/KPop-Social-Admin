@@ -1,0 +1,465 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+
+import {
+  CLAMP_LIMIT,
+  ELLIPSIS,
+  EM_DASH,
+  absoluteUtc,
+  absoluteUtcInZonedColumn,
+  clamped,
+  count,
+  counted,
+  duration,
+  isAbsent,
+  nullDash,
+  orDash,
+  pluralise,
+  relativeAge,
+  UTC_ZONE,
+} from "@/lib/format";
+import { EM_DASH as LEAF_EM_DASH, isAbsentText } from "@/lib/verdict/decision";
+
+/**
+ * The shared formatting helpers (campaign admin-window, TASK-0004).
+ * LOOK_AND_FEEL Voice bar 6: ages are relative with the absolute value in the
+ * title attribute, scheduled times are absolute, counts are separated, and a
+ * null is the dash — never blank, never `null`, `N/A` or `none`.
+ */
+
+const T = "2026-08-29T04:12:33.000Z";
+
+describe("absoluteUtc", () => {
+  it("states the zone and drops the ISO punctuation", () => {
+    expect(absoluteUtc(T)).toBe("2026-08-29 04:12 UTC");
+  });
+
+  it("accepts a Date and an epoch as well as a string", () => {
+    expect(absoluteUtc(new Date(T))).toBe(absoluteUtc(T));
+    expect(absoluteUtc(new Date(T).getTime())).toBe(absoluteUtc(T));
+  });
+
+  it("renders absence as the dash rather than a blank or the word null", () => {
+    for (const missing of [null, undefined, "", "not a date"]) {
+      expect(absoluteUtc(missing)).toBe(EM_DASH);
+    }
+  });
+});
+
+/**
+ * The zone is stated ONCE (Voice bar 6): prose and title attributes wear it on
+ * the value, a column whose header already says `(UTC)` does not repeat it in
+ * 50 cells (admin-window/BUG-0047). Both forms come from one stamp, so they
+ * cannot drift apart on the instant itself.
+ */
+describe("absoluteUtcInZonedColumn", () => {
+  it("renders the same instant as absoluteUtc, without the zone token", () => {
+    expect(absoluteUtcInZonedColumn(T)).toBe("2026-08-29 04:12");
+    expect(absoluteUtcInZonedColumn(T)).not.toContain(UTC_ZONE);
+    expect(absoluteUtc(T)).toBe(`${absoluteUtcInZonedColumn(T)} ${UTC_ZONE}`);
+  });
+
+  it("agrees with absoluteUtc across kinds and across the day", () => {
+    for (const instant of [
+      T,
+      "2026-01-01T00:00:00.000Z",
+      "2026-12-31T23:59:59.000Z",
+      new Date(T),
+      new Date(T).getTime(),
+    ]) {
+      expect(absoluteUtc(instant)).toBe(
+        `${absoluteUtcInZonedColumn(instant)} ${UTC_ZONE}`,
+      );
+    }
+  });
+
+  it("renders absence as the dash, like every other formatter", () => {
+    for (const missing of [null, undefined, "", "not a date"]) {
+      expect(absoluteUtcInZonedColumn(missing)).toBe(EM_DASH);
+      expect(isAbsent(absoluteUtcInZonedColumn(missing))).toBe(true);
+    }
+  });
+});
+
+describe("relativeAge", () => {
+  const at = (seconds: number) => new Date(Date.parse(T) + seconds * 1000);
+
+  it("climbs one unit ladder: seconds, minutes, hours, days", () => {
+    expect(relativeAge(T, at(30)).text).toBe("just now");
+    expect(relativeAge(T, at(5 * 60)).text).toBe("5m ago");
+    expect(relativeAge(T, at(3 * 3600)).text).toBe("3h ago");
+    expect(relativeAge(T, at(3 * 86_400)).text).toBe("3d ago");
+    expect(relativeAge(T, at(400 * 86_400)).text).toBe("400d ago");
+  });
+
+  it("truncates rather than rounds up, so nothing ages early", () => {
+    expect(relativeAge(T, at(2 * 86_400 + 23 * 3600)).text).toBe("2d ago");
+  });
+
+  it("carries the absolute value for the title attribute", () => {
+    expect(relativeAge(T, at(3 * 86_400)).title).toBe(absoluteUtc(T));
+  });
+
+  it("reads a future timestamp forwards", () => {
+    expect(relativeAge(T, at(-2 * 86_400)).text).toBe("in 2d");
+  });
+
+  it("renders absence as the dash with no title", () => {
+    expect(relativeAge(null)).toEqual({ text: EM_DASH, title: "" });
+  });
+});
+
+describe("duration", () => {
+  it("climbs the same unit ladder relativeAge climbs", () => {
+    expect(duration(45)).toBe("45s");
+    expect(duration(200)).toBe("3m");
+    expect(duration(7200)).toBe("2h");
+    expect(duration(540_000)).toBe("6d");
+  });
+
+  it("keeps a sub-second span visible rather than rounding it to nothing", () => {
+    expect(duration(0.25)).toBe("0.3s");
+    expect(duration(0)).toBe("0s");
+  });
+
+  it("renders a negative span negative, because two clocks disagreeing is a finding", () => {
+    expect(duration(-200)).toBe("-3m");
+  });
+
+  it("renders absence as the dash, never as zero", () => {
+    expect(duration(null)).toBe(EM_DASH);
+    expect(duration(undefined)).toBe(EM_DASH);
+    expect(duration(Number.NaN)).toBe(EM_DASH);
+    expect(duration(Number.POSITIVE_INFINITY)).toBe(EM_DASH);
+  });
+});
+
+describe("count", () => {
+  it("separates thousands", () => {
+    expect(count(1234)).toBe("1,234");
+    expect(count(1_234_567)).toBe("1,234,567");
+  });
+
+  it("keeps a small number and a zero as themselves", () => {
+    expect(count(0)).toBe("0");
+    expect(count(42)).toBe("42");
+    expect(count(1)).toBe("1");
+    // The largest count `isCount` (`src/lib/db/result.ts`) admits still reads
+    // as itself: normalising the sign of zero touches no other number.
+    expect(count(Number.MAX_SAFE_INTEGER)).toBe("9,007,199,254,740,991");
+  });
+
+  it("renders a zero as a zero, whatever sign the number carries", () => {
+    // QA (admin-window/BUG-0230): `Intl` renders IEEE negative zero as "-0",
+    // and a count reaches this helper straight off the wire — `parseInt` over
+    // the total in `Content-Range` returns `-0` for a total spelled `-0` or
+    // any negative fraction — so /claims published "-0" in every bucket.
+    // A count of no rows reads "0"; nothing this app publishes over a count
+    // carries a minus sign.
+    expect(count(-0)).toBe("0");
+    // `counted` composes `count`, so the noun-bearing figure answers the same
+    // way rather than needing a rule of its own — and a quantity of nothing
+    // still takes the plural.
+    expect(counted(-0, "source")).toBe("0 sources");
+    // A count this repo computes reaches the same helper the same way:
+    // `Math.round` of a small negative is negative zero too.
+    expect(count(Math.round(-0.2))).toBe("0");
+  });
+
+  it("renders absence as the dash, never as zero", () => {
+    expect(count(null)).toBe(EM_DASH);
+    expect(count(undefined)).toBe(EM_DASH);
+    expect(count(Number.NaN)).toBe(EM_DASH);
+  });
+});
+
+describe("pluralise", () => {
+  it("takes the one form at one and the many form at nothing and at more", () => {
+    expect(pluralise(1, "it is", "they are")).toBe("it is");
+    expect(pluralise(0, "it is", "they are")).toBe("they are");
+    expect(pluralise(2, "it is", "they are")).toBe("they are");
+    expect(pluralise(769, "it is", "they are")).toBe("they are");
+  });
+
+  it("treats a quantity that is not a whole one as many, the way the language does", () => {
+    // English gives `1.5 sources`, not `1.5 source` — the form follows the
+    // quantity, not the rounding of it.
+    expect(pluralise(1.5, "one", "many")).toBe("many");
+    expect(pluralise(0.5, "one", "many")).toBe("many");
+    expect(pluralise(1.0, "one", "many")).toBe("one");
+  });
+
+  it("takes the many form for an unknown quantity, so a dash is never singular", () => {
+    for (const unknown of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(pluralise(unknown, "one", "many")).toBe("many");
+    }
+  });
+
+  it("carries whatever the caller's two forms are, verb as readily as noun", () => {
+    expect(pluralise(1, "names", "name")).toBe("names");
+    expect(pluralise(3, "names", "name")).toBe("name");
+  });
+});
+
+describe("counted", () => {
+  it("agrees with its noun at nothing, at one, and at many", () => {
+    // The three cases the app got wrong: staging held exactly one source and
+    // the page said "1 sources" (admin-window/BUG-0046).
+    expect(counted(0, "source")).toBe("0 sources");
+    expect(counted(1, "source")).toBe("1 source");
+    expect(counted(2, "source")).toBe("2 sources");
+  });
+
+  it("keeps the thousand separator the count already applies", () => {
+    expect(counted(1234, "item")).toBe("1,234 items");
+    expect(counted(1_000_001, "fold")).toBe("1,000,001 folds");
+  });
+
+  it("takes an explicit second form when the regular -s would be wrong", () => {
+    expect(counted(1, "entity", "entities")).toBe("1 entity");
+    expect(counted(4, "entity", "entities")).toBe("4 entities");
+    // A phrase whose verb has to agree is the same problem, so it is the same
+    // helper — Sources says this about rejection stamps carrying no reason.
+    expect(counted(1, "rejection carries", "rejections carry")).toBe(
+      "1 rejection carries",
+    );
+    expect(counted(2, "rejection carries", "rejections carry")).toBe(
+      "2 rejections carry",
+    );
+  });
+
+  it("renders an unknown count as the dash beside the plural, never as zero and never singular", () => {
+    for (const unknown of [null, undefined, Number.NaN]) {
+      expect(counted(unknown, "source")).toBe(`${EM_DASH} sources`);
+    }
+  });
+});
+
+describe("nullDash", () => {
+  it("is the em dash in the disabled-gray token", () => {
+    const html = renderToStaticMarkup(nullDash());
+    expect(html).toContain(EM_DASH);
+    expect(html).toContain("text-ink-disabled");
+  });
+
+  it("names itself for a screen reader rather than reading out punctuation", () => {
+    expect(renderToStaticMarkup(nullDash())).toContain("aria-label");
+  });
+});
+
+/**
+ * The one definition of absence (campaign admin-window/BUG-0004). Primitives
+ * ask here rather than each writing `x === null || x === ""`, so a dash a
+ * helper produced and a dash a raw null produced render identically.
+ */
+describe("clamped", () => {
+  /**
+   * The bound a lead surface puts on a producer's string
+   * (campaign admin-window/DEBT-0005). The two halves of the rule are that a
+   * clamp is VISIBLE and that the full text stays reachable, so every
+   * assertion below is about one of those.
+   */
+  const LONG = "x".repeat(2_000);
+
+  it("returns a string within the bound byte-identical, and adds no title", () => {
+    for (const short of ["", "e", "upstream 503 on page 7 of 12", "y".repeat(CLAMP_LIMIT)]) {
+      expect(clamped(short)).toEqual({ text: short, title: "" });
+    }
+  });
+
+  it("bounds a longer string and keeps the whole of it on the title", () => {
+    const { text, title } = clamped(LONG);
+    expect(Array.from(text).length).toBeLessThanOrEqual(CLAMP_LIMIT);
+    expect(title).toBe(LONG);
+  });
+
+  it("marks a clamp visibly, so nothing is truncated in silence", () => {
+    expect(clamped(LONG).text.endsWith(ELLIPSIS)).toBe(true);
+    // The bound is one character past identity, so the FIRST length that
+    // clamps is proved as well as the last that does not (LESSONS 3).
+    expect(clamped("z".repeat(CLAMP_LIMIT)).text).not.toContain(ELLIPSIS);
+    expect(clamped("z".repeat(CLAMP_LIMIT + 1)).text.endsWith(ELLIPSIS)).toBe(true);
+  });
+
+  it("re-words nothing: what it keeps is the producer's own opening", () => {
+    const sentence = `the adapter said: ${LONG}`;
+    const { text } = clamped(sentence);
+    const kept = text.slice(0, -ELLIPSIS.length);
+    expect(sentence.startsWith(kept)).toBe(true);
+    expect(kept.length).toBeGreaterThan(0);
+  });
+
+  it("cuts on a code point, never inside one, and eats the space before the ellipsis", () => {
+    // A lone surrogate renders as a replacement glyph, so an astral character
+    // is either kept whole or dropped whole.
+    const astral = "😀".repeat(10);
+    const { text } = clamped(astral, 4);
+    expect(text).toBe(`😀😀😀${ELLIPSIS}`);
+    // The guard is shown one string it must flag and one it must not
+    // (LESSONS 3): a UTF-16 cut of the same value strands a high surrogate.
+    const loneSurrogate =
+      /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/;
+    expect(loneSurrogate.test(text)).toBe(false);
+    expect(loneSurrogate.test(astral.slice(0, 3))).toBe(true);
+    expect(clamped("ab       cdef", 8).text).toBe(`ab${ELLIPSIS}`);
+  });
+
+  it("renders an absence as the same dash every other helper returns", () => {
+    for (const missing of [null, undefined]) {
+      expect(clamped(missing)).toEqual({ text: EM_DASH, title: "" });
+      expect(isAbsent(clamped(missing).text)).toBe(true);
+    }
+  });
+});
+
+/**
+ * The two absence predicates, over ONE table (admin-window/BUG-0184).
+ *
+ * `isAbsent` answers about a whole `ReactNode`; `isAbsentText` answers about a
+ * string, in the pure leaf `lib/verdict/decision.ts`, where a leaf that may not
+ * import React can reach it. They are the same rule and must stay so: the
+ * string arm of the first is one call to the second. Until this ticket the
+ * rule was written out twice — once here and once, as its first half only, in
+ * `refuse()` (`lib/paging/machine.ts`) — and a refusal whose reason was the
+ * app's own dash was announced to the operator as the whole of a red alert.
+ *
+ * Both directions are graded, because a predicate that swallowed everything
+ * would pass the absent half alone: the present row holds the machine's own
+ * words with a dash inside them, which must never be substituted away.
+ */
+describe("isAbsent and isAbsentText agree, string for string", () => {
+  const ABSENT = [
+    "",
+    "   ",
+    EM_DASH,
+    ` ${EM_DASH} `,
+    `\u200b${EM_DASH}\u200b`,
+    "\u00ad", // soft hyphen
+    "\u3164", // hangul filler
+  ];
+  const PRESENT = [
+    `${EM_DASH}\u200b${EM_DASH}`,
+    "\u2800", // braille pattern blank: an assigned printable character
+    "0",
+    "no value",
+    `column events.badcol ${EM_DASH} does not exist`,
+  ];
+
+  it("calls the same strings absent", () => {
+    for (const text of ABSENT) {
+      expect(isAbsentText(text), JSON.stringify(text)).toBe(true);
+      expect(isAbsent(text), JSON.stringify(text)).toBe(true);
+    }
+  });
+
+  it("calls the same strings present", () => {
+    for (const text of PRESENT) {
+      expect(isAbsentText(text), JSON.stringify(text)).toBe(false);
+      expect(isAbsent(text), JSON.stringify(text)).toBe(false);
+    }
+  });
+
+  it("is ONE body, so no input can part them", () => {
+    // The structural half: the table above is a sample, and the point of the
+    // fold is that there is nothing left to sample. Every fixture in the file
+    // goes through both, and the two are asserted equal rather than each
+    // against a hand-written expectation.
+    for (const text of [...ABSENT, ...PRESENT, "\ufeff", "\u00a0 \u2060", "false", "-", "  x  "]) {
+      expect(isAbsent(text), JSON.stringify(text)).toBe(isAbsentText(text));
+    }
+  });
+
+  it("re-exports the leaf's binding rather than declaring a second dash", () => {
+    // What keeps the fifteen `import { EM_DASH } from "@/lib/format"` call
+    // sites honest: it is the same value under the same name, declared once in
+    // the leaf (`tests/offline/verdict/decision.test.ts` holds the structural
+    // guard that there is only one spelling in src/).
+    expect(EM_DASH).toBe(LEAF_EM_DASH);
+    expect(EM_DASH).toBe(String.fromCodePoint(0x2014));
+  });
+});
+
+describe("isAbsent and orDash", () => {
+  it("calls absent everything React would draw as nothing", () => {
+    for (const missing of [null, undefined, "", "   ", false, true, []]) {
+      expect(isAbsent(missing)).toBe(true);
+    }
+  });
+
+  /**
+   * The blanks that are not the space bar (admin-window/BUG-0089). `isAbsent`
+   * decided on `String.prototype.trim()`, which strips the Unicode WhiteSpace
+   * set and U+FEFF but NOT the Cf format characters — so a value of zero-width
+   * spaces, word joiners or soft hyphens took the "it is content" branch and
+   * drew an empty cell with no dash, which is the rendering
+   * admin-window/BUG-0085 exists to remove. It now asks `visibleContent` in
+   * `lib/verdict/decision.ts`, the one definition of blank the two note guards
+   * read as well, and it removes ink-less characters anywhere in the string
+   * rather than only at its ends.
+   */
+  it("calls absent a string with nothing visible in it, wherever the invisible sits", () => {
+    for (const missing of [
+      "\u200b", // zero-width space — a paste out of a rendered web page
+      "\u2060", // word joiner
+      "\u00ad", // soft hyphen — a paste out of a PDF
+      "\ufeff", // byte-order mark
+      "\u00a0", // non-breaking space
+      "\u3164", // hangul filler
+      "  \u200b  ",
+      "\u200b\u2060\u00ad\ufeff\u00a0\t\n",
+      `\u200b${EM_DASH}\u200b`, // the helper's own dash, invisibly padded
+    ]) {
+      expect(isAbsent(missing), JSON.stringify(missing)).toBe(true);
+    }
+  });
+
+  it("keeps a value present when the invisible characters merely surround it", () => {
+    // The fixture the widened guard must NOT swallow, or a real note would
+    // vanish into a dash: the ink-less characters are an absence only when
+    // they are ALL there is. U+2800 BRAILLE PATTERN BLANK is an assigned
+    // printable character and stays content, which is the boundary the leaf's
+    // own docstring draws.
+    for (const present of ["\u200bwhy it stands\u200b", "\u00ad-\u00ad", "\u2800", `${EM_DASH}\u200b${EM_DASH}`]) {
+      expect(isAbsent(present), JSON.stringify(present)).toBe(false);
+    }
+  });
+
+  it("calls absent a figure that is not a finite number, so no cell reads NaN", () => {
+    for (const missing of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(isAbsent(missing)).toBe(true);
+    }
+  });
+
+  it("calls absent the dash string the formatting helpers return", () => {
+    expect(isAbsent(count(null))).toBe(true);
+    expect(isAbsent(absoluteUtc(null))).toBe(true);
+    expect(isAbsent(relativeAge(null).text)).toBe(true);
+  });
+
+  it("keeps a real value present, including the zero and the empty-looking ones", () => {
+    for (const present of [0, "0", count(0), "false", "no value"]) {
+      expect(isAbsent(present)).toBe(false);
+    }
+  });
+
+  it("keeps a value present when it merely contains or resembles the dash, and when it is composite", () => {
+    // The swallow-a-real-value trap: absence recognises the *bare* dash a
+    // helper returns, so a value that only contains one, or is a node rather
+    // than a scalar, must still render as itself.
+    for (const present of [`${EM_DASH}x`, `${EM_DASH} ${EM_DASH}`, "0 ", -0, ["a", "b"]]) {
+      expect(isAbsent(present)).toBe(false);
+    }
+    const element = createElement("span", { className: "real" }, "x");
+    expect(renderToStaticMarkup(orDash(element))).toBe(
+      renderToStaticMarkup(element),
+    );
+    expect(renderToStaticMarkup(orDash(["a", "b"]))).toBe("ab");
+  });
+
+  it("renders an absence as the same element nullDash produces, and passes a value through", () => {
+    expect(renderToStaticMarkup(orDash(count(null)))).toBe(renderToStaticMarkup(nullDash()));
+    expect(renderToStaticMarkup(orDash(false))).toBe(renderToStaticMarkup(nullDash()));
+    expect(renderToStaticMarkup(orDash(count(1234)))).toBe("1,234");
+  });
+});

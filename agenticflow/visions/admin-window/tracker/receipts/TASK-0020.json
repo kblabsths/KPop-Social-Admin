@@ -1,0 +1,29 @@
+{
+ "id": "TASK-0020",
+ "created": "2026-09-02T19:31:25Z",
+ "green": true,
+ "git_head": "03e814cbbd24562fb6c926e80d52ee86e2c50186",
+ "scope": [
+  "docs/build_judgments.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 9,
+ "tree_hash": "a6f95d2a54187f0e927d091e75e9de404a26ab1a1802ea942bc33ea5c6ab99be",
+ "commands": [
+  {
+   "cmd": "bash -c \"test -f docs/build_judgments.md\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -c '^## ' docs/build_judgments.md)\" -le 15",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -qi contract docs/build_judgments.md\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

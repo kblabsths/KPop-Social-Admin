@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0147",
+ "created": "2026-09-09T23:16:42Z",
+ "green": true,
+ "git_head": "e8bed109dea14b60c30d33baf553178f414b3b63",
+ "scope": [
+  "src/components/cycles/asked-cycle.tsx",
+  "src/app/cycles/page.tsx",
+  "tests/offline/cycles/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d689f727fce1d64b8fb1e508b4ed6147bf65880deb4c1b95d262617a820bb713",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60458\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (21 tests) 10ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (124 tests) 12436ms\n   \u2713 the cycles the resolver filed > says so when the window filled its cap  582ms\n   \u2713 the cycles the resolver filed > never denies a row it is rendering, whatever the paste carried [admin-window/BUG-0145]  475ms\n   \u2713 the cycles the resolver filed > keeps the window's own limits on screen beside a cycle it could not find  819ms\n   \u2713 a ?run= link arriving from the Dashboard > answers a padded paste of a run id the way its twin answers one [admin-window/BUG-0145]  440ms\n   \u2713 the newest adapter run, above the cycles window > leads with the window's newest run, ahead of a cycles window at its cap  355ms\n\n Test Files  2 passed (2)\n      Tests  145 passed (145)\n   Start at  16:16:14\n   Duration  14.38s (transform 858ms, setup 0ms, collect 1.68s, tests 12.45s, environment 0ms, prepare 328ms)\n\n(node:60479) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

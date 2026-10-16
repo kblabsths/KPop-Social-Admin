@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0214",
+ "created": "2026-09-11T21:37:09Z",
+ "green": true,
+ "git_head": "aa4051aaf37b0aa21606bc6e3d0fa83e5c87b6d6",
+ "scope": [
+  "docs/build_judgments.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "47605d9e2c9b7464a27dbb0e2034c51481a096a5a89e549d843d96bc897b0eb9",
+ "commands": [
+  {
+   "cmd": "python3 -c \"import re,sys,os; d=open('docs/build_judgments.md').read(); m=re.search(r'Not closed at this close(.{0,400})',d,re.S); ids=sorted(set(re.findall(r'\\b(?:BUG|TASK|DEBT)-\\d{4}\\b',m.group(1)))) if m else []; bad=[i for i in ids if any(re.search(r'^status: done',open(p).read(),re.M) for p in ('agenticflow/tracker/tickets/'+i+'.md','agenticflow/tracker/archive/'+i+'.md') if os.path.exists(p))]; print('doc names as not closed:',ids,'| tracker says done:',bad); sys.exit(1 if bad else 0)\"",
+   "exit": 0,
+   "output_tail": "doc names as not closed: [] | tracker says done: []\n"
+  },
+  {
+   "cmd": "python3 -c \"import re,sys; t=open('docs/build_judgments.md').read(); n=len(re.findall(r'^## ',t,re.M)); m='M3 edition' in t; print('entries:',n,'| names itself the M3 edition:',m); sys.exit(0 if (m and n<=8) else 1)\"",
+   "exit": 0,
+   "output_tail": "entries: 8 | names itself the M3 edition: True\n"
+  }
+ ]
+}

@@ -1,0 +1,569 @@
+import type { ReactNode } from "react";
+import {
+  EvidencePair,
+  type EvidenceCanonical,
+} from "@/components/evidence/evidence-pair";
+import {
+  GaugeCard,
+  TrendTable,
+  type EmptyWords,
+  type GaugeState,
+} from "@/components/gauges";
+import {
+  DataTable,
+  Empty,
+  Identifier,
+  type MicroLabel,
+  type ReadWindow,
+  WindowLine,
+} from "@/components/ui";
+import { count, counted, pluralise } from "@/lib/format";
+import type { Shape } from "@/lib/review/shapes";
+import {
+  DASH_MEANS,
+  type EvidenceColumn,
+  drawsDash,
+  factColumn,
+  heldColumn,
+  observedColumn,
+  payloadColumn,
+  recordColumn,
+  sourceColumn,
+  statusColumn,
+  tierColumn,
+  valueColumn,
+  type EvidenceRow,
+} from "./evidence-cells";
+
+/**
+ * **Each shape is its own detail view** over the shared anatomy — campaign
+ * admin-window/TASK-0011, spec §6: "the evidence block renders what that
+ * shape's evidence IS, not one generic layout".
+ *
+ * Three views, and `EVIDENCE_VIEW_BY_SHAPE` maps every `Shape` to exactly one
+ * of them. The map is a `Record<Shape, …>`, so a fourth shape — which arrives
+ * only with the migration that widens `review_items.queue`'s CHECK constraint
+ * (ARCHITECTURE.md §6 trap 11) — fails to compile HERE, with no defensive
+ * throw, no null return and no "unknown" view to write. Nothing in this file
+ * re-derives a shape or a kind: `shapeOf`/`kindOfItem` are the only spellings
+ * of that (spec §6, `src/lib/review/shapes.ts`).
+ *
+ * What differs between the views is what the evidence of that shape actually
+ * is:
+ *
+ *  - a `data_conflict` fact item — the **contending claims**, against the
+ *    value canonical holds now;
+ *  - an `entity_link` fact item — the **stuck claims and the unmet
+ *    requirement** the classification view names;
+ *  - an `entity_link` source-pattern item — the **folded records as a list**,
+ *    each row naming the record it is about and the fact it states about it,
+ *    with the per-source dial beside it.
+ *
+ * The two fact views lead with the evidence pair — this app's signature
+ * (LOOK_AND_FEEL): contenders left, the canonical value as the rightmost card,
+ * labelled current. The table below is the same claims as EVIDENCE: the pair
+ * answers "which value wins" in two seconds, the table carries the machine
+ * detail an investigation needs (the claim's own status, its payload pointer,
+ * what is holding it). The source-pattern view has no pair at all, and that is
+ * not an omission: its subject is a SOURCE, so there is no fact and no
+ * canonical value to stand anything beside.
+ *
+ * **Nothing here settles anything** (spec §7 is the verdict slice): every
+ * control in this markup is a link, no card carries an action, and no
+ * disabled control is scaffolded toward one.
+ *
+ * Pure synchronous components over plain props (ARCHITECTURE.md §5).
+ */
+
+/** The per-source dial's numbers, as the page reads them from the gauge. */
+export interface DialSeries {
+  /** Stuck records this source has in the window. A real zero is an answer. */
+  claims: number;
+  /** One point per UTC day of the window, zeros included, ascending. */
+  points: readonly { day: string; claims: number }[];
+  /**
+   * The pattern threshold this trend would be drawn against, or `null` while
+   * Admin has no way to read the dial. Null is every call today: the value
+   * lives in the scraper repo's source registry and copying it here is
+   * forbidden (spec §10, `src/lib/gauges/pending-claims.ts` — the seam).
+   */
+  threshold: { count: number; windowDays: number } | null;
+}
+
+/**
+ * The window the dial was read over, carried so the card can state it.
+ *
+ * It IS the gauge's own window (`WindowInfo`) — the primitive's structural
+ * type, not a second declaration of the same fields. The hand-copy this
+ * replaced dropped `over`, which is why the dial's sentence had the word
+ * "table" written into it rather than reading it off the read
+ * (admin-window/BUG-0077, admin-window/DEBT-0006).
+ */
+export type DialWindow = ReadWindow;
+
+/**
+ * The name the dial's WINDOW answers to — `data-window`. The dial draws the
+ * awaiting-row trend, the same gauge `/sources` publishes under this name over
+ * the same object, so one hook spells one read.
+ */
+const DIAL_WINDOW = "awaiting_row";
+
+export interface DialProps {
+  /**
+   * The eyebrow the figure stands under — the source, and what counts. The
+   * source name is a machine identifier, so it travels as
+   * `{ identifier, words }` and keeps its case and its mono face instead of
+   * being uppercased into `TICKETMASTER STUCK RECORDS`
+   * (`ui/micro-label.tsx`, admin-window/BUG-0049).
+   */
+  label: MicroLabel;
+  /** The numbers, or `null` when the read did not produce any — see `state`. */
+  series: DialSeries | null;
+  window: DialWindow | null;
+  /** The words for a window holding no stuck record at all. */
+  empty: EmptyWords;
+  /**
+   * Set when the dial's own read was unprovisioned or refused. It maps
+   * straight off a `DbResult` and is rendered by the landed gauge state seam,
+   * so the card names the object that refused rather than showing a zero for a
+   * table nobody read (ARCHITECTURE §7, admin-window/TASK-0030).
+   */
+  state?: GaugeState;
+}
+
+/** What every shape view is handed. Each uses what its evidence has. */
+export interface ShapeEvidenceProps {
+  /** The item's `evidence` ids, resolved, in the stored fold order. */
+  rows: readonly EvidenceRow[];
+  /** Evidence ids that resolved to no claim — named, never dropped. */
+  unresolved: readonly string[];
+  /** The words for an evidence block with no resolved claim in it. */
+  empty: EmptyWords;
+  /**
+   * The canonical card: the fact's current value and its provenance. `null`
+   * when the item names no fact at all, which is what a per-source item is.
+   */
+  canonical: EvidenceCanonical | null;
+  /** The per-source dial. `null` on every shape but the source pattern. */
+  dial: DialProps | null;
+}
+
+/**
+ * The lede: what this shape's evidence is, said once, above it.
+ *
+ * Hooked `data-lede` so a test can address the sentence that makes the claim
+ * rather than the first paragraph inside a view — a positional selector is how
+ * this repo has lost oracles before (admin-window/DEBT-0002), and what the
+ * lede may claim is graded per shape (admin-window/BUG-0124).
+ */
+function Lede({ children }: { children: ReactNode }) {
+  return (
+    <p data-lede className="type-body text-ink-secondary">
+      {children}
+    </p>
+  );
+}
+
+/**
+ * The evidence ids that named no claim.
+ *
+ * Listed verbatim in mono rather than dropped: an item carries the ids the
+ * resolver folded into it, and a list that silently shortened would read as an
+ * item with less evidence than it has.
+ */
+function Unresolved({ ids }: { ids: readonly string[] }) {
+  if (ids.length === 0) return null;
+  return (
+    <p className="type-body text-ink-secondary">
+      {count(ids.length)} of this item&rsquo;s evidence ids{" "}
+      {pluralise(ids.length, "names", "name")} no claim this database holds:{" "}
+      {ids.map((id) => (
+        <Identifier key={id} data-unresolved={id}>
+          {id}{" "}
+        </Identifier>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * Whether the evidence block renders its claims table at all.
+ *
+ * **One predicate, two readers.** `ClaimRows` asks it when it chooses between
+ * `DataTable` and `Empty`, and each shape's lede asks it when it chooses its
+ * words — so a lede cannot send the operator to a table the block did not
+ * render (admin-window/BUG-0130). It is ARCHITECTURE.md §4.3's rule one
+ * surface over, the same reason `Dial`'s window line is absent on exactly the
+ * states where its read did not happen: what the page says about a block
+ * follows what that block actually holds. Two independent `rows.length === 0`
+ * spellings is how the sentence and the markup drifted apart in the first
+ * place.
+ */
+function rendersClaimsTable(rows: readonly EvidenceRow[]): boolean {
+  return rows.length > 0;
+}
+
+/**
+ * The claims, as rows. The columns are the SHAPE's; the emptiness is this
+ * component's to time and the caller's to word (the rule `TrendTable` and
+ * `Distribution` already carry — admin-window/TASK-0030).
+ */
+function ClaimRows({
+  rows,
+  columns,
+  label,
+  empty,
+  unresolved,
+}: {
+  rows: readonly EvidenceRow[];
+  columns: EvidenceColumn[];
+  label: string;
+  empty: EmptyWords;
+  unresolved: readonly string[];
+}) {
+  // What a dash means here, said once and only while one is on screen
+  // (admin-window/BUG-0132). `drawsDash` asks each rendered column through the
+  // same accessor its cell draws, so this line and the dashes it explains
+  // cannot disagree; `data-absence-note` is what makes "once" structural.
+  const dashOnScreen = rendersClaimsTable(rows) && drawsDash(rows, columns);
+  return (
+    <>
+      {dashOnScreen ? (
+        <p data-absence-note="dash" className="type-body text-ink-secondary">
+          {DASH_MEANS}
+        </p>
+      ) : null}
+      {rendersClaimsTable(rows) ? (
+        <DataTable<EvidenceRow>
+          columns={columns}
+          rows={[...rows]}
+          rowKey={(row) => row.observationId}
+          label={label}
+        />
+      ) : (
+        <Empty holds={empty.holds} filledBy={empty.filledBy} />
+      )}
+      <Unresolved ids={unresolved} />
+    </>
+  );
+}
+
+/**
+ * The contenders, as the pair renders them.
+ *
+ * A tier this app could not read is the app's own dash, not a blank and not a
+ * guessed tier: `sources.tier` is the only place a claim's current tier comes
+ * from (§6 trap 5).
+ *
+ * The **null travels** to the card rather than being spent here
+ * (admin-window/BUG-0134). This block used to write `row.tier ?? EM_DASH`, so
+ * the pair received a bare character and rendered it as ordinary secondary
+ * text while the table cell for the same claim drew `nullDash()` — one page
+ * saying one absent tier two ways, and only one of them announced to a reader
+ * who cannot see the ink. Absence is the component's to render, never the
+ * caller's to type.
+ */
+function contenders(rows: readonly EvidenceRow[]) {
+  return rows.map((row) => ({
+    id: row.observationId,
+    value: row.value,
+    source: row.source,
+    tier: row.tier,
+    observedAt: row.observedAt,
+  }));
+}
+
+/* ── shape 1: the data_conflict fact item ────────────────────────────────── */
+
+function ConflictEvidence({
+  rows,
+  unresolved,
+  empty,
+  canonical,
+}: ShapeEvidenceProps) {
+  return (
+    <div data-evidence-view="conflict" className="flex flex-col gap-3">
+      <Lede>
+        Sources disagree about this fact. Each contending claim stands against
+        the value canonical holds now — its tier is its source&rsquo;s tier
+        today, the canonical card&rsquo;s is the tier frozen at the apply.
+      </Lede>
+      {canonical === null ? null : (
+        // The signature block, hooked so its cards can be read structurally:
+        // one card per contender, in the claims' own order, and the CANONICAL
+        // card last — that rightmost position is the contract
+        // (LOOK_AND_FEEL), not a styling choice.
+        <div data-pair>
+          <EvidencePair claims={contenders(rows)} canonical={canonical} />
+        </div>
+      )}
+      <ClaimRows
+        rows={rows}
+        columns={[
+          valueColumn,
+          sourceColumn,
+          tierColumn,
+          observedColumn,
+          statusColumn,
+          payloadColumn,
+        ]}
+        label="Contending claims"
+        empty={empty}
+        unresolved={unresolved}
+      />
+    </div>
+  );
+}
+
+/* ── shape 2: the entity_link fact item ──────────────────────────────────── */
+
+/**
+ * **The lede says what the block HOLDS, and claims no total**
+ * (campaign admin-window/BUG-0128, the same rule admin-window/BUG-0124 applied
+ * one shape over). It used to say that every claim the record holds was below
+ * — a population this page has never looked at: Admin reads the ids in
+ * `review_items.evidence` and resolves each one, and it reads a record's claims
+ * nowhere. The page contradicted the sentence out of its own mouth whenever an
+ * evidence id named no claim: the accounting under it says "1 of 2 evidence ids
+ * resolved" and the unresolved line prints the id that resolved to nothing.
+ * What the block is, is the claims behind this item's evidence ids — the same
+ * population the accounting sentence accounts for — each with what it is
+ * waiting for, which is this shape's whole subject.
+ *
+ * **And the sentence follows the read** (admin-window/BUG-0130). Naming the
+ * table below is only true while there IS one: with no evidence id resolved
+ * the block renders the empty card instead, which says in the app's own words
+ * that it holds no claim — so the lede reads its own block through
+ * `rendersClaimsTable` and stops naming a table the page did not render. The
+ * item's condition is stated in either state; what the block holds is stated
+ * once, by whichever of the two is standing there.
+ */
+function StuckFactEvidence({
+  rows,
+  unresolved,
+  empty,
+  canonical,
+}: ShapeEvidenceProps) {
+  return (
+    <div data-evidence-view="stuck-fact" className="flex flex-col gap-3">
+      <Lede>
+        {rendersClaimsTable(rows) ? (
+          <>
+            This record cannot link or be created. The table below holds the
+            claims behind this item&rsquo;s evidence ids, with what each one is
+            waiting for.
+          </>
+        ) : (
+          <>
+            This record cannot link or be created. Below is what this
+            item&rsquo;s evidence ids resolved to.
+          </>
+        )}
+      </Lede>
+      {canonical === null ? null : (
+        // The signature block, hooked so its cards can be read structurally:
+        // one card per contender, in the claims' own order, and the CANONICAL
+        // card last — that rightmost position is the contract
+        // (LOOK_AND_FEEL), not a styling choice.
+        <div data-pair>
+          <EvidencePair claims={contenders(rows)} canonical={canonical} />
+        </div>
+      )}
+      <ClaimRows
+        rows={rows}
+        columns={[
+          valueColumn,
+          sourceColumn,
+          tierColumn,
+          observedColumn,
+          heldColumn,
+          payloadColumn,
+        ]}
+        label="Stuck claims"
+        empty={empty}
+        unresolved={unresolved}
+      />
+    </div>
+  );
+}
+
+/* ── shape 3: the entity_link source-pattern item ────────────────────────── */
+
+/**
+ * The per-source dial (spec §5's stuck-record-pattern knob, read through
+ * `lib/gauges/pending-claims.ts`).
+ *
+ * **The trend is drawn and the threshold line is not.** The dial's threshold
+ * lives in the scraper repo's source-registry YAML and where Admin reads it is
+ * a blocked question (admin-window/TASK-0024); hand-copying the number into
+ * this repo is the one answer that is forbidden. So the line below states that
+ * gap in the app's voice rather than drawing a default nobody chose — and if
+ * the seam is ever filled, the dial it hands over is stated here instead.
+ */
+function Dial({ label, series, window: read, empty, state }: DialProps) {
+  return (
+    <div data-dial className="flex min-w-0 flex-col gap-2">
+      {state !== undefined || series === null ? (
+        <GaugeCard
+          label={label}
+          state={
+            state ?? {
+              kind: "empty",
+              holds: empty.holds,
+              filledBy: empty.filledBy,
+            }
+          }
+        />
+      ) : (
+        <GaugeCard
+          label={label}
+          value={series.claims}
+          floor={read?.truncated ?? false}
+          sub={
+            series.claims === 0
+              ? "nothing stuck in this window"
+              : "stuck records this source has in the window below"
+          }
+        />
+      )}
+      {read === null ? null : (
+        // The window line follows the READ: `window` is null on exactly the
+        // states where the dial's read did not happen, so the line's absence
+        // means that and nothing else (ARCHITECTURE.md §4.3).
+        <WindowLine gauge={DIAL_WINDOW} window={read} measured="Claims observed" />
+      )}
+      <p className="type-body text-ink-secondary">
+        {series === null || series.threshold === null
+          ? "No pattern threshold is readable from here — the dial is a source-registry setting in the scraper repo, so the trend is drawn without its line."
+          : `Pattern threshold: ${counted(
+              series.threshold.count,
+              "record",
+            )} in ${counted(series.threshold.windowDays, "day")}.`}
+      </p>
+      <TrendTable<{ day: string; claims: number }>
+        label={label}
+        period="day (UTC)"
+        rows={series === null ? [] : [...series.points]}
+        rowKey={(point) => point.day}
+        rowLabel={(point) => point.day}
+        measures={[
+          { key: "claims", label: "records", value: (point) => point.claims },
+        ]}
+        empty={empty}
+        state={state}
+      />
+    </div>
+  );
+}
+
+/**
+ * **The lede says what the table HOLDS, and claims no more than that**
+ * (campaign admin-window/BUG-0124). It used to assert that the rows below were
+ * every record this signal had folded — a completeness the page cannot
+ * establish: `folded_count` and `evidence` are two columns of the same row,
+ * this app compares them nowhere, and on the one signal staging holds they are
+ * 700 and 91. Both M2 user-sims met that sentence over 91 rows and stopped
+ * trusting the screen. What the table is, is the claims behind the item&rsquo;s
+ * evidence ids — which is exactly the population the accounting sentence under
+ * it accounts for, and exactly the count the header states beside the folds.
+ *
+ * **And the sentence follows the read** (admin-window/BUG-0130). "The table
+ * holds the claims" is true only while the block rendered a table: with no
+ * evidence id resolved it renders the empty card instead, so the lede asks
+ * `rendersClaimsTable` and names the population without pointing at an element
+ * the page did not draw. The dial clause stays in both states — the dial is
+ * rendered beside this column either way — and so does the sentence about
+ * there being no canonical value, which is a fact about the SHAPE and not
+ * about what resolved.
+ *
+ * Both columns of the pattern view are `min-w-0`, and that is load-bearing
+ * rather than decorative: a grid item's `min-width` is `auto`, which is its
+ * CONTENT's minimum — so the records table (91 rows of unbreakable
+ * `sha256/…` payload pointers) sizes the `2fr` track to the table's intrinsic
+ * width, the grid outgrows the content pane, and the horizontal scroll lands
+ * on the page instead of inside the table's border. It dragged the lede
+ * paragraph out with it too (admin-window/BUG-0042: the header cell measured
+ * 142px past a 1440 viewport). Zeroing the minimum lets each track take its
+ * fr share, which is what hands the overflow back to `DataTable`'s own
+ * scroll container. LOOK_AND_FEEL, data table: a table wider than its column
+ * scrolls inside its own border; the page does not.
+ */
+function PatternEvidence({
+  rows,
+  unresolved,
+  empty,
+  dial,
+}: ShapeEvidenceProps) {
+  return (
+    <div
+      data-evidence-view="source-pattern"
+      className="grid gap-4 lg:grid-cols-[2fr_1fr]"
+    >
+      <div className="flex min-w-0 flex-col gap-3">
+        <Lede>
+          {rendersClaimsTable(rows) ? (
+            <>
+              One source, many records stuck the same way. The table holds the
+              claims behind this item&rsquo;s evidence ids; the source&rsquo;s own dial is
+              beside it. There is no canonical value to stand them against — the
+              subject is the source, not a fact.
+            </>
+          ) : (
+            <>
+              One source, many records stuck the same way. Below is what this
+              item&rsquo;s evidence ids resolved to; the source&rsquo;s own dial is beside
+              it. There is no canonical value to stand a claim against — the
+              subject is the source, not a fact.
+            </>
+          )}
+        </Lede>
+        <ClaimRows
+          rows={rows}
+          columns={[
+            // Which record, then what is claimed about it — the reading order
+            // of the sentence a row is, and `/claims`'s own order for the same
+            // two values (admin-window/BUG-0122).
+            recordColumn,
+            factColumn,
+            valueColumn,
+            sourceColumn,
+            tierColumn,
+            observedColumn,
+            payloadColumn,
+          ]}
+          label="Folded records"
+          empty={empty}
+          unresolved={unresolved}
+        />
+      </div>
+      {dial === null ? null : <Dial {...dial} />}
+    </div>
+  );
+}
+
+/**
+ * Shape → its detail view. The compiler requires every `Shape` to have one,
+ * which is the whole guard: no default arm, no fallback view, and a fourth
+ * shape cannot reach a screen by accident (§6 trap 11).
+ */
+export const EVIDENCE_VIEW_BY_SHAPE: Record<
+  Shape,
+  (props: ShapeEvidenceProps) => ReactNode
+> = {
+  data_conflict_fact: ConflictEvidence,
+  entity_link_fact: StuckFactEvidence,
+  entity_link_source_pattern: PatternEvidence,
+};
+
+/**
+ * Which shape's view carries the per-source dial, so the page knows whether to
+ * make that read at all — WITHOUT re-deriving anything from `queue` or
+ * `source_id` (spec §11: `shapeOf` is the only spelling). It is exhaustive
+ * over `Shape` for the same reason the view map is: a fourth shape must decide
+ * this here rather than inherit a default.
+ */
+export const DIAL_BY_SHAPE: Record<Shape, boolean> = {
+  data_conflict_fact: false,
+  entity_link_fact: false,
+  entity_link_source_pattern: true,
+};

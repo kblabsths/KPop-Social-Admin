@@ -1,0 +1,49 @@
+{
+ "id": "TASK-0028",
+ "created": "2026-09-02T11:44:39Z",
+ "green": true,
+ "git_head": "8238dfe3afe1715683bfea73471564a618a82042",
+ "scope": [
+  "tsconfig.json"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 0,
+ "tree_hash": "b3531f910c4164a745c5296774c7a6ac4bd737e66cb8f9cc807babcd1e183fd0",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '\"agenticflow\"' tsconfig.json",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '.next/types/**/*.ts' tsconfig.json",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF '**/*.mts' tsconfig.json",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit --listFilesOnly | grep -q \"/src/lib/db/result.ts$\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit --listFilesOnly | grep -q \"/tests/offline/\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'mkdir -p agenticflow/tracker/evidence/tsconfig-probe && echo \"const probe: number = true; export default probe;\" > agenticflow/tracker/evidence/tsconfig-probe/probe.ts; ./node_modules/.bin/tsc --noEmit; rc=$?; rm -rf agenticflow/tracker/evidence/tsconfig-probe; exit $rc'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+{
+ "id": "BUG-0142",
+ "created": "2026-09-09T19:38:31Z",
+ "green": true,
+ "git_head": "4650e96c07105b99647a9191065b73f2bddd2e9c",
+ "scope": [
+  "src/app/cycles/page.tsx",
+  "src/components/cycles/run-columns.tsx",
+  "tests/offline/cycles/page.test.ts",
+  "tests/live/runs.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "138f03fa59ede4a0e88430718cf691da83533f58072d711497a7e594318dda76",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-42496\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (21 tests) 7ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (93 tests) 1808ms\n\n Test Files  2 passed (2)\n      Tests  114 passed (114)\n   Start at  12:38:09\n   Duration  2.62s (transform 326ms, setup 0ms, collect 626ms, tests 1.82s, environment 0ms, prepare 199ms)\n\n(node:42503) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/runs.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-42496\n\n \u2713 |live| tests/live/runs.live.test.ts (10 tests) 9224ms\n   \u2713 the adapter framework's runs against staging > renders the newest runs, newest first, as the table holds them  970ms\n   \u2713 the adapter framework's runs against staging > renders exactly the nine ruled columns, and no tenth  450ms\n   \u2713 the adapter framework's runs against staging > renders every count, every failure class and every error line the row carries  468ms\n   \u2713 the adapter framework's runs against staging > reads a run still in flight and a completed run as what they are  439ms\n   \u2713 the ?source= facet against staging > narrows the runs half to the source name, matched by name  851ms\n   \u2713 the ?source= facet against staging > renders the empty state with a 0 for a name nothing was filed under  338ms\n   \u2713 the ?source= facet against staging > leaves the resolver's cycles unnarrowed, because they carry no source  2901ms\n   \u2713 the ?run= facet against staging > marks the run the link named, and nothing else on the page  1376ms\n   \u2713 the ?run= facet against staging > says a well-formed run id this database holds no row for is not here  358ms\n   \u2713 the ?run= facet against staging > names a ?run= that is not a run id as a parameter it did not apply  1072ms\n\n Test Files  1 passed (1)\n      Tests  10 passed (10)\n   Start at  12:38:12\n   Duration  9.90s (transform 194ms, setup 30ms, collect 340ms, tests 9.22s, environment 0ms, prepare 86ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/runs.live.test.ts\n(node:42558) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

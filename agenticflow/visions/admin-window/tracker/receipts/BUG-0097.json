@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0097",
+ "created": "2026-09-09T05:43:04Z",
+ "green": true,
+ "git_head": "15279e94bd0e27bf21ad7703dbf62dbbd6acb1a4",
+ "scope": [
+  "src/components/records/entity-picker.tsx",
+  "tests/offline/records/entity-picker.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "9706b3a948324b2307df03cbf2a2d5f63a06143fb681d4560b0793ce36fce8f9",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records/entity-picker.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-81442\n\n \u2713 |offline| tests/offline/records/entity-picker.test.ts (32 tests) 129ms\n\n Test Files  1 passed (1)\n      Tests  32 passed (32)\n   Start at  22:43:02\n   Duration  1.56s (transform 281ms, setup 0ms, collect 638ms, tests 129ms, environment 0ms, prepare 201ms)\n\n(node:81553) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

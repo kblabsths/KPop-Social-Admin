@@ -1,0 +1,40 @@
+{
+ "id": "BUG-0181",
+ "created": "2026-09-11T09:37:42Z",
+ "green": true,
+ "git_head": "2730161ef7a38ef08b49c77b65a7923b1300508f",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 7,
+ "tree_hash": "fc1519f4046680cbb06eccf62e3f04d7b0d50b57e9061a855b5080660e4f5a4d",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22875\n\n \u2713 |offline| tests/offline/db/result.test.ts (123 tests) 39ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 2284ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  381ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  853ms\n\n Test Files  2 passed (2)\n      Tests  409 passed (409)\n   Start at  02:37:23\n   Duration  3.20s (transform 1.24s, setup 0ms, collect 787ms, tests 2.32s, environment 0ms, prepare 117ms)\n\n(node:22942) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"COLUMN_NAME\" src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"spells a column only when the message named one\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

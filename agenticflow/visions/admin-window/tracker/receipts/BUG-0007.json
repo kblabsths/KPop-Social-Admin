@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0007",
+ "created": "2026-09-02T07:55:36Z",
+ "green": true,
+ "git_head": "a525b658962091fb2ab4456bf59b4a56acdb6e33",
+ "scope": [
+  "tests/live/parity.ts",
+  "tests/offline/live-guard.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 8,
+ "tree_hash": "09bbae1b38db6eaa038853c413eb0398c83c52f924da288b2599bd0fa6176c6d",
+ "commands": [
+  {
+   "cmd": "cd '/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin' && ./node_modules/.bin/vitest run tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |offline| tests/offline/live-guard.test.ts (39 tests) 742ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  698ms\n\n Test Files  1 passed (1)\n      Tests  39 passed (39)\n   Start at  00:55:34\n   Duration  1.36s (transform 88ms, setup 0ms, collect 267ms, tests 742ms, environment 0ms, prepare 66ms)\n\n(node:80630) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "cd '/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin' && ./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

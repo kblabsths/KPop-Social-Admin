@@ -1,0 +1,60 @@
+{
+ "id": "TASK-0075",
+ "created": "2026-09-11T04:54:58Z",
+ "green": true,
+ "git_head": "d70d0fc05e3416c62606ad7ad29196717d15eb85",
+ "scope": [
+  "tests/live/claims.live.test.ts",
+  "tests/live/parity.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "e43622228144802de211a787a17e5ad1c28dba1dfbd92009d798fdbeec15654c",
+ "commands": [
+  {
+   "cmd": "for i in 1 2 3 4 5; do echo \"=== claims.live run $i ===\"; npm run test:live -- tests/live/claims.live.test.ts || exit 1; done",
+   "exit": 0,
+   "output_tail": " id  1468ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  1137ms\n   \u2713 paging past the first window, against staging > reaches every claim the view holds, once each, and no more  5672ms\n\n Test Files  1 passed (1)\n      Tests  13 passed (13)\n   Start at  21:54:04\n   Duration  33.83s (transform 277ms, setup 34ms, collect 527ms, tests 32.97s, environment 0ms, prepare 73ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:20934) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:24179) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:27420) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:29309) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:29802) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"export function snapshotAsOf\" tests/live/parity.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"snapshotAsOf\" tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -o \"whileStill(\" tests/live/claims.live.test.ts | wc -l)\" -ge 5",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -o \"countRows(\" tests/live/claims.live.test.ts | wc -l)\" -le 4",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rq \"toBeCloseTo\" tests/live",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rqE \"it\\.skip|it\\.todo|--retry\" tests/live",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

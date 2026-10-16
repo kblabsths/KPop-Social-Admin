@@ -1,0 +1,47 @@
+{
+ "id": "TASK-0014",
+ "created": "2026-09-02T15:48:28Z",
+ "green": true,
+ "git_head": "7391da614f072970b24b0e667f29da2a6dab020c",
+ "scope": [
+  "src/app/cycles/page.tsx",
+  "src/lib/db/cycles.ts",
+  "tests/offline/cycles",
+  "tests/live/cycles.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "73e1204c631d58dd43f0a523b31f1547fc0e0ea9d1285af6188a1fd2120e8cca",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "\u25b2 Next.js 16.2.2 (Turbopack)\n- Environments: .env\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.4s\n  Running TypeScript ...\n  Finished TypeScript in 3.9s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/6) ...\n  Generating static pages using 9 workers (1/6) \n  Generating static pages using 9 workers (2/6) \n  Generating static pages using 9 workers (4/6) \n\u2713 Generating static pages using 9 workers (6/6) in 121ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23768/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:23865) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/cycles",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-23768\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (18 tests) 7ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (33 tests) 643ms\n\n Test Files  2 passed (2)\n      Tests  51 passed (51)\n   Start at  08:48:27\n   Duration  1.34s (transform 209ms, setup 0ms, collect 468ms, tests 650ms, environment 0ms, prepare 198ms)\n\n(node:23893) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"grep -q claims_rerejected src/lib/db/cycles.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q readCycleHealth src/app/cycles/page.tsx && grep -q readResolutionLatency src/app/cycles/page.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

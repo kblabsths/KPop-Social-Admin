@@ -1,0 +1,62 @@
+{
+ "id": "TASK-0054",
+ "created": "2026-09-09T04:17:14Z",
+ "green": true,
+ "git_head": "70719e11c7857dacbb6cdbf1052b0608ccb6cc18",
+ "scope": [
+  "src/lib/edit/config.ts",
+  "src/app/api/admin/records/[table]/[id]/route.ts",
+  "src/app/records/[table]/[id]/page.tsx",
+  "src/components/records/record-fields.tsx",
+  "src/components/records/field-editor.tsx",
+  "tests/offline/edit/config.test.ts",
+  "tests/offline/edit/route.test.ts",
+  "tests/offline/records/page.test.ts",
+  "tests/http/edit.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "7aa9ec0c88fa30a51adcf8d519473d4d9c48ca485a7bfbc9cd158cd0c653aeed",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/edit/config.test.ts tests/offline/edit/route.test.ts tests/offline/records/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-80160\n\n \u2713 |offline| tests/offline/edit/route.test.ts (48 tests) 44ms\n \u2713 |offline| tests/offline/edit/config.test.ts (67 tests) 416ms\n \u2713 |offline| tests/offline/records/page.test.ts (93 tests) 451ms\n\n Test Files  3 passed (3)\n      Tests  208 passed (208)\n   Start at  21:16:58\n   Duration  1.24s (transform 303ms, setup 0ms, collect 1.03s, tests 912ms, environment 0ms, prepare 363ms)\n\n(node:80285) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": "wers a mapped column's override with the absence, and changes nothing  518ms\n   \u2713 a resolver-owned record page > renders from staging with no editable widget on it, and names why  900ms\n   \u2713 a resolver-owned record page > displays every column the map names, with staging's own value  873ms\n   \u2713 a resolver-owned record page > shows the source behind each field the decision log covers  617ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1219ms\n   \u2713 the walk sandbox > writes label, and the database keeps it as label's own type  575ms\n   \u2713 the walk sandbox > writes tally, and the database keeps it as tally's own type  585ms\n   \u2713 the walk sandbox > writes is_flagged, and the database keeps it as is_flagged's own type  523ms\n   \u2713 the walk sandbox > writes note, and the database keeps it as note's own type  574ms\n   \u2713 the walk sandbox > writes observed_on, and the database keeps it as observed_on's own type  552ms\n   \u2713 the walk sandbox > clears note to the app's own absence, then fills it in again  780ms\n   \u2713 the walk sandbox > clears observed_on to the app's own absence, then fills it in again  790ms\n   \u2713 the walk sandbox > reports the database's refusal when label is cleared, and label still stands  619ms\n   \u2713 the walk sandbox > reports the database's refusal when tally is cleared, and tally still stands  633ms\n   \u2713 the walk sandbox > reports the database's refusal when is_flagged is cleared, and is_flagged still stands  599ms\n\n Test Files  1 passed (1)\n      Tests  21 passed (21)\n   Start at  21:17:00\n   Duration  12.77s (transform 213ms, setup 36ms, collect 411ms, tests 11.91s, environment 0ms, prepare 187ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:80340) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -rnE \"\\.(insert|upsert|delete)\\(\" src --include=*.ts --include=*.tsx | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -rn \"pre_cutover\" src --include=*.ts --include=*.tsx | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qE \"editable: \\[.title., .description., .poster_url., .starts_at.\\]\" src/lib/edit/config.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qE \"editable: \\[.name., .city., .country., .address.\\]\" src/lib/edit/config.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c '! grep -q \"reads every column of both\" src/lib/edit/config.ts'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

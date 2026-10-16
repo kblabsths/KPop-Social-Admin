@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0093",
+ "created": "2026-09-09T05:01:08Z",
+ "green": true,
+ "git_head": "4ce78ffbc929543dff8078c6cbf46b464f4aa0c5",
+ "scope": [
+  "agenticflow/tracker/for-human/M2-handoff-settle-review-item.md",
+  "tests/offline/handoff/settle-review-item.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "dd6c0904912c3f0ec1694a629d84e564d5b941584f2197ac6e120ff544d26f35",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/handoff/settle-review-item.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39279\n\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (41 tests) 363ms\n\n Test Files  1 passed (1)\n      Tests  41 passed (41)\n   Start at  22:01:06\n   Duration  1.03s (transform 114ms, setup 0ms, collect 170ms, tests 363ms, environment 0ms, prepare 127ms)\n\n(node:39287) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'grep -q \"^  it(\\\"allocates codes the sibling has not already taken\\\"\" tests/offline/handoff/settle-review-item.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

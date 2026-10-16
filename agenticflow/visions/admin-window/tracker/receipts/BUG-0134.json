@@ -1,0 +1,21 @@
+{
+ "id": "BUG-0134",
+ "created": "2026-09-09T16:51:13Z",
+ "green": true,
+ "git_head": "0fcd1f2b27424a0f0ebf3a6697ea8fec2493282b",
+ "scope": [
+  "src/components/review/shape-views.tsx",
+  "src/components/evidence/evidence-pair.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "1ecebfefaed29af35a1d8c8b87d6b8c2979df81e3d6e05c3243f38409d909b32",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-85386\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (111 tests) 651ms\n\n Test Files  1 passed (1)\n      Tests  111 passed (111)\n   Start at  09:51:12\n   Duration  1.54s (transform 338ms, setup 0ms, collect 554ms, tests 651ms, environment 0ms, prepare 82ms)\n\n(node:85393) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

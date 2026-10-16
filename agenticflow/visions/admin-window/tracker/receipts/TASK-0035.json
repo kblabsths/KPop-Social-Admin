@@ -1,0 +1,35 @@
+{
+ "id": "TASK-0035",
+ "created": "2026-09-04T03:16:29Z",
+ "green": true,
+ "git_head": "c4a3744df61fff59f658919557fcb36e048e953a",
+ "scope": [
+  "src/lib/edit/config.ts",
+  "src/lib/db/tables.ts",
+  "tests/offline/edit/config.test.ts",
+  "tests/offline/records/page.test.ts",
+  "tests/offline/absence",
+  "tests/live/residue.live.test.ts",
+  "tests/http/auth.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "0bcb4f9174c0fdb86d1711ee0fcdb8618f3faef482ab9199fd4ad063b0239a07",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/edit/config.test.ts tests/offline/records/page.test.ts tests/offline/absence",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-81744\n\n \u2713 |offline| tests/offline/edit/config.test.ts (51 tests) 323ms\n \u2713 |offline| tests/offline/absence/blank-cells.test.ts (10 tests) 198ms\n \u2713 |offline| tests/offline/records/page.test.ts (87 tests) 571ms\n \u2713 |offline| tests/offline/absence/in-window.test.ts (14 tests) 609ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (265 tests) 1226ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  364ms\n\n Test Files  5 passed (5)\n      Tests  427 passed (427)\n   Start at  20:16:26\n   Duration  2.41s (transform 1.57s, setup 0ms, collect 3.18s, tests 2.93s, environment 1ms, prepare 653ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/edit/config.test.ts tests/offline/records/page.test.ts tests/offline/absence\n(node:81818) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"\\\"walk_sandbox\\\"\" src/lib/db/tables.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"walk_sandbox\" src/lib/edit/config.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

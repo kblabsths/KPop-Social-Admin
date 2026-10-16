@@ -1,0 +1,20 @@
+{
+ "id": "TASK-0024",
+ "created": "2026-09-02T16:48:09Z",
+ "green": true,
+ "git_head": "684cee570b2197297bef621aed889a85ff5c3b8c",
+ "scope": [
+  "src/lib/gauges/pending-claims.ts",
+  "src/app/sources/page.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "6cb99dd6196aa10f5dd5824e1212dc6dca8dc15cb9e5bbecafcbc37868b76967",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-DIAL agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

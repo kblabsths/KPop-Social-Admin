@@ -1,0 +1,206 @@
+import type { ReactNode } from "react";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
+import { Badge, type Column, DataTable } from "@/components/ui";
+import type { ClaimLine } from "@/lib/claims/lines";
+import { orDash, relativeAge } from "@/lib/format";
+import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
+
+/**
+ * The claims themselves — campaign admin-window/TASK-0012.
+ *
+ * A row reads as one sentence: what is held, about which fact, from which
+ * source, how long it has waited, and — where the bucket has one — what it is
+ * waiting for. **An `awaiting_row` claim always names its
+ * `unmet_requirement`** (the view's own words: a missing NOT NULL column by
+ * its own name, `at least one linked performer`, or `curated domain`); a bare
+ * bucket name there is the defect that column exists to prevent (migration
+ * `20260901000004`).
+ *
+ * **A source is NAMED, never spelled as a uuid** (admin-window/BUG-0043): the
+ * cell says `ticketmaster` while its link still narrows by `source_id`, so one
+ * screen never carries two labels for one destination. An id the registry has
+ * no row for stays on screen verbatim, in the table's own mono `data` cell —
+ * the id is then the only true thing the app can say. That fallback is
+ * `sourceLabel`'s and only `sourceLabel`'s (`lib/sources/names.ts`), and since
+ * admin-window/BUG-0154 it answers a row whose name has no INK the same way;
+ * a label that arrives unreadable anyway draws the app's dash here rather than
+ * an anchor with nothing to click.
+ *
+ * **Every claim leads somewhere twice** (LOOK_AND_FEEL bar 10): to its SOURCE,
+ * and to the record where its fact's provenance is shown — each one click,
+ * each a real URL, both built by `src/lib/claims/filters.ts`. A claim whose
+ * record does not exist yet has no provenance link and says why in the same
+ * row, which is the honest half of that bar.
+ *
+ * It re-derives nothing: rows arrive narrowed and ordered BY THE DATABASE —
+ * `readClaimWindow` (`src/lib/db/claims.ts`) asks for the longest-waiting
+ * `CLAIM_WINDOW` of them and this component neither filters, sorts nor pages
+ * what it is handed. Machine identifiers render verbatim, in the table's mono
+ * `data` cells.
+ *
+ * A pure component: plain props, no fetching (ARCHITECTURE.md §4 rule 1).
+ * Nothing here settles anything — every control in this markup is a link.
+ *
+ * **`ClaimLine` is declared in `src/lib/claims/lines.ts`** since
+ * admin-window/TASK-0065, with every docstring it had here: the claims route
+ * handler must hand back rows shaped exactly as the first screen's, and a
+ * second copy of the shape is LESSONS 5. This file imports the type and
+ * re-exports it, so `@/components/claims` still carries the name for the
+ * importers that already ask it for one.
+ */
+export type { ClaimLine };
+
+/**
+ * The list's BOUND — campaign admin-window/BUG-0041.
+ *
+ * Rendering every row the view holds made the page a function of the backlog:
+ * 877 claims on staging rendered a 30,079px page with the pending-claims
+ * gauge's heading at y=29,486, so the gauge's position moved by tens of
+ * thousands of pixels as the resolver drained the queue — the operator
+ * relearnt where it sat every morning (LOOK_AND_FEEL, Interaction, "Repeat
+ * use").
+ *
+ * So the LIST is a window, in the app's existing idiom (`/cycles`, `/browse`,
+ * the four gauges): at most this many rows, the longest-waiting ones, with the
+ * cap and the number held stated on screen. **It bounds only what is drawn** —
+ * nothing above it re-derives a count from these rows, and the bucket table
+ * still counts the whole view under the current filters, so no figure on the
+ * page becomes a window aggregate wearing a total's clothes.
+ *
+ * 50, the same bound `/browse` puts on a list of records: at the ~33px per row
+ * this table measures, a full window is ~1,650px of list, so every section
+ * heading keeps a position the backlog cannot move by thousands of pixels.
+ *
+ * **Since admin-window/BUG-0138 it is also the `.limit()` the QUERY carries.**
+ * It used to be a slice taken in TypeScript off a complete read of the view,
+ * beside a `held` counted from the array that read returned; the read is a
+ * window now and `held` is a count read of its own — `readClaimCount`
+ * (`src/lib/db/claims.ts`) through `countRead`, which is `{ count: "exact" }`
+ * over `limit 0` and never a `head` request (`src/lib/db/result.ts`) — so this
+ * number is spelled ONCE — here — and the page hands it to the read and to the
+ * window line from this one declaration.
+ */
+export const CLAIM_WINDOW = 50;
+
+export function ClaimList({
+  rows,
+  label,
+  card,
+  line,
+}: {
+  rows: readonly ClaimLine[];
+  /** Accessible name for the table. */
+  label: string;
+  /** A CARD state — `Empty` or `NotProvisioned` — replacing the whole table. */
+  card?: ReactNode;
+  /** A LINE state — `ErrorLine` — inside the table, so the header stays put. */
+  line?: ReactNode;
+}) {
+  const columns: Column<ClaimLine>[] = [
+    {
+      key: "bucket",
+      label: "bucket",
+      cell: (row) => (
+        <span data-claim-bucket={row.bucket}>
+          <Badge>{row.bucket}</Badge>
+        </span>
+      ),
+    },
+    {
+      key: "fact",
+      label: "fact",
+      cell: (row) => (
+        <span
+          data-claim={row.observationId}
+          data-claim-domain={row.domain}
+        >{factKey(row.domain, row.field)}</span>
+      ),
+    },
+    {
+      key: "record",
+      label: "record",
+      cell: (row) =>
+        row.provenanceHref === null ? (
+          // No canonical row yet — and no invented link to one. The `waiting
+          // for` cell on this same row says what it is stuck on.
+          null
+        ) : (
+          <a
+            href={row.provenanceHref}
+            data-claim-provenance={row.observationId}
+            className={IN_PAGE_LINK}
+          >
+            {row.entityId}
+          </a>
+        ),
+    },
+    {
+      key: "source",
+      label: "source",
+      // **No anchor around nothing** (admin-window/BUG-0154). `sourceLabel` is
+      // what decides that an unnamed source is said as its id, and it is the
+      // only place that decides it — so this cell does not re-derive the label
+      // from `sourceId`; it only refuses to draw a link with nothing to read,
+      // and draws `lib/format.ts`'s one absence element inside the hook the
+      // suite addresses the row's source by. The same guard, spelled the same
+      // way, sits on the review item's own source cell
+      // (`components/review/evidence-cells.tsx`).
+      // "Unreadable" is the question `sourceLabel` itself asked of the
+      // registry — `hasVisibleContent`, the app's ONE definition of blank —
+      // and never `isAbsent`, whose dash branch answers a different question:
+      // whether a body is one of the app's OWN formatters' em dashes. Asked of
+      // a producer's LABEL it disagreed with the label rule, so a source the
+      // registry NAMES `—` lost its link here and was announced as no value
+      // (admin-window/BUG-0156; LESSONS 4).
+      cell: (row) =>
+        !hasVisibleContent(row.source) ? (
+          <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
+        ) : (
+          <a
+            href={row.sourceHref}
+            data-claim-source={row.sourceId}
+            className={IN_PAGE_LINK}
+          >
+            {row.source}
+          </a>
+        ),
+    },
+    {
+      key: "waiting",
+      label: "waiting",
+      align: "right",
+      cell: (row) => {
+        // Relative, with the absolute instant in the title (Voice bar 6). An
+        // unknown instant is the table's dash — never a zero age.
+        if (row.observedAt === null) return null;
+        const age = relativeAge(row.observedAt);
+        return <span title={age.title}>{age.text}</span>;
+      },
+    },
+    {
+      key: "requirement",
+      label: "waiting for",
+      // `null` goes to the cell as `null` so the table's own `orDash` draws
+      // the absence — one dash, defined once (`lib/format.ts`). Only
+      // `awaiting_row` carries a requirement, and it always does.
+      cell: (row) =>
+        row.unmetRequirement === null ? null : (
+          <span data-claim-requirement={row.unmetRequirement}>
+            {row.unmetRequirement}
+          </span>
+        ),
+    },
+  ];
+
+  if (card !== undefined) return <>{card}</>;
+
+  return (
+    <DataTable<ClaimLine>
+      columns={columns}
+      rows={line === undefined ? [...rows] : []}
+      rowKey={(row) => row.observationId}
+      label={label}
+      placeholder={line}
+    />
+  );
+}

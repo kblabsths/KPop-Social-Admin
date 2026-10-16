@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0062",
+ "created": "2026-09-03T23:34:28Z",
+ "green": true,
+ "git_head": "c90cf534686b3638fc1c659af27a88133bf6f0ba",
+ "scope": [
+  "tests/live/queues.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "92b3510c97628c32b4567acbc6ee98a87e266e09bf590b4ecfff2fe911e960f6",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=live tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-61464\n\n \u2713 |live| tests/live/queues.live.test.ts (7 tests) 4938ms\n   \u2713 the two queues against staging > renders the open decision count the database holds  965ms\n   \u2713 the two queues against staging > renders the open signal count the database holds  360ms\n   \u2713 the two queues against staging > renders every row the table holds, split between the two queues  514ms\n   \u2713 the filters against staging > returns exactly the matching items for every queue and status value  1701ms\n   \u2713 the filters against staging > returns exactly the matching items for every shape value  605ms\n   \u2713 the queue-health gauge against staging > renders each queue's open count over its own window  535ms\n\n Test Files  1 passed (1)\n      Tests  7 passed (7)\n   Start at  16:34:18\n   Duration  5.71s (transform 157ms, setup 32ms, collect 354ms, tests 4.94s, environment 0ms, prepare 106ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=live tests/live/queues.live.test.ts\n(node:61500) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

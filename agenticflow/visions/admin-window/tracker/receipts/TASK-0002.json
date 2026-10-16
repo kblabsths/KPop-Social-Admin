@@ -1,0 +1,51 @@
+{
+ "id": "TASK-0002",
+ "created": "2026-09-02T07:11:07Z",
+ "green": true,
+ "git_head": "49babddb6c0749f0a473e45df359e3a90a7c7d51",
+ "scope": [
+  "src/lib/db",
+  "tests/offline/db",
+  "tests/fixtures"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "8f18ea50cda8a965b7c9e0921744e411a034474a3cf7f7bdde4f38c1279b9f48",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/db",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-81481\n\n \u2713 |offline| tests/offline/db/client.test.ts (5 tests) 44ms\n \u2713 |offline| tests/offline/db/layering.test.ts (14 tests) 58ms\n \u2713 |offline| tests/offline/db/result.test.ts (31 tests) 9ms\n\n Test Files  3 passed (3)\n      Tests  50 passed (50)\n   Start at  00:11:07\n   Duration  339ms (transform 109ms, setup 0ms, collect 167ms, tests 111ms, environment 0ms, prepare 201ms)\n\n(node:81555) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"grep -q not_provisioned src/lib/db/result.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q PGRST205 src/lib/db/result.ts && grep -q 42P01 src/lib/db/result.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q pending_claims src/lib/db/tables.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rq STAGING_ src\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

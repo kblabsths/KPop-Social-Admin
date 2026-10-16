@@ -1,0 +1,22 @@
+{
+ "id": "BUG-0089",
+ "created": "2026-09-09T04:54:03Z",
+ "green": true,
+ "git_head": "ad86c19760dda6d96ca883264e41ffa3bf624009",
+ "scope": [
+  "src/components/review/close/actions.ts",
+  "src/lib/verdict/decision.ts",
+  "tests/offline/review-item/signal-actions.test.ts",
+  "tests/offline/verdict/decision.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "49a800bd4ece992537f3fb9a897933700e8d74029c91e7135e9a124c9e345e72",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/verdict/decision.test.ts tests/offline/review-item/signal-actions.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-28529\n\n \u2713 |offline| tests/offline/verdict/decision.test.ts (67 tests) 39ms\n \u2713 |offline| tests/offline/review-item/signal-actions.test.ts (27 tests) 35ms\n\n Test Files  2 passed (2)\n      Tests  94 passed (94)\n   Start at  21:54:02\n   Duration  1.03s (transform 268ms, setup 0ms, collect 625ms, tests 73ms, environment 0ms, prepare 353ms)\n\n(node:28627) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

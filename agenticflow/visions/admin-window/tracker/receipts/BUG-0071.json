@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0071",
+ "created": "2026-09-04T04:18:42Z",
+ "green": true,
+ "git_head": "665d28aa3049daa6199028268b7a893409985b09",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md",
+  "agenticflow/tracker/for-human/TASK-0034.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "c8367b5e3bb5421a3ce286dfa62944713df2554f124bfd2d244d8b4f6b55e113",
+ "commands": [
+  {
+   "cmd": "! grep -q \"there is no walk-write surface at all\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"/records/walk_sandbox/00000000-0000-4000-8000-000000000001\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"reset-sandbox\" agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

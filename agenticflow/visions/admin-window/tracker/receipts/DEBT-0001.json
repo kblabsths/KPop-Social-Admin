@@ -1,0 +1,47 @@
+{
+ "id": "DEBT-0001",
+ "created": "2026-09-02T21:54:16Z",
+ "green": true,
+ "git_head": "c001702ba99c21a6038bb71f5b45d6b0d697ab74",
+ "scope": [
+  "src/lib/records/routes.ts",
+  "src/lib/claims/filters.ts",
+  "src/lib/browse/rows.ts",
+  "src/components/records/fields.ts",
+  "src/components/browse/browse-table.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline",
+  "tests/live/browse.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "d98830b7d9ac1203dd4e8d18704c50909844d7f170029e0af17c8e6d70f6bf67",
+ "commands": [
+  {
+   "cmd": "bash -c 'test \"$(grep -rlE \"[\\`]/records/[^\\`]*[$][{]\" src | wc -l)\" -eq 1'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"export function recordHref\" src/lib/records/routes.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records tests/offline/browse tests/offline/claims tests/offline/queues",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-29104\n\n \u2713 |offline| tests/offline/records/provenance.test.ts (13 tests) 33ms\n \u2713 |offline| tests/offline/browse/views.test.ts (52 tests) 37ms\n \u2713 |offline| tests/offline/browse/browse-read.test.ts (27 tests) 18ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 28ms\n \u2713 |offline| tests/offline/records/submit.test.ts (11 tests) 9ms\n \u2713 |offline| tests/offline/records/routes.test.ts (10 tests) 40ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (15 tests) 7ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (19 tests) 11ms\n \u2713 |offline| tests/offline/browse/page.test.ts (30 tests) 155ms\n \u2713 |offline| tests/offline/records/page.test.ts (53 tests) 432ms\n \u2713 |offline| tests/offline/queues/page.test.ts (74 tests) 1254ms\n \u2713 |offline| tests/offline/claims/page.test.ts (69 tests) 2361ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  318ms\n\n Test Files  12 passed (12)\n      Tests  391 passed (391)\n   Start at  14:53:56\n   Duration  3.63s (transform 1.51s, setup 0ms, collect 4.82s, tests 4.38s, environment 2ms, prepare 1.17s)\n\n(node:29117) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "id": "TASK-0012",
+ "created": "2026-09-02T14:22:46Z",
+ "green": true,
+ "git_head": "591ba056e1bd94b4a068200a81a2008d652f99d3",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "src/lib/db/claims.ts",
+  "src/components/claims",
+  "tests/offline/claims",
+  "tests/live/claims.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "e966ac0bf5300ad02b9189bc3b012abe97832158552a9289e575d495f8ed35e0",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "\u25b2 Next.js 16.2.2 (Turbopack)\n- Environments: .env\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.1s\n  Running TypeScript ...\n  Finished TypeScript in 3.2s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 156ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u25cb /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u25cb /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-48494/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:48550) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/claims",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-48494\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (15 tests) 5ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 17ms\n \u2713 |offline| tests/offline/claims/page.test.ts (59 tests) 2024ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab  1069ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the standing tab  399ms\n\n Test Files  3 passed (3)\n      Tests  92 passed (92)\n   Start at  07:22:43\n   Duration  2.68s (transform 226ms, setup 0ms, collect 592ms, tests 2.05s, environment 0ms, prepare 212ms)\n\n(node:48563) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"grep -q in_window src/lib/db/claims.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c '! grep -rn in_window src/app src/components | grep -qvE \"^[^:]*:[0-9]+:[[:space:]]*(\\*|//|/\\*)\"'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

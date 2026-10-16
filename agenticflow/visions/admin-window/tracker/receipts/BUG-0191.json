@@ -1,0 +1,45 @@
+{
+ "id": "BUG-0191",
+ "created": "2026-09-11T12:51:59Z",
+ "green": true,
+ "git_head": "6ebac8fd946a8cebfe170b9c9da9604de5636dd5",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "97546569245375faa65938eaf646fde51afa11861fab3d20e40a918e19a2c767",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims tests/offline/gauges-ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-2290\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 12ms\n \u2713 |offline| tests/offline/claims/read.test.ts (45 tests) 66ms\n \u2713 |offline| tests/offline/gauges-ui/cards.test.ts (32 tests) 41ms\n \u2713 |offline| tests/offline/claims/page.test.ts (214 tests) 5420ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  387ms\n\n Test Files  4 passed (4)\n      Tests  339 passed (339)\n   Start at  05:51:35\n   Duration  6.19s (transform 636ms, setup 0ms, collect 1.69s, tests 5.54s, environment 0ms, prepare 223ms)\n\n(node:2297) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q \"claims no filter above when the only chip set narrows this table by nothing\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"it.fails(\\\"claims no filter above when the only chip set narrows this table by nothing\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rn 'hasChipNarrowing(' src/app/claims/page.tsx src/lib/claims/filters.ts | grep -v 'export function hasChipNarrowing' | wc -l)\" -eq 2",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

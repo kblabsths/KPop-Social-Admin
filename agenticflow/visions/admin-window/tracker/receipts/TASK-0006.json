@@ -1,0 +1,51 @@
+{
+ "id": "TASK-0006",
+ "created": "2026-09-02T08:09:55Z",
+ "green": true,
+ "git_head": "b7e9cc0179adc43cd5d348196d97e1159187b329",
+ "scope": [
+  "src/lib/review",
+  "src/lib/db/review-items.ts",
+  "tests/offline/review"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 0,
+ "tree_hash": "70ccf4ba4d5161bcc0eaabd2ee10ed13e1cb8569e9423b15aab09b01e9f25d29",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/review",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-34597\n\n \u2713 |offline| tests/offline/review/shapes.test.ts (38 tests) 14ms\n \u2713 |offline| tests/offline/review/one-place.test.ts (8 tests) 25ms\n \u2713 |offline| tests/offline/review/review-items.test.ts (19 tests) 7ms\n\n Test Files  3 passed (3)\n      Tests  65 passed (65)\n   Start at  01:09:55\n   Duration  392ms (transform 140ms, setup 0ms, collect 244ms, tests 46ms, environment 0ms, prepare 234ms)\n\n(node:35138) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"test -f src/lib/review/shapes.ts && grep -q entity_link_source_pattern src/lib/review/shapes.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q decision src/lib/review/shapes.ts && grep -q signal src/lib/review/shapes.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rq settle_review_item src\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rl verdicts src | grep -qv '^src/lib/db/tables.ts$'\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

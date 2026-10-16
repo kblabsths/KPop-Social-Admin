@@ -1,0 +1,37 @@
+{
+ "id": "TASK-0058",
+ "created": "2026-09-09T03:25:29Z",
+ "green": true,
+ "git_head": "c9cde21a87121499f4881a383fb94e2951c42592",
+ "scope": [
+  "src/app/queues/page.tsx",
+  "src/lib/db/verdict.ts",
+  "src/components/queues/verdict-log.tsx",
+  "src/components/queues/tabs.tsx",
+  "src/lib/review/queue-filters.ts",
+  "tests/offline/queues/verdict-log.test.ts",
+  "tests/offline/queues/page.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/live/queues.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 9,
+ "tree_hash": "9a36c25e156449f20964b0385d359ba3f7e0721e02e74583f76585c467e0b555",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/queues/verdict-log.test.ts tests/offline/queues/page.test.ts tests/offline/absence/pages.test.ts tests/offline/shell/shell.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-27555\n\n \u2713 |offline| tests/offline/shell/shell.test.ts (23 tests) 56ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (18 tests) 136ms\n \u2713 |offline| tests/offline/queues/page.test.ts (88 tests) 1410ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (269 tests) 2241ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  346ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  839ms\n\n Test Files  4 passed (4)\n      Tests  398 passed (398)\n   Start at  20:25:19\n   Duration  3.26s (transform 1.18s, setup 0ms, collect 2.34s, tests 3.84s, environment 1ms, prepare 423ms)\n\n(node:27679) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-27555\n\n \u2713 |live| tests/live/queues.live.test.ts (9 tests) 5005ms\n   \u2713 the two queues against staging > renders the open decision count the database holds  761ms\n   \u2713 the two queues against staging > renders the open signal count the database holds  396ms\n   \u2713 the two queues against staging > renders every row the table holds, split between the two queues  371ms\n   \u2713 the filters against staging > returns exactly the matching items for every queue and status value  1881ms\n   \u2713 the filters against staging > returns exactly the matching items for every shape value  501ms\n   \u2713 the queue-health gauge against staging > renders each queue's open count over its own window  554ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  20:25:23\n   Duration  5.71s (transform 182ms, setup 31ms, collect 341ms, tests 5.01s, environment 0ms, prepare 118ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/queues.live.test.ts\n(node:27775) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

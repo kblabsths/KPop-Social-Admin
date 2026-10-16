@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0019",
+ "created": "2026-09-02T12:45:47Z",
+ "green": true,
+ "git_head": "b98367ff14d4b633a02b2ef7bafee60e9446d13b",
+ "scope": [
+  "src/components/gauges",
+  "tests/offline/gauges-ui"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d5808f74d35367364d9265a9caf915b840a5259bcf46f7aa3e00c676efc0578b",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/gauges-ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-25686\n\n \u2713 |offline| tests/offline/gauges-ui/cards.test.ts (28 tests) 35ms\n\n Test Files  1 passed (1)\n      Tests  28 passed (28)\n   Start at  05:45:44\n   Duration  493ms (transform 109ms, setup 0ms, collect 215ms, tests 35ms, environment 0ms, prepare 59ms)\n\n(node:25693) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

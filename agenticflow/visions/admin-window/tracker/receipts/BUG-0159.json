@@ -1,0 +1,26 @@
+{
+ "id": "BUG-0159",
+ "created": "2026-09-10T17:50:25Z",
+ "green": true,
+ "git_head": "6f3480c44fb9409fb6919ad60726a05c372648ad",
+ "scope": [
+  "src/components/sources/source-chips.tsx",
+  "src/app/sources/page.tsx",
+  "tests/offline/sources/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "86c6b08c2cb03ff19eeb4954d4f7025c40cde53854c56e607df56c8b63219300",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/sources/page.test.ts -t \"names a chip whose registry row names\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-91077\n\n \u2713 |offline| tests/offline/sources/page.test.ts (69 tests | 66 skipped) 52ms\n\n Test Files  1 passed (1)\n      Tests  3 passed | 66 skipped (69)\n   Start at  10:50:22\n   Duration  820ms (transform 242ms, setup 0ms, collect 464ms, tests 52ms, environment 0ms, prepare 52ms)\n\n(node:91084) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/sources/page.test.ts tests/offline/sources/names.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-91077\n\n \u2713 |offline| tests/offline/sources/names.test.ts (14 tests) 30ms\n \u2713 |offline| tests/offline/sources/page.test.ts (69 tests) 726ms\n\n Test Files  2 passed (2)\n      Tests  83 passed (83)\n   Start at  10:50:24\n   Duration  1.46s (transform 325ms, setup 0ms, collect 600ms, tests 756ms, environment 0ms, prepare 121ms)\n\n(node:91107) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

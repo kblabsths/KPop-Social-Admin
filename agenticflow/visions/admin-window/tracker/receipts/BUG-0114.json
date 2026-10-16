@@ -1,0 +1,23 @@
+{
+ "id": "BUG-0114",
+ "created": "2026-09-09T10:58:08Z",
+ "green": true,
+ "git_head": "f3ff5a3c6c9fedabe2e78bbaf8213e67412ebdee",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/components/cycles/adapter-runs.tsx",
+  "src/app/cycles/page.tsx",
+  "tests/offline/runs/page.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "7cbad304e1522c46cb70638e688ecf1d222614ce3b1d27c9ce37fcfba7fa7a3f",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/runs/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22081\n\n \u2713 |offline| tests/offline/runs/page.test.ts (32 tests) 707ms\n\n Test Files  1 passed (1)\n      Tests  32 passed (32)\n   Start at  03:58:06\n   Duration  1.55s (transform 238ms, setup 0ms, collect 430ms, tests 707ms, environment 0ms, prepare 194ms)\n\n(node:22088) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

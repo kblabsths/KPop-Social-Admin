@@ -1,0 +1,31 @@
+{
+ "id": "TASK-0021",
+ "created": "2026-09-02T16:48:08Z",
+ "green": true,
+ "git_head": "684cee570b2197297bef621aed889a85ff5c3b8c",
+ "scope": [
+  "src/lib/db/client.ts",
+  "tests/live",
+  "agenticflow/docs/SERVICES.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "521211b88b84161e673bf127cdfb1e5462977710d5b59602896137f2bac48f98",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-ENV agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rn STAGING_SUPABASE_DB_URL src tests | grep -qvE \\\"^[^:]*:[0-9]+:[[:space:]]*(\\*|//|/\\*)\\\"\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rn \\\"\\\\bfrom .pg.\\\\|require(.pg.)\\\\|postgres.js\\\" src tests\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

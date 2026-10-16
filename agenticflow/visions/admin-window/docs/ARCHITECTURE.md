@@ -1,0 +1,2796 @@
+# ARCHITECTURE — kspace Admin, campaign `admin-window`
+
+Sole writer: the architect. **The human reviews this file instead of reading
+code**, so every amendment carries its why in the History section at the
+bottom.
+
+Derived 2026-09-01 from the human's frozen snapshots in `contracts/` — read in
+full that day: `admin-observability.md` (**the spec**, §N below),
+`admin-build.md` (**the acceptance doc**, ground rules + tests N),
+`resolver.md`, `data-model.md`, `entity-linking.md` — plus schema truth read
+from `/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/supabase/migrations/`
+and a code walk of `src/`. Runtime facts live in `STACK.md`.
+
+**Where this file and a contract differ, the contract is right.** A silence
+this file appears to fill without a citation is a bug in this file: report it,
+do not follow it.
+
+---
+
+## 1. The repo boundary (read this before anything else)
+
+Three sibling git repos share one Supabase project (root `CLAUDE.md`). This
+campaign runs in **`kspace Admin`** and touches nothing else.
+
+| repo | absolute path | owns | this campaign's policy |
+| --- | --- | --- | --- |
+| **kspace Admin** | `/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin` | this app; `admin_allowed_emails` + `user_roles` migrations | the campaign's whole write surface |
+| **kspace Scraper** | `/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper` | **the database schema** (`supabase/migrations/`), the registries, the resolver, the adapters | `run.yaml` `sibling_dirs` says `write_by_size` — **but see the freeze below** |
+| kspace (mobile) | `/Users/ben-m4/Desktop/Coding/KPOP/kspace` | the Expo app | not touched, not read, not referenced |
+
+### 1.1 The scraper repo is FROZEN for this campaign
+
+`/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/agenticflow/tracker/RUNNING`
+**exists** (checked 2026-09-01; its most recent commits are the same day). The
+kit's policy and spec §10 both say: *"everything, whatever its size, while a
+campaign is running in the scraper repo, is a handoff."* So for the whole of
+M1, treat the declared `write_by_size` as **`read_only`**:
+
+- **Read it freely** — migrations are the schema truth every page depends on.
+- **Write nothing.** Any needed change there — a migration, a registry value, a
+  grant, a typo — is a **blocked handoff ticket** carrying the complete
+  artifact: exact file content, target path, apply command, so Ben installs it
+  in one move.
+- **No ticket's `touch_scope` may name a scraper path.** The milestone-close
+  cross-directory report checks exactly that (M1 EC14).
+- Before any handoff is written, re-check the `RUNNING` file: if it is gone,
+  the policy relaxes back to `write_by_size` for genuinely minor + necessary +
+  reversible edits, and only the architect may make that call, in writing, on
+  the ticket.
+- **Admin-side workaround code written to dodge a scraper-side edit is
+  forbidden** (spec §10). Blocked and honest beats built and wrong.
+
+Expected handoffs in this campaign: **the two §9 migrations (`verdicts`,
+`settle_review_item`) in M2** — and nothing else in M1, which carries zero
+schema.
+
+### 1.2 No relative parent paths. Ever.
+
+**`../` must not appear in any import, path literal, config value, fixture
+path, or test helper in product code or tests.** Builds run in worktrees under
+`agenticflow/.worktrees/<branch>/`, where `../` resolves *inside this repo*,
+not beside it — silently, with no error, reading the wrong thing or nothing.
+
+- Sibling knowledge is consumed **through the database**, which is where the
+  repos actually share it (spec §10: "knowledge the repos share is consumed
+  where it is shared — domain value schemas and source state are rows Admin
+  already reads; nothing is re-encoded from scraper YAML by hand").
+- If a fact lives only in scraper YAML and not in a row, that is **a flagged
+  gap and a blocked ticket, not a silent copy** (spec §10). The per-source
+  `resolver.stuck_pattern` dial is exactly this case — see ASK-ticket §12.4.
+- **What the ban is actually about: leaving your own product tree.** No
+  relative path — in an import, a config value, a fixture path or a test
+  helper — may resolve outside `src/` (product code) or outside `tests/`
+  (tests). That is the failure this rule exists for and it is absolute.
+  Relative imports that stay *inside* the tree are fine and are what landed:
+  `src/lib/db/review-items.ts` imports `../review/shapes`, and
+  `src/lib/gauges/*.ts` import `../db/result`. Neither is a defect and neither
+  is to be churned. The `@/*` alias (`tsconfig.json` `paths`) is available and
+  is the spelling to use from `src/app/**` and `src/components/**`, which are
+  deep enough that counting `../` is where mistakes live. Within-directory
+  `./x` is always fine.
+  *(Amended 2026-09-02: as first written this bullet banned `../` in every
+  import, which two landed modules and six in-flight ones already contradicted
+  — see the Common violations ledger. A rule the code disproves gets a builder
+  to refactor working code for nothing.)*
+- The `contracts/` directory is **in this repo and tracked in git**, so it is
+  present in every worktree: cite it as `contracts/<file>.md`.
+- **A ticket's stored `## Checks` obey this rule too, and two spellings of it
+  are VACUOUS rather than wrong** (amended 2026-09-12, architect, promoted at
+  count 2 from admin-window/BUG-0209's QA residual and admin-window/BUG-0218).
+  `receipt.py` runs every check in a DETACHED WORKTREE at HEAD under
+  `agenticflow/.worktrees/`, so: (1) `git -C "../kspace Scraper" …` finds no
+  such directory, `git` fails, the pipeline prints nothing and
+  `test "$(… | wc -l)" -eq 0` exits 0 **whatever the sibling holds** — a check
+  that can never be red; and (2) `git status --porcelain -- src tests` as a
+  "nothing else changed" proxy is always empty there, for the same reason. The
+  sibling is reached by its ABSOLUTE path (`tests/offline/handoff/*` already
+  does, and admin-window/TASK-0080 keeps it that way); a diff is asserted as
+  `git diff --name-only <merge-base>..HEAD -- src tests`, which names the
+  ticket's own commits. Dry-run every check on the tree it will run on and read
+  the number it returns.
+
+## 2. What survives the rebuild, and what dies
+
+The acceptance doc's ground rule is absolute: **"the build owns `src/`
+wholesale. Every existing surface is deprecated reference — precedent for
+nothing."**
+
+**Survives, untouched in behavior** (spec §3 — changing any of these is a
+design change, not a build choice):
+
+- `src/middleware.ts`, `src/lib/auth.ts`, `src/lib/admin.ts`,
+  `src/lib/supabase.ts`, `src/app/api/auth/[...nextauth]/route.ts`,
+  `src/app/api/health/route.ts`, `src/app/login/page.tsx`,
+  `railway.toml`, `supabase/migrations/*` (two files, frozen at two).
+
+**Deleted outright** — page, route, and any module whose only consumer was one
+of them (M1 EC2):
+
+- `src/app/page.tsx` (Overview) — the path survives as the **Dashboard**, the
+  file is rewritten.
+- `src/app/analytics/`, `src/app/database/`, `src/app/data-management/**`
+  (including `completeness/`), `src/app/api/admin/events/[id]/route.ts`,
+  `src/app/api/admin/groups/[id]/route.ts`,
+  `src/app/api/admin/idols/[id]/route.ts`,
+  `src/app/api/admin/catalog-search/route.ts`,
+  `src/app/components/AdminNav.tsx`.
+- `src/app/layout.tsx` is rewritten: the global "Events: STALE/FRESH" strip and
+  the `events` query inside the root layout **go away** (LOOK_AND_FEEL: "there
+  is no global status strip — the Dashboard owns health"; and a data read in
+  the root layout would take every page down when a table is absent —
+  acceptance test 9).
+- `src/app/components/EditableCell.tsx` **re-earns its place** and moves to
+  `src/components/EditableCell.tsx` (LOOK_AND_FEEL: "the click-to-edit cell
+  survives from the old app and re-earns its place"). It is the only old
+  component that does.
+
+**Nothing is kept "just in case."** A deprecated page left as dead code fails
+M1 EC2.
+
+## 3. Module map
+
+```
+next.config.ts                  the BUILD HOST (§4 rule 8): imports
+                                EDITABLE_TABLES from lib/edit/config.ts and
+                                rewrites an unmapped /records URL (BUG-0017)
+src/
+  middleware.ts                 UNCHANGED — the gate over every route
+  lib/
+    auth.ts  admin.ts  supabase.ts        UNCHANGED — sign-in, allowlist, service-role client
+    db/
+      client.ts        getDbClient(): the ONE seam that reads env and builds the client
+      result.ts        DbResult<T> — the ok / not_provisioned / error union (§4)
+      tables.ts        the table + view NAME constants; nothing else spells them
+      dashboard.ts     the Dashboard's reads
+      review-items.ts  queue lists, filters, counts
+      review-item.ts   one item + its evidence, canonical value and provenance
+      claims.ts        pending_claims buckets, filters, standing subset
+      sources.ts       sources state rows (+ last run, by source NAME)
+      cycles.ts        resolution_runs
+      runs.ts          the adapter framework's runs
+      browse.ts        the recent-events view's query + its provenance join
+      records.ts       one canonical record for the edit surface, + the direct update
+      gauges.ts        the six gauges' bounded windows (one file, one per read)
+      verdict.ts       the settle path's reads and the verdict log
+      paging.ts        the server side of a paged read: the bound, the window, the refusal (M3)
+      schema.ts        PostgREST's own schema description — is this FUNCTION installed (§9.2, M3)
+    review/            LEAF: shapes.ts (shape -> kind, ordering, predicates), queue-filters.ts
+    browse/            LEAF: rows.ts (row shaping), views.ts (the column sets)
+    claims/            LEAF: filters.ts (bucket + source narrowing)
+    cycles/            LEAF: state.ts (a cycle's state, from its own row)
+    records/           LEAF: provenance.ts, routes.ts (`recordHref` — the ONE record URL)
+    sources/           LEAF: names.ts (a source's display name); routes.ts — the
+                       `/sources`, `/queues?source_id=` and
+                       `/cycles?source=` URLs, spelled once (BUG-0141)
+    url/               LEAF: what a REQUEST VALUE means, for every route.
+                       dropped-params.ts — the ONE "parameters this page did
+                       not apply" rule; `/claims` and `/queues` both render it
+                       from here, never from a copy (BUG-0141, common violation 9).
+                       narrowing.ts — the two-fact rule (DEBT-0008).
+                       spellable.ts — the ONE allowlist for a URL value inside
+                       a sentence this app wrote (BUG-0153).
+                       text.ts — the ONE derivation of a free-text facet value
+                       (`canonicalUrlText`) and the ONE ends-only ink-padding
+                       strip (`trimInkPadding`, which `canonicalRecordId` also
+                       calls). IN FLIGHT under BUG-0155 — the only forward
+                       entry in this map; everything else here is what the
+                       tree holds
+    verdict/           LEAF: decision.ts — the decision envelope (§9.2), the app's
+                       ONE definition of visible content, and `ADMIN_SOURCE`.
+                       Imports nothing; `lib/format.ts`, `lib/claims/filters.ts`
+                       and `lib/db/verdict.ts` all consume it (§4 rule 7)
+    paging/            LEAF: bounds.ts (what a press may ask for), machine.ts
+                       (the client driver: what is held, what to ask next) — M3
+    account/           LEAF: authored.ts — who wrote each half of a rendered account
+    order/             LEAF: newest-first.ts — the one arrival order
+    gauges/
+      gauge.ts         the window/figure shapes every gauge returns
+      cycle-health.ts  resolution-latency.ts  pending-claims.ts
+      queue-health.ts  standing-disagreements.ts  settled-values.ts
+      index.ts         the barrel the pages import the six through
+    edit/
+      config.ts        THE ONE hand-written {table -> editable columns} map (§9)
+    format.ts          relative ages, absolute UTC timestamps, thousand separators, the null dash
+    supabase.ts        the SIGN-IN path's service-role client (§2 carry-over):
+                       `admin.ts` and `auth.ts` import it. The one ruled
+                       exemption to §4 rule 3 — see that rule.
+  components/
+    ui/                Page, Section, DataTable, StatCard, Badge, Chip, Button,
+                       Loading, Empty, NotProvisioned, ErrorLine, StateOf,
+                       WindowLine, MicroLabel/Eyebrow, cx, DroppedParamsLine.
+                       **No identifier primitive** — §11's mono-identifier rule
+                       is hand-spelled 44 times across 24 files instead
+                       (DEBT-0011; structure walk, M2)
+    EditableCell.tsx   the one old component that re-earned its place (§2), at
+                       the components root and PascalCase for that reason (§11)
+    edit-cell-layout.ts  the inline edit's placement rule (BUG-0101/0104/0105)
+    edit-refusal.ts      the refusal's two halves — the database's words and the
+                       app's (BUG-0098/0103). Both import nothing; they sit at
+                       the components root because the edit surface's two
+                       widgets (`EditableCell`, `records/entity-picker`) share
+                       them and neither owns the other (structure walk, M2)
+    gauges/            the gauge cards (figure, trend table, distribution, state)
+    evidence/          EvidencePair — the app's signature block (LOOK_AND_FEEL)
+    shell/             the frame: nav items + the sidebar/content shell
+    browse/  claims/  queues/  records/  review/
+                       one directory per page, holding that page's presentation
+                       (§5: the page reads and shapes; components render).
+                       `/cycles` and `/sources` have none yet — DEBT-0004.
+  app/
+    layout.tsx         shell: sidebar of six text labels, sign-out. NO data reads.
+    globals.css        Tailwind 4 @theme — the design tokens (§7)
+    page.tsx                              /                     Dashboard
+    queues/page.tsx                       /queues               the two queues
+    queues/[reviewItemId]/page.tsx        /queues/<id>          item detail
+    claims/page.tsx                       /claims               buckets + standing tab
+    sources/page.tsx                      /sources              source state + per-source trends
+    cycles/page.tsx                       /cycles               cycles & runs
+    browse/page.tsx                       /browse               recent events
+    records/[table]/[id]/page.tsx         /records/groups/<id>  the edit surface
+    api/admin/records/[table]/[id]/route.ts   PATCH — the one edit route
+    login/  api/auth/  api/health/        UNCHANGED
+tests/
+  offline/**/*.test.ts        the default suite; no network, ever
+  isolated/**/*.test.ts       the second offline project (`npm test` runs both)
+  live/**/*.live.test.ts      staging; refuses when the STAGING names are unset
+  http/**/*.http.test.ts      builds + starts the app; auth redirects, bundle scan
+  handoff/**/*.test.ts        OPT-IN fifth project (`npm run test:handoff`): the guards
+                              that READ `../kspace Scraper`. Outside `npm test` and
+                              outside `ci_command` (§10, M3/TASK-0080)
+  walk/                       NOT a test project — the walk agents' two node tools (§10)
+  fixtures/                   captured PostgREST response shapes (offline stubs), plus
+                              the shared builders every test imports (client-props.ts:
+                              the props a client boundary may carry — BUG-0226)
+```
+
+## 4. Dependency direction — one way, no exceptions
+
+```
+next.config.ts  ->  lib/edit/config.ts                   (the BUILD HOST)
+
+app/**          ->  components/**        ->  (nothing)
+app/**          ->  lib/**
+lib/gauges/**   ->  lib/db/**            ->  @supabase/supabase-js
+
+                    everything above     ->  lib/<leaf>/**  ->  (nothing)
+
+<leaf> = the PURE DOMAIN LEAVES, the bottom of the app:
+         lib/review/**, lib/browse/**, lib/claims/**, lib/cycles/**,
+         lib/records/**, lib/sources/**, lib/url/**, lib/verdict/**,
+         lib/order/**, lib/paging/**, lib/format.ts, lib/edit/config.ts
+         (a leaf may import a leaf — rule 7, second paragraph)
+         (the EXECUTABLE list is `LEAF_MODULES` in
+          tests/offline/db/layering.test.ts — same set, one is the
+          documentation of the other; amended 2026-09-10, see History)
+```
+
+1. **`components/**` never imports from `lib/db/**` and never fetches.** A
+   component takes plain props and returns markup. This is what makes every
+   surface testable without a database.
+
+   **One exception, added 2026-09-10 (architect, M3), and it is a door with a
+   frame around it:** a `"use client"` component **named as a paging control**
+   may issue `fetch` — to **this app's own paging route handler under
+   `src/app/api/admin/**`, by a relative path, and to nothing else**. It may
+   not import `lib/db/**`, may not import `@supabase/supabase-js`, may not read
+   `process.env`, and may not reach any other origin: the service-role client
+   stays server-side, which is what `tests/http/**`'s bundle scan already
+   grades. The fetch is a **two-line binding** to a pure driver in
+   `src/lib/paging/**` — the decision of whether to issue a request, what bound
+   it carries, and what happens to the answer lives in a directiveless module
+   the offline suite drives directly with a recording stub (there is no DOM in
+   this suite; a click handler that owns its own logic cannot be tested here at
+   all, and that is why the logic is not in it). Every other component in this
+   repo still takes plain props and fetches nothing, and no component of any
+   kind reaches a database.
+2. **Only `lib/db/**` imports `@supabase/supabase-js`.** A page that builds its
+   own client is a defect.
+3. **Only `lib/db/client.ts` reads `process.env`** for database credentials.
+   One seam, one file — the env question (§12.1) changes this file and nothing
+   else. **One exemption, by ruling and not by oversight** (recorded here at
+   the M1 structure walk, 2026-09-03, because rule 3 as written read as
+   absolute while the tree has always held a second reader): `src/lib/supabase.ts`
+   is the pre-campaign service-role client that `lib/admin.ts` and `lib/auth.ts`
+   — the UNCHANGED sign-in path §2 carries over — import. It reads
+   `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` and builds its own client. The
+   exemption is named, and only named, in `CARRIED_OVER` in
+   `tests/offline/db/layering.test.ts`, which is a ratchet: every entry must
+   still exist, and any NEW second reader reddens. Nothing the campaign writes
+   may import it — the window's reads go through `lib/db/client.ts`.
+4. **Only `lib/db/tables.ts` spells a table or view name.** A page containing
+   the literal `"review_items"` is a defect; a typo'd name must be one grep
+   away, and the not-provisioned message must name the same string the query
+   used.
+5. `lib/**` never imports from `app/**` or `components/**`.
+6. **No `src/app/components/`.** Components live at `src/components/`.
+7. **Pure domain leaves sit below `lib/db/**`, not above it.** A leaf holds
+   the vocabulary, the row interfaces it reasons about, and pure functions
+   over rows. It imports **nothing that can reach a database** — not
+   `lib/db/**`, not `@supabase/supabase-js`, not `process.env`. `lib/db/**`
+   imports the leaf; **the leaf never imports `lib/db/**` back, not a value
+   and not a type.** A type-only import erases at runtime, but it still writes
+   a directory-level cycle into this contract, and the day someone widens it
+   to a value import the cycle is real with nothing to catch it. A row type
+   both sides need is **declared in the leaf** — which is what
+   `ReviewItemRow` in `lib/review/shapes.ts` already does.
+   `lib/gauges/**` is not a leaf: a gauge fetches its own bounded window
+   through `lib/db/**` (§8), which is the arrow as drawn.
+
+   **A leaf may import a leaf, and the leaf layer is a DAG** (ruled at the M2
+   structure walk, 2026-09-09 — the diagram's `lib/<leaf>/** -> (nothing)`
+   read as absolute while the tree has held leaf-to-leaf edges since M2, and
+   they are the shape this contract wants, not a violation). The one rule
+   that matters is the one already written above — a leaf reaches nothing
+   that can reach a database — and an edge between two leaves cannot break
+   it. What the edge buys is the opposite of drift: `visibleContent` /
+   `hasVisibleContent` in `lib/verdict/decision.ts` is the app's ONE
+   definition of "is there anything here", and `lib/format.ts` (the null
+   dash) and `lib/claims/filters.ts` (the dropped-parameter line) both
+   import it rather than each answering the question again. Four M2 bugs —
+   BUG-0089, BUG-0095, BUG-0127, BUG-0136 — are that question answered
+   twice, and BUG-0137's ruling is what happens when one shared predicate
+   answers two DIFFERENT questions. So: **no cycles**, at any depth,
+   including type-only imports (the reason rule 7's first paragraph bans the
+   `lib/db/**` back-edge applies unchanged between leaves); and a leaf that
+   another leaf imports states in its docstring which question it owns, so
+   the next reader widens it for that question or not at all.
+
+   **The absence GLYPH lives in the leaf as well** (ruled 2026-09-11,
+   admin-window/BUG-0184). `EM_DASH` and `isAbsentText` — "is this string
+   one of the app's spellings of NO VALUE", which is `visibleContent(t)`
+   being `""` or being the dash — are declared in `lib/verdict/decision.ts`
+   beside `visibleContent`; `lib/format.ts` **re-exports** the constant and
+   delegates `isAbsent`'s string arm to the predicate, so its whole public
+   surface is unchanged and the two answers cannot diverge. Two rules
+   follow, and both are what the ruling is for. **The character is spelled
+   once**: a string literal whose whole content is the em dash appears in
+   exactly one file of `src/` (pinned in `tests/offline/verdict/
+   decision.test.ts` over the comment-stripped source — the dash inside an
+   authored sentence is punctuation, not a spelling), because a leaf that
+   cannot reach `format.ts` would otherwise retype it, which is the fourth
+   copy of a character class four M2 bugs are made of. **Blank is not
+   absent**: `hasVisibleContent` asks "is there ink here" and `isAbsentText`
+   asks "is this the app's way of writing nothing" — a lone dash is content
+   to the first and an absence to the second, which is why a source the
+   registry NAMES `—` keeps its name while a refusal reading `—` is worded
+   by this app. Neither may be widened into the other.
+8. **`next.config.ts` is a build host, and it may import the leaf — only the
+   leaf.** It imports `EDITABLE_TABLES` from `lib/edit/config.ts` so the
+   rewrite that backstops an unmapped `/records/<table>/<id>` URL is derived
+   from the ONE map (BUG-0017; the config file carries the measurement).
+   Next compiles this file *outside* the app's module graph and outside the
+   `@/` alias, so the arrow only holds while the leaf stays a leaf: **no
+   import at all** in `lib/edit/config.ts`, which
+   `tests/offline/edit/config.test.ts` ("keeps config.ts a pure leaf that
+   imports nothing") pins. Nothing else in the build host may reach `src/`:
+   an import of `lib/db/**`, a component, or anything touching
+   `process.env` from here runs at build time, in plain Node, with no alias
+   and no React — and fails the build rather than a test.
+
+### 4.1 The data-layer contract (every query returns this)
+
+```ts
+// src/lib/db/result.ts
+export type DbResult<T> =
+  | { kind: "ok"; data: T }
+  | { kind: "not_provisioned"; missing: string }  // the table/view/column name
+  | { kind: "error"; reading: string; message: string };
+  //                 ^ the object read, as `tables.ts` spells it
+  //                                    ^ the database's own words
+```
+
+- Every exported function in `lib/db/**` returns `Promise<DbResult<T>>`. It
+  **never throws** and never returns a bare array. That is how acceptance
+  test 9 is satisfied structurally rather than page by page.
+- `not_provisioned` is decided by PostgREST/Postgres error code, in one helper:
+  `PGRST205` (table/view not in schema cache), `PGRST204` (column not in
+  schema cache), `42P01` (undefined_table), `42703` (undefined_column). Every
+  other error is `kind: "error"` carrying the database's own message —
+  LOOK_AND_FEEL: "the app shows what the database said."
+- **An account carries the parts the DATABASE authored, and every string in it
+  passes ONE derivation** (`errorMessage` in `lib/db/result.ts`; BUG-0170 →
+  BUG-0173 → BUG-0179 → BUG-0181 → BUG-0185 → BUG-0182 → BUG-0187). Each part
+  of the client's account — `message`, `details`, `hint`, the `cause` chain
+  **and the `code`** — is asked the same three questions in the same order: did
+  WE serialise it (provenance, no text inspected at all), is it a DOCUMENT,
+  does it carry RUNTIME FRAMES. A part that answers is replaced by an
+  app-authored clause that COUNTS it and quotes none of it; a part that answers
+  none crosses verbatim, however long it is. There is no fourth question and no
+  field with a rule of its own — a length cap, a codepoint filter or a
+  vocabulary match on one field is the blocklist Common violations row 15 was
+  promoted for. An account with nothing left to say says THAT, in the app's own
+  words, rather than rendering blank.
+- **THE PART IS THE UNIT, and a part that carries a DOCUMENT anywhere is
+  FOREIGN AS A WHOLE** (the bar, ruled 2026-09-11 on BUG-0187; it replaces the
+  three line-level anchors BUG-0179 and BUG-0182 had added). Question 2 is
+  asked ONCE per part — never per line, never per run: does ANY line of the
+  part, after its leading whitespace, begin `<`? If yes, the part is replaced
+  by exactly ONE counted clause at the length of the part **as the client
+  delivered it**, and nothing else is said about that part: no line of it
+  crosses, no frames clause, no second clause, whatever else it carried. If no,
+  the part is the database's words — frames dropped and counted, every other
+  line kept verbatim, and a part in which nothing answers returned
+  byte-untouched. Postgres does not speak markup: a part carrying markup was
+  authored by something that does, and no line of it is attributable to the
+  database. Three limits are DECIDED, not missing: **multi-line is not
+  foreign** (a wrapped DETAIL still crosses whole), **frames are not foreign**
+  (the transport cause sentence still crosses, BUG-0016), and **markup glued
+  after prose on ONE line is not caught** — the only predicate that would,
+  `includes("<")`, is refused by the database's own `operator does not exist:
+  text <-> integer`. Evidence of a real body in that last shape re-opens THIS
+  BAR as a ruling; it never adds a fourth question.
+- **What a PostgREST ANSWER is — the admission rule, asked ONCE per read**
+  (ruled 2026-09-15 from admin-window/BUG-0224 → BUG-0227 → BUG-0228 →
+  BUG-0229 → BUG-0230: five tickets, one property each, one QA lane each).
+  A response is this app's answer only when **every leg the read named arrived
+  in the shape PostgREST is specified to send it**. Anything else refuses as a
+  WHOLE through the one rule (`unreadableAnswer`, naming the object) before any
+  surface derives a row, a figure or an emptiness from it. The legs:
+  **error** (`classify`; only its codes make an absence), **rows** (a JSON
+  array whose elements each carry every column THIS read declared —
+  `isRowSet`/`isRowOf`, asked against the same array `selectList` built the
+  `.select()` from), **count** (`isCount`: a safe, non-negative integer,
+  because a count rides `Content-Range` through supabase-js's `parseInt` and a
+  host writes that header), and — for a read that asks the host about ITSELF —
+  the **schema description** document (§9.2, `lib/db/schema.ts`), admitted by
+  this same rule and never by reaching into a shape it happens to have.
+  Four things this rule DECIDES, so nobody re-asks them one at a time:
+  1. **Values are not types.** The row leg asks which columns are PRESENT,
+     never what they hold. A row carrying every declared column with
+     wrong-typed values is ADMITTED; a render that then throws is caught by
+     the route error boundary (§5), not by a fifth predicate here — `[{}]`
+     defeats an element-type guard and the next shape defeats its successor
+     (LESSONS 13).
+  2. **Two legs that contradict each other are one refusal.** A complete read
+     whose count and rows disagree in EITHER direction refuses:
+     `count > rows.length` is truncation (and says so, naming `ROW_CAP`),
+     `count < rows.length` is a total that cannot be of this set. No surface
+     ever publishes a total beside rows it does not cover.
+  3. **"No row" is an answer only from a response that carried one.**
+     supabase-js rewrites a bodyless 404 to `status 204, error: null,
+     data: null` — indistinguishable from an empty `.maybeSingle()` if only
+     `data` is asked, which is how a blank host put "No row with that id" on
+     `/queues/<uuid>` over a read that never happened. The status is on the
+     object the client returns; ask it.
+  4. **What the rule cannot reach is NAMED, not patched.** `parseInt` leniency
+     publishes `*/5-` as 5, `*/0x10` as 16 and `*/1e20` as 1e20, each
+     indistinguishable from a real total at this layer. That is a transport
+     fact; it re-opens this bar only with a measured body, never with a
+     vocabulary guess about the digits.
+  Clauses 2, 3 and the document leg are open on the tree as this is written —
+  admin-window/BUG-0234, patch lane.
+- `missing` carries the name from `tables.ts`, so the rendered
+  not-provisioned card can say which table is absent and what creates it
+  (LOOK_AND_FEEL state 3, Voice bar 4).
+- **A free, permanent probe:** `verdicts` does not exist until M2's handoff is
+  installed, so a live test can assert the `not_provisioned` classification
+  against a real absent table without inventing one.
+
+### 4.2 Reads are explicit; joins happen in TypeScript
+
+PostgREST embedding is available only where a foreign key exists
+(`observations -> sources`, `field_provenance -> observations`,
+`field_provenance -> sources`, `review_items -> sources`) — and **not** from
+the `pending_claims` view, and **not** from `runs` to `sources` (`runs.source`
+is text with no FK, deliberately; migration `20260829000001`).
+
+**Rule: fetch by id sets and join in TypeScript.** Query A returns rows, take
+its ids, query B with `.in("id", ids)`, join in code. It is predictable, it
+unit-tests offline against captured fixtures, and it does not break when a
+view's inferred relationships change. Do not build a query helper that
+"figures out" embeds.
+
+### 4.3 Two kinds of read, and neither may be silently partial
+
+*(Added 2026-09-02, from QA's finding on TASK-0006. Fixed by TASK-0026; every
+ticket owning a `lib/db/*.ts` module carries this in its brief.)*
+
+PostgREST caps a response at its `db-max-rows` (Supabase's default is 1000)
+and says nothing about it. A `select` with no `.range()`, no `.limit()` and no
+`.order()` therefore returns **an arbitrary subset in unspecified order**, and
+a count or an "exactly the matching items" claim built on it is *wrong* rather
+than *refused* — the one failure mode this data layer exists to make
+impossible. Pick a read kind deliberately.
+
+**1. Complete read — `readComplete` in `lib/db/result.ts`.** Use it whenever
+the surface presents the result as the whole set: a list rendered in full, a
+count, an oldest age, a filter that claims exactness. The query passes
+`{ count: "exact" }`, a **total** `.order()` ending in the primary key, and
+`.range(0, cap - 1)` with `ROW_CAP` handed in (1000, matching PostgREST's own
+default so the app never silently fights the platform cap). When the exact
+count exceeds the rows returned — whatever truncated it, our cap or the
+server's — the result is `kind: "error"` naming the object, the count and the
+cap.
+
+> **An `ok` array from a complete read is the whole matching set.** Every
+> figure, count, oldest-age and exactness claim in this app rests on that one
+> property, and it is why no caller carries a "was that all of it?" flag: a
+> partial answer never becomes an `ok`.
+
+**2. Window read — `readRows`, unchanged.** The caller's own `.order()` +
+`.limit()` define a **named** window and the surface says which window it is
+showing. This is §8's gauge contract and the landed gauges use it correctly.
+A window read's rows must never become a figure presented as a total.
+
+**And no read helper substitutes a number the database did not give.**
+`readCount` returned `count ?? 0`, so a query written without
+`{ count: "exact" }` — `error: null`, `count: null` — rendered a
+confident `0` for a table holding 47 rows. That is BUG-0007's defect on the
+user-visible path; a null count is a refusal, never a zero. The same rule is
+why the complete read refuses a null count instead of returning the rows it
+happens to hold.
+
+**A count read is `countRead`, and it is a GET — AMENDED 2026-09-11
+(architect, from BUG-0210's measurement; DECISIONS.md, same date).** Everywhere
+this contract said a count is a `head: true` count, the shape is now
+`countRead` in `src/lib/db/result.ts`: `select("*", { count: "exact" })` with
+`.limit(COUNT_ROWS)` — a GET that returns no rows but does return a BODY. The
+`head: true` spelling is retired for shipped reads and survives in this file
+only where it records a measurement actually taken that way (§6 trap 12, the
+2026-09-02 `pending_claims` probe). Why the shape had to change: **a HEAD
+response carries no body, so PostgREST's absence code never arrives** —
+supabase-js rewrites a bodyless 404 to a 204 with `error: null, count: null`,
+which the count leg then reports as "the query returned no count" instead of
+`not_provisioned`. Against a real database answering `PGRST205` to every read,
+`/claims` told the operator `a count read requires { head: true, count:
+"exact" }` — this app talking to its own developer on a user-facing surface
+(BUG-0210). The same bodylessness defeats error parsing in the live tier
+(§10: `code=undefined, msg=""` on a 57014). One consequence to keep in mind
+when reading the rest of this section: a count read now costs a response body
+of zero rows, not zero bytes, and it is still not a row read — `ROW_CAP` can
+never reach it.
+
+> **A window line states a read that HAPPENED, and an empty window is still a
+> window** (promoted 2026-09-04, third instance of the class: BUG-0063 on
+> `/claims`, BUG-0067 on `/cycles`, BUG-0070 on `/claims` again). A surface
+> publishes its `data-window` hook and the sentence around it when, and only
+> when, the read it describes RETURNED — `ok` with rows, or `ok` with none. A
+> refused, absent or unmade read publishes no line and no count. That is what
+> makes the absence of the line mean one thing on every surface ("this read did
+> not happen") and `data-window-held="0"` mean one thing ("it happened and found
+> nothing") — and it is what lets a live oracle grade the empty case at all,
+> instead of reading an honest empty page as a failure. An `Empty` card and a
+> window line stand TOGETHER: the card says what would fill the surface, the
+> line says where the app looked. The rule is graded once for every surface at
+> once, in `tests/offline/absence/pages.test.ts`, never per page.
+
+**3. Paged window read — the same window, at an explicit offset. AMENDED
+2026-09-10** (architect, M3; SPEC F14, DECISIONS 2026-09-10, Ben's ruling
+*"not being able to load all claims if I want to is a huge oversight"*).
+
+> **Superseded, in place.** Until 2026-09-10 this paragraph read: *"Paging is
+> not the answer to a cap and none is built: nothing in the spec asks for it,
+> and complete-or-refuse means there is never a partial page to continue. When
+> a table genuinely outgrows `ROW_CAP` the app says so with the real number,
+> and raising the cap or narrowing the filter is then a deliberate decision
+> with evidence behind it."* The spec now asks for it. The half of that
+> sentence that still holds is kept below: a page is never partial, and
+> nothing paging does may turn a window's rows into a total.
+
+A paged window read is read kind 2 with one thing added — an **offset into the
+same total order** — and it is the ONLY form of paging this app has. What it
+may do:
+
+- **Two surfaces, named here and nowhere else: `/claims` and `/browse`.** No
+  third surface gains paging on the team's initiative, and neither surface
+  gains a "load everything" control. This list is amended by a ruling, never by
+  a ticket.
+- **One order, and it is the first screen's.** A paged read repeats the first
+  window's `.order()` chain — total, ending in the primary key — and adds
+  `.range(offset, offset + size - 1)`. Nothing re-sorts, re-filters or
+  re-shapes on the way back: the same narrowing function, the same row shaping,
+  the same components. A page that changed any of them would be a different
+  read wearing the first screen's clothes.
+- **The bound is explicit, and it is the OFFSET.** Every request names how many
+  rows of that order the caller already holds. It is not a page number, not a
+  cursor the client may compose, and not a caller-chosen size — the size is the
+  surface's own window, decided on the server. A bound that is not a
+  non-negative integer multiple of that window, or that exceeds
+  `MAX_PAGE_OFFSET`, is **refused with the reason named — never clamped in
+  silence** (LESSONS 8: the guard that counts is on the server).
+- **Exhaustion is an answer, not a refusal.** A page past the end is `ok` with
+  zero rows and says the set is exhausted; the surface then says so and draws
+  no affordance. A refusal is a refusal: `not_provisioned` naming its object,
+  or `error` carrying the database's own words, exactly as every other read
+  here refuses.
+- **Complete-or-refuse holds INSIDE a page.** A page is `ok` with the rows that
+  bound asked for, or it is a refusal — never a half-filled `ok`, and **a
+  refused page never extends the list**: the rendered row count after a refusal
+  equals the row count before it, and the refusal names the object beside the
+  rows it did not add.
+- **Full-or-exhausted, on BOTH sides of the wire** (amended 2026-09-10,
+  architect, from BUG-0168 — the driver half of the bullet above). A page
+  answer is `ok` with **exactly the window's rows** and the set continues, or
+  it is `ok` with **at most the window's rows** and `exhausted` is true. The
+  route derives that flag from its own read (`exhausted === rows.length <
+  size`) and never emits any other combination. The client's driver holds the
+  same contract as an invariant it CHECKS, because what comes over a wire is
+  foreign data: a short page that says the set continues, and a page longer
+  than the window, are **refused out loud** — no rows appended, the bound
+  unmoved, the control retained for a retry — exactly as a body that is not a
+  page answer at all is. The property this buys, and the one a paging surface
+  may rely on: **after any press, either the bound the next press would carry
+  is one this app may serve, or the state is `exhausted`.** The rejected
+  alternative was to let the driver *reinterpret* a short page as the end of
+  the set; it silently converts a truncated or mangled answer into "you have
+  seen everything", which is the false-totality claim this whole section
+  exists to make impossible.
+- **The count that grades exhaustion is the READ's own count — nothing drops a
+  row after `.range()`** (amended 2026-09-10, architect, from QA's TASK-0066
+  residual (c)). `exhausted` is decided by how many rows the bounded query
+  returned, so a row removed in TypeScript *after* the range — a filter, a
+  dedupe, a slice — turns a full page into a short one and ends the operator's
+  paging with rows still behind it. Any narrowing a paged read needs is applied
+  IN the query, before the range; code below it may shape, join and label rows
+  but may not remove one. Live example of the shape to avoid, not a defect
+  today: `readClaimWindow` applies `selectClaims` after its `.range()`, and it
+  is harmless only because the query carries the same `neq`. A helper leg that
+  fills columns may never shorten a page either (common violations row 14).
+
+- **The legs that FILL columns travel WITH the page, and an unreadable note is
+  a refusal** (amended 2026-09-10, architect, from QA's TASK-0068 measurement).
+  A surface read by several queries — Browse is four: the events window decides
+  the rows, the venue and provenance legs fill columns over that window's ids —
+  puts each leg's own report on the `ok` arm of its page answer
+  (`NotedPageAnswer`, `lib/paging/bounds.ts`) and the surface renders it beside
+  the rows it arrived with, through the same `StateOf` the first screen uses. A
+  page whose provenance leg refused may not reach the operator as rows with a
+  silently empty column. The notes ride the `ok` arm only: the other three arms
+  have no rows, so no column of theirs went unfilled. Three rules make it hold
+  end to end. (1) **The driver carries them** — `PageState` has a `notes` field
+  and the route's answer reaches it unchanged; a state that cannot hold a note
+  is a note dropped, which is how the first implementation lost them silently.
+  (2) **Foreign notes are refused, not rendered** — `isPageNotes` asks of the
+  field what `isPageAnswer` asks of the body, and an unreadable `notes` refuses
+  the press naming the route, appending nothing; a note is the DATABASE's own
+  `missing` / `reading` and message or it is not shown at all (§4.1, common
+  violations row 15). (3) **Notes MERGE across presses, per leg** — the rows a
+  refused leg left unfilled are still on screen after the next press, so a note
+  that vanished when a later page's legs answered would be the same silent
+  emptiness one press later. A leg the FIRST SCREEN already reported is not
+  reported a second time below the rows: the identity is the OBJECT named, not
+  the leg key.
+
+- **A concatenation is still not a total.** No sentence on either surface may
+  claim that what the operator has paged through is the whole set. The only
+  totality claim on these pages remains what it is today: their own exact
+  `countRead` count, read once, labelled as the count it is (§4.3 kind 1,
+  SPEC F15). The app promises no snapshot across presses either — each page is
+  a bounded read at the instant it was issued, and neither surface says
+  otherwise.
+
+- **The window line of a paged surface states the read the operator NOW
+  HOLDS, and its truncation verdict is the paging state's** (amended
+  2026-09-11, architect, from QA's TASK-0069 measurement — admin-window/BUG-0172).
+  A press is a read on these two surfaces, so the sentence describing it
+  cannot be a server-rendered constant sitting above a client wrapper: after a
+  walk to the end of the set `/browse` published `data-paging="exhausted"`
+  under 120 drawn rows and `data-window-truncated="true"` over them, and
+  `/claims` said "the 50 longest-waiting are below — the rest are not shown"
+  under 616 rows. Three rules, and they hold on both surfaces at once:
+  1. **ONE `[data-window]` element, rendered inside client-land.** A second,
+     continuation line is not a fix — it leaves the false sentence where the
+     operator reads it first, and it breaks the one-element rule
+     `tests/offline/absence/pages.test.ts` and every `stateOf` selector rest
+     on. The surface's paging state is published by a provider that renders no
+     markup of its own (`PagingProvider`, `src/components/ui/paging.tsx`), so
+     the first SERVER render is byte-identical to the unpaged one — which is
+     what makes this compatible with §5's byte-identity amendment rather than
+     an exception to it.
+  2. **`truncated` has ONE derivation and it is the status**
+     (`status !== "exhausted"`), shared with the control below. Nothing
+     re-derives it by counting rows, and no rewording substitutes for it: the
+     contradiction is published in the HOOKS, and copy cannot fix a
+     machine-readable verdict (LESSONS 11, one row one verdict).
+  3. **Each surface's other facts keep their own meaning.** `held` is what the
+     surface's own reads established — the rows on screen where the window read
+     IS the population (`/browse`), the matching COUNT where a count read
+     established it (`/claims`, whose `data-window-held` a live oracle grades
+     the paged walk against). No `data-window-*` attribute is added, because an
+     added attribute is a first-screen change.
+
+  4. **A fact a sentence depends on is STATED by whoever knows it, never
+     inferred from another field's size or from whether it is present**
+     (promoted at count 2, 2026-09-11, from Common violations row 22 —
+     admin-window/BUG-0174, admin-window/BUG-0183). `DrawnWindow` did both in
+     one week: `held`'s meaning was guessed by asking whether it was bigger
+     than the cap, and `drawn`'s PRESENCE carried both "the rows on screen"
+     and "a press may continue this window", so the unpaged `/claims` line
+     could not state its own row count without inheriting the paged arms and
+     fell back to naming the CAP over screens holding 37, 10 and 49 claims.
+     A renderer that asks `x != null`, or compares a value to a cap, to decide
+     WHICH SENTENCE to say is asking for a fact that has no owner yet: give it
+     one, on the page that knows it.
+
+What paging may **not** do, stated so it is not inferred: it does not raise
+`ROW_CAP`; it does not turn a window read into a complete read; it does not
+reopen whole-table browsing (Browse keeps its one curated view — a second view,
+a table picker, a SQL runner and a search box all remain out); it is not a
+substitute for search, which stays out of the product by Ben's ruling of the
+same day. When a COMPLETE read genuinely outgrows `ROW_CAP` the old paragraph
+still governs: the app says so with the real number, and raising the cap or
+narrowing the filter is a deliberate decision with evidence behind it.
+
+**An empty surface is explained from TWO facts, never one** (promoted at the
+M2 structure walk, 2026-09-09, from Common violations row 14 — six bugs:
+BUG-0110, BUG-0125, BUG-0129, BUG-0131, BUG-0133, BUG-0135). "A table with no
+rows" and "a filter that matched nothing" never share a rendering
+(LOOK_AND_FEEL, the four states), and the URL alone cannot tell them apart. A
+surface deciding which arm it renders needs both:
+
+1. **Structural** — can a facet of this URL remove a row of THIS surface's
+   kind at all, whatever the table holds? Derived from the facet vocabulary,
+   never from the row count. `?kind=decision` on the decision queue is not a
+   narrowing (BUG-0129, BUG-0131).
+2. **Population** — how many rows does this surface hold with no URL facet at
+   all? If that is zero, no facet removed anything, and a surface that blamed
+   a filter would be telling the operator to widen a filter that hides
+   nothing (BUG-0133).
+
+`isBlockNarrowed` in `src/lib/review/queue-filters.ts` is the reference
+implementation and its docstring is the longest statement of the rule.
+**Fact 2 is a read the page almost always already has** — an unnarrowed
+count, or the unnarrowed rows themselves — so this costs a comparison, not a
+query; where it does cost a query, that query is a bounded `countRead`
+count, never a row read (BUG-0135). Every surface with an empty state owes
+both facts: `/queues` has them, `/claims` and `/sources` decide from fact 1
+alone today and DEBT-0008 is open against that.
+
+The same two facts answer the figure beside the surface: a zero stated with
+no denominator is fact 2 missing. "0 ran longer than the 15m cadence" beside
+four cycles that never finished (BUG-0110) and the Dashboard's attention
+zeros that never said what fills the queue (BUG-0125) are this rule, in the
+gauge rather than in the empty card.
+
+**A clause NAMES a facet's effect, never its presence** (ruled 2026-09-11 from
+QA's residual on BUG-0191; DECISIONS of the same day). The two-fact rule above
+answers whether THIS SURFACE is narrowed. A sentence that goes further and
+points at a subject — a control ("under the filters above", "matching these
+filters") or a named facet — is claiming that subject removed rows from this
+read, and may be rendered only where that subject's own effect is established.
+A facet being set is not evidence that it narrowed anything: on staging
+`/claims?source_id=<a source the whole view carries>` removes zero rows and
+takes the unnarrowed arm, while `?source_id=<same>&domain=events` draws exactly
+the counts `?domain=events` draws alone and blamed the chip bar — one chip, two
+opposite sentences, because one clause asked effect and the other asked
+presence.
+
+Three corollaries, so this costs almost no reads:
+
+1. **The unnarrowed arm is free and already right.** `rendered === population`
+   means no facet in force removed anything, so "nothing above narrows these
+   counts" is TRUE even with a chip standing active. A standing facet is
+   STATED rather than denied where the surface drops it on purpose
+   (`BUCKET_CAPTION.everyBucket`, TASK-0071) — that is a sentence about the
+   read's scope, not an attribution.
+2. **A clause that states what the read CARRIED is not an attribution** and
+   keeps its presence gate — the control-less phrases of BUG-0160 ("in the
+   events domain") exist so a facet with no chip is visible at all. One clause
+   never does both jobs.
+3. **Attribution is per SUBJECT, and a subject may be a FAMILY.** The chip
+   clause's subject is the chip bar collectively: where the only facets in
+   force are chips, the surface's own two-fact answer IS the family's effect;
+   where none are, the clause is not said; only where BOTH families are in
+   force is a fact missing, and there it is one bounded `countRead` count of
+   the same read with the family's facets dropped, issued only where it can
+   change a word (§4.3's own allowance, BUG-0135; the issue-gating of
+   DEBT-0012).
+
+Presence predicates and effect predicates therefore take different words:
+`isSurfaceNarrowed` / `claimsNarrowed` (effect), `hasChipFacet` (presence, the
+former `hasChipNarrowing` — renamed by TASK-0072), and `hasNarrowingFacet`,
+which keeps the narrowing word because fact 1 asks what the facet VOCABULARY
+can do, not what this read's rows did.
+
+## 5. Rendering: one async boundary per route
+
+**The page function is the only `async` component on a route. Everything below
+it is a pure synchronous component that takes plain props.**
+
+- A page does: read (`lib/db/**`) → shape → hand plain props to components →
+  return markup. No component below the page awaits anything.
+- Why it is a contract and not a preference: it is what lets a test do
+  `renderToStaticMarkup(await Page({ searchParams }))` with `react-dom/server`
+  and assert on real markup — offline against a stub client for the
+  not-provisioned and empty states, live against staging for parity. Next's own
+  docs (`node_modules/next/dist/docs/01-app/02-guides/testing/vitest.md`) say
+  Vitest cannot render async server components; nesting one under a page would
+  cost this campaign a browser dependency it has no other need for.
+- Client components (`"use client"`) exist only where interaction demands them:
+  the nav's active state, filter chips that push URL state, the column
+  selector, `EditableCell`, and — **added 2026-09-10 (architect, M3)** — the
+  paging control of `/claims` and `/browse`. They receive data as props and
+  fetch nothing, with the single framed exception §4 rule 1 now names: a paging
+  control calls this app's own paging route handler, and nothing else.
+
+  **Amended 2026-09-11 (architect, admin-window/BUG-0172): a paged surface's
+  WINDOW LINE joins that list**, through the zero-markup provider that
+  publishes the press's state (`PagingProvider`) and the client line that reads
+  it (`PagedWindowLine`). The line renders the same shared `WindowLine`
+  primitive with the same facts the page composes, so the first server render
+  is byte-identical; what it gains is the ability to stop lying after a press.
+  The page's other children — the column selector, the first-screen leg notes —
+  stay SERVER components handed through the provider as children, so nothing
+  else moves into the client bundle.
+- **State lives in the URL** (LOOK_AND_FEEL bar 11): every filter, sort, tab
+  and page position is a `searchParams` value. No client-only filter state, no
+  `useState` filter that a reload forgets.
+
+  **Amended 2026-09-10 (architect, M3): rows the operator has PAGED IN are the
+  one piece of state that is not in the URL, and that is a decision, not a
+  lapse.** The URL still decides the first screen completely — every filter,
+  sort and tab — and **the first screen is byte-identical to what it renders
+  today** (SPEC F14): a URL that is shared, reloaded or opened cold renders the
+  same server-rendered window, the same window line, the same figures and the
+  same rows as before paging existed. What paging adds lives after that screen
+  and dies with it: appended rows are client state, a reload discards them, and
+  no `searchParams` value carries an offset. Why this way and not URL state:
+  putting the offset in the URL makes every "more" a full server round trip and
+  a new document — Ben named on-demand client fetching as the mechanism — and
+  it would make the FIRST screen of a shared link depend on how far somebody
+  else had scrolled, which is exactly the byte-identity this amendment
+  protects. The async boundary above is untouched: a paging control is a
+  synchronous client component, it is not `async`, the page function remains
+  the only `async` component on the route, and
+  `renderToStaticMarkup(await Page({ searchParams }))` still renders the whole
+  first screen offline.
+- **A dynamic route that calls `notFound()` serves the error shell, not the
+  app** (BUG-0017, measured on Next 16.2.2). On this version the 404 status
+  and a server-rendered document are inseparable *in render*: `notFound()`'s
+  status is set in the same `catch` that emits `<html id="__next_error__">`
+  (`node_modules/next/dist/esm/server/app-render/app-render.js:1894-1918`), and
+  a `not-found.tsx` beside the page changes nothing. A 404 the ROUTER decides
+  renders normally through the root layout, which is why `/analytics` already
+  serves the framed surface. So: **a new dynamic segment either resolves every
+  URL it matches, or its miss is routed** — an unmatched URL, or its own
+  `beforeFiles` rewrite to a path no route matches. The landed rewrite in
+  `next.config.ts` is `/records`-specific and covers nothing else; inheriting
+  it is not automatic, and a `notFound()` added to a new dynamic page without
+  one is the same defect again.
+- **The gate is `export { auth as middleware }` and never `auth(handler)`.**
+  next-auth's `handleAuth` runs a supplied handler in the branch *before* the
+  unauthenticated-redirect branch
+  (`node_modules/next-auth/lib/index.js:148-156`: `else if
+  (userMiddlewareOrRoute)` precedes `else if (!authorized)`), so wrapping the
+  gate to add one line of logic silently removes the sign-in redirect from
+  every route. That is a gate bypass, not a refactor.
+
+- **An answer that carries gated data says it may not be stored** (amended
+  2026-09-10, architect, from QA's TASK-0066 residual (a)). Next already sets
+  `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate` on
+  every dynamically rendered page (`node_modules/next/dist/server/
+  base-server.js`), but a Route Handler is given NO `Cache-Control` at all
+  unless it writes one — so without this rule the only answers in this app that
+  carry admin ROWS across the wire are also the only ones a browser store, a
+  forward proxy or any future edge may keep. A route serving gated data answers
+  with the same directives its surface's page does, on EVERY arm including the
+  refusal, from **one declared constant** (`PAGE_ANSWER_CACHE_CONTROL`,
+  `lib/paging/bounds.ts`) rather than a string retyped per route. It is a
+  statement about the data, not about a deployment: it does not depend on what
+  is or is not in front of Railway.
+
+## 6. The data model, by reference
+
+The schema is the scraper repo's. Nothing here is authoritative; it is a map
+of what to read and the traps in it. Columns verified against migrations
+`20260818000000`, `20260825000002/4`, `20260829000001/3`,
+`20260901000001/2/3/4` on 2026-09-01.
+
+| surface reads | object | key columns |
+| --- | --- | --- |
+| Dashboard, Queues, item detail | `review_items` | `review_item_id, queue, source_id, domain, entity_id, field, severity(low\|high), status(open\|settled), summary, evidence uuid[], folded_count, opened_at, last_evidence_at` |
+| item detail evidence | `observations` | `observation_id, entity_id, field, domain, value jsonb, schema_version, source_id, external_ref, payload_ref, observed_at, last_confirmed_at, status, rejected_at, rejected_by` — **no `entity_type`** (see trap 1) |
+| item detail canonical side, Browse | `field_provenance` | `provenance_id, entity_type, entity_id, field, source_id, observation_id, tier_at_apply, applied_at, admin_locked` |
+| Claims | **view** `pending_claims` | `observation_id, domain, entity_id, field, source_id, bucket, unmet_requirement` + `observed_at` — **pending Ben's install on staging** (BUG-0138 Answer A, ruled 2026-09-10; handoff `agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md`). Until it is installed the column is not there and a read naming it fails `42703` |
+| Sources | `sources` | `source_id, source, kind, lifecycle, tier, checkpoint, note, created_at, updated_at` |
+| Cycles | `resolution_runs` | `run_id, started_at, ended_at, outcome, facts_examined, applied, held, escalated, entities_created, claims_linked, claims_rerejected, errors, error_summary` |
+| Runs | `runs` | `run_id, source(text), started_at, ended_at, outcome, failure_class, checkpoint_before/after, error_summary, + 12 counts` |
+| Browse, edit surface | `events` / `event_listings` / `venues` / `groups` / `idols` | `events.event_id`; `groups.id`; `idols.id`; `venues.venue_id` |
+
+**Traps, each of which will bite exactly one builder if it is not written
+down:**
+
+1. **`domain` vs `entity_type`.** **`field_provenance` alone** uses
+   **`entity_type`** for the canonical table; `observations`, `review_items`
+   and `pending_claims` use **`domain`**. They hold the same value
+   (`pending_claims` joins provenance on `entity_type = claim.domain`). Read
+   each table's own spelling; never assume one.
+
+   Corrected 2026-09-02 (admin-window/BUG-0024). This trap previously said
+   `observations` carries **both** — true of the migrations read on 2026-09-01,
+   which stopped at `20260901000004` and missed
+   `20260819000002_the_domain_is_the_entity_type.sql`: it **drops
+   `observations.entity_type`** ("domain becomes the first part of both
+   identities"; the three identity indexes are rebuilt on `domain`) and keeps
+   `field_provenance`'s ("field_provenance IS NOT TOUCHED. Its entity_type
+   column stays … apply_and_record now writes the domain into it"). Selecting
+   the dropped column is not a missing field — PostgREST answers 42703 and the
+   whole read fails, which is how the review-item detail rendered zero evidence
+   rows for every item on staging. The offline suite cannot see this: the stub
+   client scripts the answer, not the schema, so each `lib/db` read's column
+   list is checked against the fixture that states the table's real columns
+   (`tests/offline/review-item/read.test.ts`, "the columns the evidence reads
+   name").
+2. **There is no separate standing-disagreements view.** It is
+   `pending_claims` filtered to `bucket = 'standing_disagreement'`
+   (resolver §7: "the standing-disagreements view is this view filtered to
+   contradictions"). Do not go looking for a missing object.
+3. **`pending_claims` carries no value, and carries age only once the 2026-09-10
+   handoff is installed.** It never carries the claim's `value` — that is
+   `observations.value`, and §6 trap 8 governs it.
+
+   **Age**: until Ben applies
+   `agenticflow/tracker/for-human/M2-handoff-pending-claims-observed-at.md` to
+   staging, the view has no age column and age comes from joining
+   `observations.observed_at` by `observation_id` (§4.2's two-step) — the
+   nine-chunk second leg BUG-0138 exists to delete. **After it is applied**, the
+   view carries `observed_at` itself (`timestamp with time zone`, appended last,
+   `NOT NULL` upstream), the two-step is gone from `/claims`, and the claim list
+   is ordered in the DATABASE (`observed_at asc, observation_id asc, limit 50`).
+   Do not add a second age derivation: one column, one order, one place.
+
+   Two things that stay true either way, both measured read-only against staging
+   2026-09-09 and neither fixed by the column: PostgREST exposes **no
+   relationship** between this view and `observations` (`PGRST200` on all three
+   embed shapes — no `observations!inner(...)`, in either direction), and it
+   **refuses aggregates** on this deployment (`PGRST123` on `select=bucket,count()`).
+   So there is no grouped read and no distinct-count here, ever: bucket figures
+   are one `readCount` head request per bucket, and a figure that would need an
+   aggregate is dropped rather than computed over a truncated population
+   (DECISIONS.md, 2026-09-10).
+4. **`in_window` is a real bucket string in the view and must never reach the
+   UI** — not as a row, not as a filter option, not as a zero (spec §4, M1
+   EC5). Filter it out at the data layer, in `lib/db/claims.ts`, once.
+5. **A claim has no tier of its own.** The evidence row's tier is
+   `sources.tier` (the source's *current* tier); the canonical card's tier is
+   `field_provenance.tier_at_apply` (the tier at the moment of the apply).
+   `sources.tier` drifts, `tier_at_apply` is frozen — that is deliberate
+   (`data-model.md`, `sources.tier` comment). Label them as what they are.
+6. **A source has no "last run" column.** It is the newest `runs` row whose
+   `runs.source` text equals `sources.source`. There is no FK and no join key
+   (migration `20260829000001`); match by name.
+7. **The current canonical value of a fact** is the observation named by the
+   **latest** `field_provenance` row for `(entity_type, entity_id, field)`
+   ordered `applied_at desc, provenance_id desc` — and only if that
+   observation is still live (`status in ('pending','applied')`). That is
+   byte-for-byte what `pending_claims` does; do not invent a second rule.
+8. **`observations.value` is jsonb** — the one json column in the system. A
+   reference-class value is an object (or array of objects) carrying a `ref`
+   key. Render values as their JSON text in mono; do not assume string.
+9. **`groups.id` / `idols.id` but `events.event_id` / `venues.venue_id`.** The
+   edit surface's config map carries each table's primary-key column
+   explicitly for this reason.
+10. **`review_items.evidence` is `uuid[]`** — order is the fold order; render
+    it in that order.
+11. **`shapeOf` defaults to `data_conflict_fact`, and the trigger to revisit
+    it is a migration.** `lib/review/shapes.ts` branches on `queue ===
+    "entity_link"` and falls through to `data_conflict_fact` for everything
+    else — total by construction, so no caller has an exception path, which is
+    right (§11: the kind is derived, never stored). Today it is also
+    unreachable-by-anything-else: migration `20260901000002` constrains
+    `review_items.queue` to exactly `data_conflict` and `entity_link`. But a
+    third queue — a `freshness` queue, say — would arrive through that default
+    and render as a **decision**, silently and plausibly. **The migration that
+    widens that CHECK constraint is the trigger**: when it lands, `Shape`,
+    `SHAPES`, `KIND_BY_SHAPE` and `shapeOf` are extended together (the
+    compiler requires the first three; only `shapeOf` can go quietly wrong).
+    Recorded, not ticketed — spec §6 calls the shape set "an open set that
+    moves with the queues", and inventing a `queue` value the database cannot
+    hold in order to test a branch it cannot reach is work with no user
+    behind it.
+12. **`pending_claims` was unreadable on staging, and no Admin-side read shape
+    rescued it — the fix was the scraper repo's, and it landed.** Measured
+    2026-09-02 (architect; evidence
+    `agenticflow/tracker/evidence/architect/claims-probe*.tsv`): every shape
+    timed out at the 8s statement timeout with `57014` — the page's own query,
+    a narrowed `select`, `limit 2`, `limit 1` **with an order**, an
+    `.in("observation_id", …)` over 10 known ids, a `head:true` exact count,
+    and a per-bucket `eq("bucket", …)` count, one per bucket. Exactly one shape
+    returned: an unordered, unfiltered `limit 1` (0.85–1.1s). Five candidate
+    Admin-side mitigations were measured and all five timed out, so **no
+    mitigation was written and none may be invented later** — there was no
+    honest fast read to write. The artifact was a handoff
+    (admin-window/TASK-0031) and the scraper repo applied it as migration
+    `20260903000001_the_creation_bar_is_read_once_and_the_incumbent_is_one_seek.sql`:
+    one index, `field_provenance_current_per_fact` on `field_provenance
+    (entity_type, entity_id, field, applied_at desc, provenance_id desc)`, plus
+    the word `materialized` on the view's `required_column` CTE so the creation
+    bar is computed once per read instead of per uncreated record. Re-measured
+    2026-09-03 through the same guard (`claims-probe3.tsv`): every one of the
+    thirteen shapes returns, and the Claims page's own shape — six columns,
+    `neq bucket in_window`, `order bucket, observation_id`, `range(0,999)`,
+    `count: "exact"` — returns all 859 rows in **281–312 ms**, against 8.1 s
+    and `57014` before. `src/lib/db/claims.ts` and `src/lib/db/gauges.ts` were
+    not changed, which was the point. Two things follow and **both remain
+    rules, cost or no cost**.
+    **(a) No workaround code.** Not a narrower read, not a cache, not a
+    swallowed timeout, not a "temporarily hidden" surface — spec §10, and the
+    error state is the honest rendering of a database that will not answer.
+    **(b) Admin never re-computes the classification.** Deriving buckets in
+    TypeScript from `observations` + `field_provenance` + `review_items` would
+    put a second copy of the resolver's precedence rules in this repo, which
+    the view's own migration forbids in the other direction and §8's "this
+    build adds queries and charts" forbids in ours. The bucket of a claim is
+    the ledger's answer, or it is nothing.
+
+## 7. Design tokens
+
+LOOK_AND_FEEL's palette, five type steps and spacing scale land **once**, as
+Tailwind 4 `@theme` tokens in `src/app/globals.css`, plus a small primitive set
+in `src/components/ui/`. Tailwind 4 is CSS-first: there is no
+`tailwind.config.js` in this repo and none is added.
+
+- **Builders consume tokens and primitives, never raw values.** A hex code, an
+  arbitrary `text-[13px]`, or a `rounded-lg` in a page file is a defect.
+- The five type steps (`figure`, `title`, `body`, `data`, `micro`), the radius
+  rule (0 for containers, 4px for controls), the 1px-hairline rule and the
+  five palette jobs are LOOK_AND_FEEL's, not negotiable per page.
+- **Mono carries every value the database produced; sans carries every word the
+  app wrote.** That split is enforced by which primitive you use, not by
+  remembering.
+- The four data-surface states — Loading, Empty, NotProvisioned, Error — are
+  four named primitives. Every surface that can render rows renders all four.
+  A page that hand-rolls an empty state is a defect.
+- **A state names the read it is about, and the type forces it** (BUG-0016,
+  and the ruling of 2026-09-02). `ErrorLine`'s `reading` is **required**, as
+  is `reading` on the `error` arm of `GaugeState`: a page makes several reads
+  (Browse makes four) and a red line saying only "TypeError: fetch failed"
+  names none of them. `DbResult`'s error arm already carries the string, so
+  the required prop costs a caller nothing and catches the omission at
+  compile time rather than at a walk.
+- **A state card that REPLACES a labelled surface carries that surface's
+  eyebrow.** `Empty` and `NotProvisioned` take an optional `micro` eyebrow;
+  the three gauge components always pass their own label, because their state
+  card stands in for a card the operator identified by its label — otherwise
+  a screen of missing gauges says which tables are absent but not which knobs
+  they tune. On a page's own `Empty`/`NotProvisioned` the eyebrow is optional:
+  the `Section` heading above it already names the surface.
+- **A rows surface never renders headers with no body.** `TrendTable` and
+  `Distribution` take a **required** `empty: { holds, filledBy }`: the
+  component decides *when* the empty state shows (no rows and no other state),
+  the caller supplies *the words*, and a header-only table — the one rendering
+  that says nothing at all — is unreachable by construction.
+- **A badge never sits inside a link, and a link never wears one**
+  (LOOK_AND_FEEL, *Chips and badges*; earned by BUG-0113, promoted at the
+  second instance, BUG-0115). A chip is an inline-block box with a fill of its
+  own, so inside an anchor it takes CSS priority over the inherited ink and
+  paints over the ancestor's underline — and where the anchor carries a hover
+  fill of the same token, the chip's own box dissolves into the card under the
+  pointer. The rule is structural, not decorative: **no anchor in any page's
+  delivered markup contains a chip-filled span.**
+  - On a **text link** the words themselves carry `IN_PAGE_LINK`; a badge that
+    classifies them sits beside the anchor, never around or inside it.
+  - On a **card-shaped link** — `StatCard` with an `href`, whose anchor is the
+    whole card — a badge that classifies the card sits inside the card's shell
+    and OUTSIDE its anchor. Wrapping a card in an anchor does not make its
+    classifications part of a label.
+  - Enforced repo-wide and over the **rendered window**, not per page:
+    `tests/offline/ui/link-spelling.test.ts` — the one owner of link spelling —
+    sweeps every route the filesystem offers (`loadSurfaces()` / `pageRoutes()`
+    from `tests/offline/absence/surfaces.ts`, the shared harness three files
+    already drive) against a populated database and asserts `chipsInsideLinks`
+    is empty on each. The chip's classes are derived by RENDERING `<Badge>`
+    (`tests/fixtures/link-spelling.ts`), so restyling the chip moves the guard
+    with it and no class literal is pinned. A page added later inherits the
+    rule rather than a comment about it.
+  - What the sweep does **not** cover, and the walk still owns: a chip inside a
+    link on a state the populated script never renders. The guard is a floor
+    under the walk, not a replacement for it.
+- **Text this app did not author never sits inside a sentence this app wrote**
+  (earned by BUG-0123 -> BUG-0127 -> BUG-0136 -> BUG-0137: four bugs on ONE
+  sentence, three of them widenings of one blocklist). Foreign text — a URL's
+  key, a database free-text value — reaches prose one of exactly two ways:
+  - **Through an allowlist**, when the app can say in advance what a legal one
+    looks like. `/claims`' dropped-parameter line spells a key only if it
+    matches `^[A-Za-z0-9_.-]{1,64}$` — the class every facet name satisfies —
+    and every other key is COUNTED without being spelled, through the
+    `withheld` arm that already exists for the parked word
+    (`droppedParams`, `src/lib/claims/filters.ts`).
+  - **In its own box**, when it cannot — a mono value in a table cell, a row, a
+    `<bdi>` — where a bidi control can only reorder that box's own contents.
+    Every DB value this app renders today is in a cell and satisfies this by
+    construction; inlining a database string into an authored sentence does
+    not, and is the shape to refuse. (No survey of that has been done; if one
+    turns up it takes this arm, not a scrub.)
+
+  Why not a wider blocklist. Two questions the line was answering by codepoint
+  class are undecidable that way. "Does this render ink" is font- and
+  layout-dependent, and each patch closes one family: whitespace (BUG-0127),
+  then `Cf`/`Cc`/Hangul fillers (BUG-0136), then `Mn` + U+2800 + the bidi
+  controls (BUG-0137). "Does this READ as the word bar 3 bans" is worse — an
+  ink-less mark inside `in_window`, a Cyrillic homoglyph, a ligature — an open
+  visual-similarity question with no computable boundary. An allowlist
+  collapses both to an exact ASCII compare, which is total and stays true.
+  **The app's one definition of blank (`hasVisibleContent`,
+  `src/lib/verdict/decision.ts`, §4/BUG-0089) is not the tool for this and is
+  never widened for a rendering question**: it answers "did the operator type
+  anything?" for the edit surface, where U+FE0F and U+2800 are CONTENT and a
+  draft of them commits. Two questions, two answers, one owner each.
+
+- **What is SHOWN is what was USED: one derivation per URL value class**
+  (earned by seven bugs on one family — BUG-0137, 0143, 0145, 0146, 0147,
+  0153, 0155; common violations row 20). The allowlist above answers *may I
+  spell this*. It cannot answer *is this the value I used*, and a facet value
+  is used twice: it is SENT to PostgREST and it is SPELLED in the app's own
+  sentences. Six of those seven bugs each closed ONE property of the value —
+  no markup, no bidi, some ink, bounded length, a canonical spelling, padding
+  stripped by ink — and the property none of them stated is this one. Both
+  questions are answered where the value is DERIVED from the request, **once
+  per value class**, and the derived value is the only string that reaches the
+  query, the facet's own box, and every sentence that names it — or there is
+  no facet at all and the shared dropped-parameter line says so.
+  - **A uuid** → `canonicalRecordId` (`src/lib/records/id.ts`).
+  - **A free-text name** — `?source=` today, and the next facet of its kind →
+    `canonicalUrlText` (`src/lib/url/text.ts`). It strips the padding a paste
+    carries, by INK and at the ENDS only — the same one strip
+    `canonicalRecordId` uses (`trimInkPadding`, one declaration, called by
+    both: a rule in prose is retyped, LESSONS 5) — refuses what the allowlist
+    refuses, and refuses what a browser would RE-SPELL, which inside
+    printable ASCII is exactly a run of two or more spaces. What it returns is
+    the string that is both sent and spelled; what it refuses is spelled
+    nowhere and is reported as a parameter the page did not apply.
+  - **A value that reaches PROSE ONLY and asserts nothing about a queried set
+    is not in this rule.** `?cycle=`'s unmatched-paste arm spells a paste in
+    full through the allowlist and queries nothing, so "not among the 200
+    newest cycles" is true of every spelling of it; that arm is deliberate and
+    unchanged (BUG-0147).
+  - **A seam that re-asks the question asks the DERIVATION, not the
+    allowlist**: a component handed a facet value renders it only when the
+    value is already its own canonical form (`canonicalUrlText(v) === v`), so
+    a second caller cannot reintroduce the defect by handing it a raw
+    parameter. That is the same reason the allowlist is re-asked at the seam
+    today, one question later.
+
+  Why the interior case is REFUSED and not boxed in `white-space: pre`. The
+  box would put a non-wrapping foreign run inside six authored sentences of
+  one page (the runs window line's four clauses, the facet paragraph, the
+  empty card) to preserve a spelling no registered source uses, while the
+  family's answer for "cannot be spelled faithfully" — counted, not spelled,
+  on the dropped line — already exists and renders nothing new. Measured
+  before ruling: QA's own strict pin collapses the rendered text the way a
+  browser does *before* comparing it to the queried value
+  (`tests/offline/cycles/page.test.ts`, the BUG-0155 pin), so the `pre` box
+  cannot pass it and refusal is the only arm that can.
+
+## 8. The gauges
+
+Spec §5: **six gauges, each a server-side read-only query in this app** —
+"this build adds queries and charts, never tables" and never a database view.
+
+Where each one lives (spec §5 "the gauges live where their subject lives" +
+spec §4 "per-source gauge trends" on Sources):
+
+| gauge | page | reads |
+| --- | --- | --- |
+| cycle health | `/cycles` | `resolution_runs` |
+| resolution latency | `/cycles` | `observations.observed_at` → `field_provenance.applied_at` |
+| pending claims | `/claims` | `pending_claims` + `observations.observed_at` |
+| queue health | `/queues` | `review_items` |
+| standing disagreements | `/claims` (standing tab) | `pending_claims` filtered + `sources` |
+| settled values | `/sources` | `observations.rejected_at/rejected_by` per source |
+| pending claims, per-source `awaiting_row` trend | `/sources` | `pending_claims` grouped by source |
+
+**Implementation rule.** PostgREST cannot aggregate beyond `count`, and this
+campaign may not add an RPC or a view (acceptance doc: "no SQL-executing route
+may be built"; spec §9: zero schema in the read slice). So a gauge **fetches a
+bounded row set and aggregates in TypeScript** — one pure exported function per
+gauge in `lib/gauges/`, taking rows and returning the shape the card renders,
+unit-tested offline. Every gauge query carries an explicit `limit` and an
+explicit time window; an unbounded fetch is a defect. At this catalog's
+pre-launch scale that is the honest engineering, and it is why the gauge
+functions are pure: when a row count outgrows it, the fix is one function.
+
+**An empty window: a FIGURE states its zero, a BLOCK states its emptiness, and
+the surface explains it ONCE** (ruled 2026-09-11, architect, from QA's BUG-0206
+residual and the designer's M3 walk; extends the 2026-09-10 BUG-0169 rule, "a
+state card belongs to the BLOCK that rendered it; a surface's state is the
+state of its FIGURES"). Four parts, because three readers have now filed the
+same shape from three directions:
+
+1. **A figure never disappears.** "Claims in this window 0", "Buckets holding
+   claims 0" over an empty window is the truth and LOOK_AND_FEEL bar 1 requires
+   it on screen. `/claims` and `/sources` showing real zeros is CORRECT; it is
+   not a "zero wall" to be replaced by an Empty state.
+2. **A block that renders rows draws its Empty card** instead of a row of
+   zeros — `/cycles`' two gauges are correct too.
+3. **The split is figure-versus-block, never page-versus-page.** Two pages
+   answering emptiness two ways is what you see if you compare surfaces instead
+   of elements, and it is why this is written down rather than ticketed: the
+   next reader who compares `/claims` to `/cycles` will file a fourth bug.
+4. **The narrowing sentence belongs to the surface's window line and is said
+   ONCE.** A block card may say it holds nothing; it may not restate the
+   surface's window sentence. The same empty-window sentence three times in one
+   `/cycles` panel (surface Empty plus two block cards) is one rule broken, not
+   three defects — and every zero figure still owes, once per surface, the
+   sentence naming what would fill it (§4.3's two facts).
+
+**A repeated URL key has ONE reading, decided once** (promoted 2026-09-11 from
+Common violations row 26 at count 2 — QA's BUG-0201 and BUG-0202 residuals).
+`?source_id=&source_id=x` and `?cols=&cols=banana` meet two readers in this app
+that answer differently: the page JOINS the repeated values (`namedColumns`),
+while `droppedParams` judges the FIRST value, sees a blank, and concludes the
+operator asked nothing (BUG-0127's arm). Either reading is defensible; holding
+both is not — the surface then either narrows by a value no sentence explains,
+or explains a value no read used. A facet's values are canonicalised ONCE, in
+the module that owns that facet, and every consumer — rows, window line,
+dropped-params line — reads the canonical value rather than `searchParams`.
+Today the divergence is visible only as a MISSING explanatory line on a
+hand-built URL, so it is recorded and not ticketed; it becomes a bug the moment
+the two readings produce different ROWS, or at a third instance.
+
+## 9. The edit surface
+
+Spec §8 and the acceptance doc's ground rule: **one hand-written config drives
+it**, everything else derives.
+
+```ts
+// src/lib/edit/config.ts — the ONLY place a table becomes editable
+export type Regime = "sandbox" | "resolver_owned";
+export type WritePath = "direct" | "override";
+// The regime DECIDES the write path. Total over Regime: a table Admin may not
+// write is not in the map at all, so there is no "no path" arm to fall into.
+export function writePathFor(regime: Regime): WritePath;
+export interface ReferenceColumn {
+  readonly field: string;          // the `display` column holding the linked row's id
+  readonly domain: string;         // the table it points at, as the map keys it: /records/<domain>/<id>
+}
+export interface TableEditConfig {
+  readonly table: string;          // the canonical table
+  readonly pk: string;             // its primary-key column (groups.id, events.event_id, ...)
+  readonly regime: Regime;         // decides the WRITE PATH — never configured per column
+  readonly editable: readonly string[]; // user-facing scalars only: never ids, keys, timestamps
+  readonly display: readonly string[];  // shown READ-ONLY; never a write target (Ben, 2026-09-02)
+  readonly reference: ReferenceColumn | null; // the ONE display column that links (BUG-0034)
+}
+export const EDIT_CONFIG: Readonly<Record<string, TableEditConfig>>;
+```
+
+- **TWO REGIMES, and no map entry for a table Admin may not write** (Ben's
+  ruling, 2026-09-08, recorded in DECISIONS.md; it struck VISION's
+  "groups/idols edit directly within it" with the instruction *"admin edits
+  catalog tables only through the observation pipeline; do not re-implement
+  direct edits"*, and ruled the same day that groups/idols get **no door** —
+  no listing, no search, no entry point — and that he expects to drop both
+  tables soon). `pre_cutover` is **gone as a concept and as an identifier**:
+  - **`resolver_owned`** — `events`, `venues`. `writePathFor` → `"override"`:
+    the edit lands as an admin-tier observation through the gate, applied
+    through `apply_resolution`, stamped `admin_locked`, logged in `verdicts` as
+    `action = 'override'` with a null `review_item_id` (§9.2). **This is the
+    only path by which a catalog value changes from Admin, ever.**
+  - **`sandbox`** — `walk_sandbox` alone. `writePathFor` → `"direct"`: a direct
+    PATCH within the allowlist, on a staging-only fixture table that is **not a
+    catalog table and belongs to no ecosystem domain**, which is why the strike
+    does not reach it (§9.1 item 5). It is the app's only direct write, and the
+    only writable surface at all until Ben installs `settle_review_item`.
+  - **`groups` and `idols` are not in the map at all.** `editConfigFor` returns
+    null for them, `/records/groups/<uuid>` is a routed 404, and a PATCH is
+    refused `unknown_table`. *Considered and rejected 2026-09-08*: a third
+    `read_only` regime keeping their record pages as reads, on the grounds that
+    SPEC F12's display half names the idol↔group islands and Ben's note says
+    they "stay as test tables". It loses on three counts — with no door and no
+    write, a record page reachable only by a pasted uuid is a surface no
+    operator can reach; the reference-as-link mechanism is fully carried by
+    `events.venue_id`, which is what acceptance test 8 grades; and "stay as test
+    tables" is satisfied by the DATABASE, since `lib/db/tables.ts` keeps both
+    names and the residue sweep still reads them. Restoring an entry is two
+    objects in one file if Ben ever wants the page back.
+  **Where the teeth are, now that the type no longer carries them**: a `Regime`
+  member is not what stops the struck path returning — a catalog table re-added
+  under `sandbox` would be exactly it. The pin is structural and lives in
+  `tests/offline/edit/config.test.ts`: **the only table whose write path is
+  `direct` is `walk_sandbox`**, proved on two fixtures (a probe entry it must
+  flag, the shipped map it must not). A ticket that re-adds a catalog table with
+  a direct path is re-implementing what was struck; refuse it and cite this line.
+- **`display` is the read-only half of the same one map** (Ben's ruling,
+  2026-09-02, admin-window/TASK-0029). A `resolver_owned` table has an empty
+  `editable` and a non-empty `display`, so its record page shows the columns an
+  operator came to see — with per-field provenance beside each — while every
+  column of it still refuses through the one code path. `display` is never a
+  second allowlist: it names columns to READ and to draw, `decideEdit` still
+  answers the write question, and a column in `display` is not editable by
+  being there. It is the same file, so adding a column to any surface remains
+  one edit in one place.
+- **`reference` is a third QUESTION about those columns, not a third list**
+  (admin-window/BUG-0034, added to this block 2026-09-03 — it had been in
+  `config.ts` and missing here since). It names the one `display` column that
+  carries another record's id, and the domain that id belongs to, so the record
+  page draws that line as a link to `/records/<domain>/<id>` (`recordHref`)
+  with the linked row's name resolved by `readRecordReference` in
+  `lib/db/records.ts` — an operator never lands on a bare uuid. The column must
+  already stand in `display`; naming it here changes only how the line is
+  DRAWN, never whether it may be written, and a table with no such column
+  carries `null`. Where the linked table's NAME is read from is deliberately
+  not in the map: that is a relation name, and §4 rule 4 leaves
+  `lib/db/tables.ts` the only file in `src/` that spells one.
+- `events` and `venues` carry `regime: "resolver_owned"`. In **M1** they
+  rendered read-only with an empty `editable` and no write path of any kind. In
+  **M2** they gain an `editable` set — **Ben's answer of 2026-09-08, never a
+  builder's pick** (SPEC named gap 7; DECISIONS 2026-09-08) — written through
+  §9.2's override path and through nothing else:
+  - events: `title`, `description`, `poster_url`, `starts_at`
+  - venues: `name`, `city`, `country`, `address`
+
+  `event_type`, `status` and `time_precision` are ruled OUT and stay out: all
+  three are CHECK-constrained, so a free-text cell can produce a refusal the
+  operator cannot predict, and the fixed choice list that would fix that is a
+  widget this campaign has not costed. `ends_at`, `ticket_url` and every
+  unlisted `venues` column are out for want of a ruling, not for want of a
+  candidate — both lists are registry-declared, so the gate would accept them
+  and taste did not.
+  **A column MOVES from `display` into `editable`; it never stands in both.**
+  `display` is the read-only half of the one map and `decideEdit` reads
+  `editable` alone, so a column in both would be writable while the map called
+  it read-only. After the move `events.display` is `["venue_id"]` — the
+  reference alone — and `venues.display` is empty; because `mappedColumns`
+  orders pk → editable → display, both record pages draw the same lines in the
+  same order they draw today.
+  **Widening the list later is ONE edit to those two entries** (Ben, 2026-09-08:
+  the list can be updated later) — never a second list, never a per-column
+  flag, never a "future columns" scaffold. Every column of them still refuses
+  through the one code path when it is absent from the map, and no `.update()`
+  on either table exists anywhere in `src/`.
+- **A column absent from `editable` is refused server-side**, by the route,
+  with the row unchanged — hiding the widget is not the refusal (acceptance
+  test 7). The route reads the same `EDIT_CONFIG`; there is no second
+  allowlist anywhere.
+- Never widen `editable` to a link or a non-scalar: performers and venues are
+  `event_performers` / `venues` rows, not fields of `events` (AGENTS.md).
+- No row is inserted or deleted from Admin. `scraped_events` and any
+  `*_legacy` table are never written. No DDL, no migration, no SQL-executing
+  route — those are physically impossible over PostgREST and must also never
+  be built.
+
+### 9.1 The walk sandbox — a staging-only table walkers may edit
+
+Ben's exception, granted 2026-09-03 ("we should just create a table that always
+exists which walkers can interact with. After a walk it should be reset for the
+next walk"), and the mechanism ruled by the architect the same day
+(admin-window/TASK-0034). VISION's non-goal — no schema change from Admin code,
+no migration in this repo — stays literally true: nothing here enters `src/`,
+nothing becomes a migration, nothing reaches production.
+
+**1. Mechanism: the table is created BY HAND, once, on staging.** Ben pastes the
+DDL below into the staging SQL editor (`agenticflow/tracker/for-human/TASK-0034.md`
+carries it paste-ready). Kit-side tooling then only DELETEs and re-INSERTs rows,
+which is pure DML and which `@supabase/supabase-js` does over PostgREST with the
+service key. *Rejected*: tooling that creates the table itself over
+`STAGING_SUPABASE_DB_URL` with a Postgres driver — it costs a supply-gated DEP,
+a second credential SHAPE in this repo (a DSN with an embedded password), and
+either a fourth home for walk tooling or an amendment to a standing pin, and it
+buys only self-healing on a staging project that would be missing every other
+table too (where the surface already says `not_provisioned`, honestly).
+**TASK-0021's pin is untouched**: `STAGING_SUPABASE_DB_URL` stays a name nothing
+under `src/` or `tests/` reads, and no `pg` / `postgres.js` dependency enters
+this repo.
+
+**2. The table.** `public.walk_sandbox`, on the staging project ONLY. One vetted
+scalar per edit type the record surface can produce, because the widget is a
+single text cell (`components/records/values.ts`) and every type question is
+answered by PostgREST on the way in:
+
+```sql
+create table if not exists public.walk_sandbox (
+  sandbox_id  uuid primary key,               -- uuid, like every mapped table (item 9)
+  label       text not null,                  -- text
+  note        text,                           -- nullable text: the em-dash absence, then fill it
+  tally       integer not null default 0,     -- integer coercion
+  is_flagged  boolean not null default false, -- boolean coercion (no catalog table covers one)
+  observed_on date,                           -- date coercion, nullable
+  created_at  timestamptz not null default now()  -- set at seed, never written, NOT in the map
+);
+```
+
+Deterministic keys so a recipe deep-links without a lookup, and **uuids**
+because the id gate is one grammar for the whole map (item 9):
+`00000000-0000-4000-8000-000000000001`, `…0002`, `…0003`, seeded literally, so
+the walk URL is `/records/walk_sandbox/00000000-0000-4000-8000-000000000001`.
+Zeros to the last digit on purpose — a value nothing generates, so a row of it
+in a residue sweep or a database console is unmistakably the fixture.
+`created_at` is deliberately outside the map — the read selects `mappedColumns`
+explicitly, so a column the map does not name is never read and never drawn, and
+it is `created_at` rather than `updated_at` because nothing updates it and a
+column that claims otherwise lies to whoever queries the table by hand.
+
+**The three NOT NULL columns are deliberate.** Clearing a cell sends `null`
+(`route.ts`: `""` and `null` both mean clear), so clearing `label`, `tally` or
+`is_flagged` is refused by the database (23502) and the surface must show that
+refusal without claiming the save landed. That is a walkable error path, not a
+defect: a walker files a bug only if the cell claims success, blanks the value,
+or reports nothing at all.
+
+**3. Exposure and grants.** It lives in `public`, so PostgREST exposes it — it
+has to, since Admin's only client speaks PostgREST. **RLS is enabled with no
+policy**, `anon` and `authenticated` are revoked, `service_role` granted: the
+service role bypasses RLS, so Admin reads and writes it exactly like any other
+table, and no browser-side key could ever reach it.
+
+**4. The reset tool, and when it runs.** `tests/walk/reset-sandbox.mts`, run by
+`node` exactly as `tests/walk/session-cookie.mts` is (admin-window/TASK-0036).
+It DELETEs every row and re-INSERTs a checked-in fixture — PostgREST cannot
+`TRUNCATE`, and it does not need to.
+
+- **It reads no `STAGING_` name and loads no `.env`.** It takes `SUPABASE_URL`
+  and `SUPABASE_SERVICE_ROLE_KEY` from its own process environment, mapped from
+  the staging names on the command line, which is already how a walk instance is
+  launched (STACK §5). So `tests/live/setup.ts` remains the ONE place the
+  `STAGING_` names are read, and a stale `.env` can never silently supply a
+  target.
+- **It refuses through the one guard.** `resolveStagingTarget`
+  (`tests/live/staging-target.ts`) against `SERVICES.md`'s declared staging
+  target: an unset name, an unparseable URL, no declaration, or a host that is
+  not the declared one all exit non-zero having written nothing. No second host
+  check exists anywhere.
+- **Cadence: immediately BEFORE every walk, mandatory**; again after a walk that
+  wrote, when convenient. Ben asked for "reset for the next walk", and a
+  before-reset is the only one a crashed, abandoned or forgetful walk cannot
+  skip — the guarantee a walk starts from the fixture must not depend on the
+  previous walk's manners.
+- `tsconfig.json` gains **`allowImportingTsExtensions: true`** so the node-run
+  `.mts` tool may import `../live/staging-target.ts` by its real extension (Node
+  resolves no extensionless TS specifier, and the alternative was a second copy
+  of the guard). Measured on this tree 2026-09-03: `tsc --noEmit` 0,
+  `npm run lint` 0, `npm run build` green, and Next does not rewrite the flag.
+
+**5. Its `Regime` is `sandbox` — re-ruled 2026-09-08, and the door this
+paragraph left open is the one that opened.** The original ruling (kept below,
+because its reasoning is why the new name is a rename and not a third code
+path) reused `pre_cutover` on the grounds that `Regime` answers one question —
+which WRITE PATH — and the sandbox's answer was identical to `groups`/`idols`'.
+Ben's strike of 2026-09-08 ends that: `groups`/`idols` leave the map entirely,
+so the sandbox's answer is shared with nothing, and the identifier
+`pre_cutover` would name a regime whose only member is a table that was never
+pre anything. The trigger this paragraph named — *"if a second non-catalog
+table ever enters the map, or if any code starts reading `pre_cutover` to mean
+'a catalog table', the third regime is earned then"* — is exactly what fired.
+The rename costs one word in `config.ts`, one arm in `writePathFor`, and the
+`regimeNote` ternary on the record page, which is now **three-way and honest**:
+the sandbox's note says a value written here goes to a staging fixture, not "to
+the catalog" — the one inaccuracy this section had been carrying on purpose is
+paid off by the same edit. The direct PATCH itself is unchanged, and it is
+UNTOUCHED by the strike because a fixture table in nobody's domain is not a
+catalog table. The original ruling, for its reasoning:
+
+**5a. (superseded 2026-09-08) Its `Regime` was `pre_cutover`, reused on purpose.** `Regime` answers one
+question — which WRITE PATH — and the sandbox's answer is identical to
+`groups`/`idols`': a direct PATCH within the map's `editable` allowlist,
+unprovenanced. A third member would be a second answer to a question the type
+does not ask, and it would cost a change to `decideEdit` plus `regimeNote`'s
+two-way ternary in `src/app/records/[table]/[id]/page.tsx` — which, left
+unchanged, would render "resolver-owned and read-only" beside an editable cell
+until someone noticed. The inaccuracy accepted instead: `pre_cutover` reads as a
+historical claim ("not yet cut over to the resolver") that the sandbox cannot
+make, and the regime note on its record page says a value written here goes "to
+the catalog", which for a staging fixture it does not. Both are carried in a
+docstring rather than paid for in a third code path, and neither is a bug to
+file. **The door left open**: if a second non-catalog table ever enters the map,
+or if any code starts reading `pre_cutover` to mean "a catalog table", the third
+regime is earned then and this paragraph is the one to revisit.
+
+**6. The fixture carries no `admin-window` marker.** The moment the entry lands,
+`tests/live/residue.live.test.ts` derives the sandbox into its search space and
+fails on any value containing that string, which is coverage worth having — and
+which makes a fixture containing it read as campaign residue on every single
+run. The fixture is checked in at `tests/walk/sandbox-fixture.ts` (the tool
+imports it; an offline test asserts the marker's absence and that every
+fixture key is a mapped column), and its rows say "sandbox", never the
+campaign name.
+
+**7. Production renders the honest absence, permanently.** The table exists on
+staging only, so in production the record read gets `PGRST205` and the page
+draws the `not_provisioned` card naming `walk_sandbox` — acceptance test 9's
+existing code path, no new branch. The card's generic line ("arrives with the
+scraper repo's migrations") is wrong for this one table and is **accepted as
+is**: the surface has no nav entry, no Browse row and no link anywhere, so it is
+reachable only by an agent typing a URL it already knows, and the load-bearing
+half — this table is not here, and here is its name — is true. Do not add a
+per-table branch for it. If the sandbox ever becomes reachable from a link, that
+line becomes a per-entry field and this is the sentence to revisit.
+
+**9. Its primary key is a `uuid`, because the id gate is ONE grammar for the
+whole map** (ruled 2026-09-04, from builder-93's measurement on TASK-0035; this
+paragraph replaced the `text` key the first draft of this section carried).
+`isRecordId` (`src/lib/db/records.ts`, admin-window/BUG-0065) refuses a segment
+that is not a uuid BEFORE any read, on the premise its docstring states —
+"every table in the map is keyed by a uuid". Text keys made that premise false
+the moment the sandbox entered the map: at `/records/walk_sandbox/walk-1` the
+page issued no query at all and rendered the not-an-id empty state, so **neither
+state this section requires was reachable at the sandbox's own keys** — the
+absent table drew the wrong card, and a seeded table would never have been read.
+
+The invariant that decides it: **the gate never refuses an id the table could
+hold.** Two ways to keep it, and the cheap one wins. *Rejected*: a per-table key
+shape in the edit config (`idShape: "uuid" | "text"`, consumed by the gate). It
+is a second allowlist about the same columns (§9's own rule), it widens
+`TableEditConfig` and changes `isRecordId`'s signature at every call site for
+one staging fixture, and it degenerates for a text table to "accept anything" —
+paying a config field to buy back exactly nothing. *Chosen*: the sandbox is
+uuid-keyed, which costs one word in a DDL Ben has not pasted yet and leaves
+`src/` untouched by the entire sandbox chain, entry aside. The legibility of
+`walk-1` was the only thing given up, and a constant uuid in the recipe is
+copied, not remembered.
+
+**The door left open, and it is `isRecordId`'s own**: if a catalog table keyed
+by something other than a uuid ever enters the map, that one function learns it
+— by grammar if the shapes are distinguishable, by config if they are not. What
+must not happen is a table entering the map whose real ids the gate refuses; the
+map's entry and the gate's grammar are two halves of one claim, and this is the
+sentence to revisit when they stop agreeing.
+
+**8. One consequence for the live suite.** `residue.live.test.ts` reads every
+mapped table with `select("*")`; against a staging project where Ben has not yet
+pasted the DDL, that read errors and the sweep fails on a table nobody wrote to.
+The sweep therefore treats the sandbox's ABSENCE as "nothing to sweep" — the
+absence code, read with the existing `codeOf` / `objectIsAbsent` idiom
+(`tests/live/parity.ts`), skipped with a stated note — and never as an error.
+An absent table is not a residue finding, and it is not a pass it can hide in
+either: the scanned-column floor still has to be met by the tables that ARE
+there.
+
+### 9.2 The override path — how a catalog value changes from Admin after M2
+
+*(Written 2026-09-08 at the M2 decomposition, from spec §7/§8,
+`contracts/resolver.md`, and the sibling's INSTALLED migrations read the same
+day. Every ticket that writes a catalog value carries this subsection.)*
+
+**One entry point, and the app holds exactly one call to it.**
+`settle_review_item(p_decision jsonb)` — a jsonb ARGUMENT, following the two
+shipped idioms in the sibling (`apply_resolution(p_decisions jsonb)`,
+`ingest_observations(p_batch jsonb)`, whose own migration comment records that
+"the ban is on jsonb COLUMNS, and a batch argument is not a column"). The app's
+one call site is `settleReviewItem` in `src/lib/db/verdict.ts`; a second `.rpc(`
+anywhere in `src/` is a defect, pinned by
+`tests/offline/edit/config.test.ts` and `tests/offline/review/one-place.test.ts`.
+
+**The parameter name is part of that contract, and it is coupled by a test.**
+PostgREST resolves an RPC by name AND by argument names, and answers `PGRST202`
+for a wrong one — the same code it answers for a function that is not installed
+at all — so a spelling drift renders a provisioned function permanently and
+silently absent. Measured 2026-09-08 (QA on admin-window/TASK-0048): with the
+constant sabotaged to `p_decisions`, the whole offline suite stayed green. It is
+spelled once, `SETTLE_ARGUMENT` in `src/lib/db/verdict.ts`, and **the handoff
+artifact's offline test asserts the artifact's parameter name against that
+constant**, the way it already asserts the `action` CHECK against
+`VERDICT_ACTIONS` — on both fixtures (§13.4): red on a sabotaged spelling, green
+on the shipped artifact.
+
+**The decision envelope is a pure leaf**, `src/lib/verdict/decision.ts`
+(ARCHITECTURE §4 rule 7: it imports nothing). It is the SAME shape the §9
+handoff artifact's SQL reads, and the handoff's own offline test imports
+`VERDICT_ACTIONS` from it and asserts the artifact's `action` CHECK equals it —
+so SPEC named gap 6 ("the shape F9 authors is the shape F10 calls") is closed
+by a test rather than by two builders remembering.
+
+The eight action names, ruled here because no contract spells them and two
+builders may not each invent one — snake_case, rendered verbatim in mono (§11):
+`choose_claimed_value`, `supply_value`, `keep_current` (the `data_conflict`
+three), `link_entity`, `settle` (the `entity_link` fact two), `fixed`,
+`wont_fix` (the signal dispositions), `override` (item-less, from the record
+surface). A disagreement Ben finds at install is a patch, never a silent
+Admin-side adaptation (SPEC F9).
+
+**What the envelope may NOT carry, because the database already knows it:**
+
+- **No `schema_version`.** The gate validates a claim against
+  `domain_schema(domain, version)`, whose content is the scraper's registry
+  compiled into SQL. A version number in Admin is scraper registry knowledge
+  re-encoded by hand — spec §10's "flagged gap, not a silent copy". The
+  FUNCTION resolves the domain's current version; Admin never names one.
+- **No source name, no tier, no `rejected_by`.** All three belong to the
+  function's own branches.
+- **No canonical column name.** The registry's field names ARE the canonical
+  column names (the sibling's own words: "`column` defaults to `field`, because
+  the registry gives a domain's fields the canonical columns' own names"), with
+  exactly one exception: `events.venue` is the registry field, `events.venue_id`
+  the column it produces — which is what makes it a **reference** and F12's
+  picker rather than a cell.
+
+**Two facts of the installed schema that decide the shape of the override**
+(read 2026-09-08 from `kspace Scraper/supabase/migrations/`, and any change
+here is a re-read, not a guess):
+
+1. **The gate refuses an unregistered source** (`ingest_observation`, KS007:
+   "source \"%\" is not registered"), so an admin-tier observation needs a
+   registered `sources` row. **Ben's answer, 2026-09-08** (DECISIONS
+   2026-09-08): the admin voice is the row `source = 'admin'`, `tier = 'admin'`,
+   `lifecycle = 'active'`, `kind = 'registered'`. Staging holds no such row
+   today — read-only census 2026-09-08: `ticketmaster` and two test-harness
+   sources, nothing else — so **the `settle_review_item` artifact carries an
+   idempotent `insert … on conflict (source) do nothing` for it inside its own
+   fenced block**, and Ben installs the row and the function in one paste
+   (admin-window/TASK-0046 carries the exact shape, checked against the
+   installed `sources`: `sources_source_key UNIQUE (source)`, the
+   `source_kind` / `source_lifecycle` / `source_tier` enums, and the
+   `sources_source_shape` CHECK `^[a-z0-9_]+$`). **The name is spelled once**,
+   `ADMIN_SOURCE = "admin"` in the pure leaf `src/lib/verdict/decision.ts`: the
+   artifact's own offline test asserts the SQL's source literal against that
+   constant, and any surface naming the admin voice imports the same one. It is
+   a NAME, not an envelope field — `VerdictDecision` still carries no source
+   name and Admin still sends none.
+2. **A reference is observed as a ref, not as an id.** Events v3 declares
+   `venue` as `{"ref": "<the source's own id for the venue>"}`, and the link
+   stage resolves `(source, 'venues', external_ref)` through
+   `confirmed_matches` into `venue_id`. `confirmed_matches.matched_by` already
+   admits `'verdict'`. So a picker's choice lands as **the observation plus its
+   confirmed match** — which is exactly what spec §8 says, and it is authorable
+   against what is installed.
+
+**How a surface knows the path is open.** Nothing may probe
+`settle_review_item` by CALLING it — a call placed to discover whether the
+procedure exists is a write attempt dressed as a question, and one applied a
+real admin override on 2026-09-11 (admin-window/BUG-0215). **Ruled: readiness
+is the CONJUNCTION of every object the save calls** (`readSettlementReadiness`
+in `lib/db/verdict.ts`, one owner, one helper — never hand-copied per page,
+common violation 9; amended by admin-window/BUG-0223, which supersedes the
+2026-09-08 ruling that a surface read the `verdicts` TABLE alone). Two objects,
+two reads, one derivation:
+
+- the `verdicts` TABLE, GET-shaped and bounded to zero rows, asked first
+  because it is the cheap half;
+- the `settle_review_item` FUNCTION, read out of PostgREST's own schema
+  description (`GET /rest/v1/`, the OpenAPI document — `lib/db/schema.ts`; the
+  live suite reads the same source through `functionsOnStaging`,
+  `tests/live/parity.ts`). That document is how a function is introspected
+  without being called, and it is a READ.
+
+Either absent and the surface is not ready: it renders
+`data-state="not_provisioned"` naming **the object that is missing** and offers
+no control. The half-installed world is not hypothetical — staging was in it
+for four minutes during the install of 2026-09-11 — and in it the page used to
+draw an override widget whose save could only 503. The function's presence is
+cached per process only AFFIRMATIVELY (`lib/db/schema.ts`): the description is
+387 KB, and an absence must never be remembered across the install that ends
+it. Both paths are graded; neither throws.
+
+**RATIFIED, with its limits named (architect, 2026-09-15).** The paragraphs
+above were rewritten by the BUG-0223 builder lane, which superseded this
+subsection's 2026-09-08 premise that "PostgREST cannot introspect a function
+without calling it". The new premise is the correct one and it stands:
+PostgREST publishes an OpenAPI description at `GET /rest/v1/` that keys every
+exposed procedure under `/rpc/<name>`, so existence is a READ, and a readiness
+that CALLS the function is a write attempt dressed as a question — which is
+exactly what wrote a real override on 2026-09-11 (BUG-0215). Nothing is
+reverted. Three limits of that read are ruled here rather than left to the next
+lane to find one at a time:
+(a) the description is an ANSWER FROM THE SAME HOST and is admitted by §4.1's
+admission rule — a body whose `paths` is not a plain object (an array is not)
+is a document this app could not read, never a database exposing nothing
+(BUG-0234, leg 3);
+(b) **the affirmative-only cache is deliberate and stays** — an absence must
+never survive the install that ends it, and a failed read is not an answer to
+cache;
+(c) **no in-flight dedupe, on purpose.** Two concurrent renders on a cold
+process can each fetch 387 KB. Recorded, not ticketed: it is bounded by the
+first affirmative answer, it is reachable only in the half-installed window,
+and a promise-sharing cache is a second caching rule to get wrong. Trigger that
+files it: a measured render-time cost on a page that reads readiness, or a
+second consumer of the description.
+
+**`not_provisioned` learns the absent FUNCTION** (§4.1's classifier): PostgREST
+answers a missing function with `PGRST202`, and Postgres with `42883`. Both
+join `PGRST205` / `PGRST204` / `42P01` / `42703` in the one helper, and `missing`
+carries the function's name.
+
+**What must never be built** (spec §10's one forbidden move, and it is the
+sentence the whole milestone hangs on): **no Admin-side workaround for the
+absent function.** Not a queued write, not a "pending overrides" table, not a
+direct `.update()` behind a flag, not a second write path "until Ben installs
+it". The surface degrades to read-only with the reason named, which is what M1
+already ships.
+
+## 10. Tests
+
+- `tests/offline/**` — the default suite (`npm test`). Pure functions, page
+  functions rendered against **stub clients** built from captured PostgREST
+  response shapes in `tests/fixtures/`. **No network.**
+- `tests/live/**` (`*.live.test.ts`, `npm run test:live`) — staging only. The
+  live setup file is the **one** place `STAGING_SUPABASE_URL` /
+  `STAGING_SUPABASE_SERVICE_ROLE_KEY` are read; it **refuses** (non-zero, no
+  fallback) when either is unset, and it refuses when the staging host does not
+  match the staging target declared in `agenticflow/docs/SERVICES.md`. Product
+  code never mentions a `STAGING_` name.
+- `tests/walk/**` — **not a test project**: the walk agents' two tools, run by
+  `node` and matched by no vitest glob. `session-cookie.mts` mints the session
+  cookie (admin-window/TASK-0033); `reset-sandbox.mts` resets the walk sandbox
+  (§9.1). Both live outside `src/` because that is where a credential name may
+  be read, and neither is importable from the app.
+- `tests/http/**` (`npm run test:http`) — builds and starts the app on port
+  8772 for the things only a real server proves: unauthenticated redirects to
+  `/login` for every route, and the client-bundle scan for service-role
+  material. Needs no database. **That "no database" is a hard ceiling
+  on what this tier can prove** — the rule below, not a detail.
+- **What the http tier CAN prove, and what it CANNOT** (added 2026-09-11,
+  architect, from admin-window/BUG-0171's close; DEBT-0019). The harness starts
+  the app with DB sentinels and there is no `admin_allowed_emails` to vouch for
+  anyone, so `requireAdmin()` — the first statement of every route handler —
+  **fails closed on every gated request, signed-in or not**: a bare `403`
+  carrying none of the handler's headers and none of its body. Therefore:
+  1. *Provable here:* the GATE's own behaviour (uncookied → `307` to `/login`;
+     cookied-but-unvouched → `403`; the inventory asserting every handler on
+     disk is gated); anything about an UNGATED surface (`/login`,
+     `/api/health`, the client-bundle scan for service-role material); and what
+     Next itself puts on a **page** answer — a gated page renders its named
+     refusals, still answers `200`, and carries the `Cache-Control` no offline
+     tier can see.
+  2. *Not provable here, ever:* any positive property of a route HANDLER's own
+     answer — its status, its body shape, its headers, which of its four arms
+     ran. All of it is behind the gate.
+  3. *An absence asserted on this tier passes VACUOUSLY on the 403*, so it is
+     never the proof of a positive property. `tests/http/paging.http.test.ts`'
+     "nothing either route puts on the wire is storable" is satisfied by a 403
+     that carries no `cache-control` at all — it would have stayed green
+     through the whole of BUG-0171's defect, which QA reproduced on its own
+     server. A case like that asserts the status it ACTUALLY graded, so a
+     harness that ever gains a database reddens and is re-authored deliberately
+     instead of silently grading something else.
+  4. *Where a handler's answer is proved instead:* offline, against a stub
+     client and a stub request, where the four arms exist
+     (`tests/offline/paging/*-route.test.ts`); and, where the claim must hold
+     on the real wire, by QA against a production build on staging with a
+     minted cookie, recorded as text in the ticket's History. A criterion may
+     REQUIRE that measurement; it may never be written as a stored check — a
+     builder lane can neither read `.env` nor mint a cookie.
+- **A guard whose RED can be produced by a repo this one does not own does
+  not sit in the suite every builder must clear** (added 2026-09-12,
+  architect, from admin-window/BUG-0213's fourth trigger in one file;
+  installed by admin-window/TASK-0080). The cut is by INPUT OWNERSHIP, not by
+  subject: the cases grading OUR handoff artifact — block balance, quoting,
+  `ALTER TABLE` targets, forbidden constructs, ACL math, the code→meaning
+  declarations this campaign allocates — stay in `tests/offline/**`, because
+  every input is in this repo and an authoring slip must redden before Ben
+  pastes. The cases that READ `kspace Scraper` move to `tests/handoff/**`, a
+  fifth vitest project (`npm run test:handoff`) that `npm test` does not
+  collect and `ci_command` therefore does not run; the verifier runs it at a
+  close, and whoever prepares or re-checks a handoff runs it then (LESSONS 9).
+  Why: four times in one campaign a legitimate event next door — twice the
+  campaign's own handoff LANDING — made `npm test` red for every builder here
+  while nothing in this repo was wrong. `SIBLING_ROOT` stays an absolute path
+  (§1.2) and the `runIf(SIBLING_PRESENT)` skip stays, so a machine without the
+  checkout skips loudly instead of greening.
+  **And it is named where it is RUN, not only where it is ruled** (added
+  2026-09-15): the milestone CLOSE CHECKLIST, `agenticflow/docs/STACK.md` §5's
+  incantation table and the README's script table each carry
+  `npm run test:handoff`. QA measured the omission on 2026-09-15 — the tier
+  existed in this contract, in `tests/suite-globs.ts` and in `package.json`,
+  and nowhere a builder or a verifier reads — and the README's front-door
+  guard is ONE-DIRECTIONAL (it resolves the scripts the README names; it
+  cannot see one the README omits), so the omission could not redden.
+  admin-window/TASK-0083 writes the README half.
+- **Shared fixture builders live in `tests/fixtures/`** — one place that builds
+  a review item in each of its three shapes, a pending claim in each bucket, a
+  cycle row, a run row, a source row, an event with provenance. A test that
+  hand-rolls its own row shape is scope sprawl; import the builder.
+- **Parity (acceptance test 2) is per page**: the page's own live test renders
+  the page and asserts its numbers against an **independently written** query
+  the test issues itself — not by calling the same `lib/db` function the page
+  called. Two paths to one number, or it proves nothing.
+- **A live test names the STATE KIND before it compares a number** (added
+  2026-09-02 from the first staging parity pass; common violation 6). A page
+  renders one of four kinds — `ok`, `empty`, `not_provisioned`, `error` — and
+  an oracle written as a two-way branch (`did rows render? …else assume the
+  table is absent`) grades the other two wrong: `/queues` and `/sources` failed
+  on an honest EMPTY page, and `/claims` PASSED four assertions on an ERROR
+  page, because "the markup contains `pending_claims`" is satisfied by the
+  error line as well as by the not-provisioned card. The rule, for every live
+  test in this suite:
+  1. The test decides the kind it EXPECTS from its own independent count, then
+     asserts the rendered kind equals it. The kind is read from the markup
+     structurally — `data-state` on the four `ui` state primitives — never from
+     the prose inside a card.
+  2. `ok` compares numbers. `empty` is a **pass with a number**: the
+     independent count is exactly 0 and the page's labelled figure reads 0
+     (LOOK_AND_FEEL bar 1 — a queue's open count is on screen whether or not
+     the queue has rows). Neither is an absence.
+  3. `not_provisioned` is a pass only when the test's own read of that same
+     object gets the absence code (`PGRST205`/`42P01`). It is never inferred
+     from "no rows rendered".
+  4. `error` is a **FAIL**, and the failure message names the read and the
+     database's code. A live suite that can go green while a page is broken is
+     the one thing this suite exists not to be.
+  A `head: true` count carries no body, so supabase-js parses no error out of
+  it (measured: `code=undefined, msg=""` on a 57014) — the helper that reports
+  a failed parity count issues a GET-shaped count, or says it could not tell.
+  **This is why the shipped count read is `countRead` and not a HEAD at all**
+  (amended 2026-09-11, BUG-0210): the same missing body hides `PGRST205` from a
+  page, not only from an oracle.
+- **A guard over a tree this repo does not own compares DECLARED FACTS, never
+  text** (promoted 2026-09-11 at count 3 — BUG-0207 → BUG-0212 → BUG-0213, one
+  file, one day, three rounds; Common violations row 25). The KS-code guard asks
+  "does the sibling mean something else by a code our handoff allocates?" and
+  answered it by matching LINES against a corpus of our own paste blocks. That
+  oracle failed three times at three scales: round 1 counted our own installed
+  handoff against us and turned `npm test` red for every builder precisely
+  because the campaign's satisfaction condition was being met; round 2 missed
+  the sibling's own raise idiom (`using errcode = 'KS029',` — the grammar all 32
+  of its codes use) because our note carries that same line; round 3 called the
+  sibling's NEXT allocation a claim on ours, because one of our paste "blocks"
+  is two lines long and KS033 lands on one of them. **Identity comes from a
+  declaration both sides spell**, not from similarity: the sibling's own
+  `tests/helpers/ks_codes.py` names every code (`UNREADABLE_VERDICT = "KS029"`),
+  so the comparison is a set of (code → meaning) pairs — same code and same
+  meaning is our installed artifact, same code and a different meaning is the
+  collision, everything else is not our business. Two corollaries: a
+  corpus-similarity oracle is spelling enumeration in disguise (§4's normalise-
+  then-compare rule, LESSONS 4) and gets one round, not three; and **a check
+  whose red depends on what a human does in another repo does not belong in the
+  offline default project** every builder runs before every push.
+- **A state card belongs to the BLOCK that rendered it; a surface's state is
+  the state of its FIGURES** (added 2026-09-10, admin-window/BUG-0169;
+  DECISIONS.md, same date). A gauge surface holds two kinds of thing: figures,
+  which state a real number in every counted state, and blocks — `Distribution`,
+  `TrendTable`, a stated `GaugeCard` — which are replaced by their own state
+  card when they hold no row, BY CONTRACT (§7, admin-window/TASK-0030: `rows:
+  []` with no stated reason is unwritable). So a surface at a counted zero
+  legitimately renders labelled `0`s AND an empty card, and an oracle reading
+  `[data-state]` anywhere inside the surface grades that surface `empty` —
+  which is how `/cycles`' two gauges went deterministically red the day
+  staging's resolver window emptied, against two rules that both held. The
+  rule: every card a gauge block renders carries `data-gauge-block`, emitted by
+  `GaugeStateCard` in `src/components/gauges/state.tsx` and by nothing else,
+  and a live oracle grading such a surface passes it as `excluding` — the
+  device `/queues` already uses for `[data-gauge-queue]`. A SURFACE-level
+  refusal is rendered by `StateOf`, which carries no marker, so the exclusion
+  can never silence an error or a not-provisioned card (admin-window/BUG-0036's
+  failure mode, and the reason the marker lives in exactly one component).
+  `emptyAtZero: false` keeps its meaning — this surface's figures stand in
+  every counted state — and the surface stays `ok` at a counted zero, so rule 2
+  above is graded there rather than skipped.
+- **An oracle counts the SAME narrowing the surface renders, and names its
+  surface by `data-surface`, never by position** (added 2026-09-03 at the M1
+  structure walk; common violations 7 and 8). Two failures of one idea — an
+  oracle that is not addressed to the thing on screen:
+  1. *The count.* A per-tab surface takes a per-tab count; a WINDOWED table
+     takes the window's count, not the view's. `claims.live.test.ts` graded the
+     standing tab against the whole view's 859 (BUG-0037), and went on
+     asserting "every claim of the view is rendered" after BUG-0041 windowed
+     the table to 50 (BUG-0057). Write the independent query with the page's
+     own filter and limit beside it, and say in the assertion message which
+     window is being compared.
+  2. *The address.* `section:nth-of-type(1)` names whatever is first today.
+     BUG-0040 added a lead section to `/cycles` and four live tests died with
+     `matches 2 surfaces` — a red the ticket's own checks could not see,
+     because `npm test` does not run this tier. Every surface a live test
+     grades carries `data-surface="<name>"`, unique on the page, and the
+     oracle selects on that. Five files still address by position: DEBT-0002.
+
+- **A live oracle is sized by the ASSERTION, not by the data** (added
+  2026-09-11, architect, from QA's TASK-0075 residual — admin-window/TASK-0077).
+  PostgREST stops at 1,000 rows whatever a `.limit()` asks, so an oracle that
+  reads a whole table to tally it has a lifespan: `claims.live.test.ts` read
+  `pending_claims` three ways at 877 rows, and at 1,000 every case in the file
+  refuses permanently — a stored check of five tickets going red on the day the
+  product is fine. So: a "whole" figure comes from the database's own exact
+  count, taken **on the same request as the rows** it accompanies (a count is
+  not subject to the row ceiling and a second read is a second race); a row set
+  is bounded by what the assertion compares (the page's own window, plus a
+  margin); a per-group census counts rather than tallies rows. The cap guard
+  stays and is what makes the failure legible when a bound is genuinely
+  reached.
+- **`whileStill` decays with the DURATION of the make, so shrink the make**
+  (same date, same ruling). The device reads, makes, reads again and needs the
+  two reads to agree; a make of 7–20 s (a render plus a ~14-request paged walk
+  plus an enumeration) cannot hold still against a scraper that churns in
+  bursts, and more attempts only buy more long windows. The lever is the SIZE
+  of what is walked — a narrowing chosen at run time, small enough to hold
+  still and still larger than one window — never a tolerance, a retry or a
+  skip (DECISIONS 2026-09-10 rule 3). What TASK-0075's "one round trip" rule
+  protects is that duration and not the request count: concurrent bounded
+  counts in one `Promise.all` are one wait and are permitted where a single
+  read would have to carry the whole table; sequential reads inside a held
+  shape stay banned. And exhaustion says so in its own voice — its message
+  opens with a marker naming the database as what moved, because an honest
+  refusal and a product defect otherwise share one exit code in a downstream
+  lane's stored check.
+- **Every live test sweeps what it wrote** (acceptance test 13), in a `finally`,
+  restoring the prior value. M1's only writer is the edit-surface test, and it
+  writes **only `groups` / `idols`** — one field of an existing row, prior value
+  restored, residue scanned after (Ben's ruling, 2026-09-02). A live test never
+  writes a resolver-owned table (`events`, `venues`, `review_items`,
+  `observations`, `field_provenance`); a fixture population that would need one
+  is a gap to report, never a row to insert.
+- **What staging holds is a fact of the run, not of the code** (census
+  2026-09-02): `review_items` = 1 row (an `entity_link` signal), so
+  `data_conflict` is 0 and every DECISION-side live assertion compares 0 to 0
+  until the resolver escalates a real conflict. That is vacuous coverage, not a
+  passing bar: a decision-queue behavior proven only offline says so in its
+  ticket rather than claiming live parity.
+- **An absence assertion reads CODE LINES and pins a CALL, never a word.**
+  Two rules, one reason (common violation 4). (1) Comments are documentation:
+  a guard that greps the whole file reddens on a builder explaining why the
+  thing is absent — use the `codeLines` scanner in
+  `tests/offline/edit/config.test.ts` / `tests/offline/review/one-place.test.ts`,
+  or, in a ticket check, the pipeline form
+  `! grep -rn <word> <paths> | grep -qvE '^[^:]*:[0-9]+:[[:space:]]*(\*|//|/\*)'`.
+  (2) The app's vocabulary is the contract's vocabulary: `settled` is a
+  `review_items.status` value, "settled values" is a spec §5 gauge, `verdict`
+  is an `observations.rejected_by` reason, `in_window` is a real bucket. A ban
+  keyed on such a word forces correct code to be renamed; ban the **write** —
+  the RPC name, `.insert(`/`.upsert(`/`.rpc(`, `.update(` outside
+  `lib/db/records.ts`, a `"use server"` module, a route path — which is what
+  "nothing settles anything in M1" actually means.
+- **One owner per structural guard.** The write surface of the whole repo is
+  asserted in `tests/offline/edit/config.test.ts`; the M2-close pin is
+  `tests/offline/review/one-place.test.ts`; layering — the leaf set, the
+  credential seam, the table-name seam — is `tests/offline/db/layering.test.ts`;
+  the **twice-exported-name** guard is the `OWNER` map in
+  `tests/offline/url/narrowing.test.ts`, NOT layering (recorded 2026-09-10:
+  DEBT-0016's criteria named the wrong file and the builder had to rule around
+  it — a criterion that needs this guarantee names the OWNER map). A ticket
+  that needs one of those
+  guarantees **runs that file** as a check instead of hand-rolling a second
+  predicate that will drift from it.
+
+## 11. Naming and conventions
+
+- Files: kebab-case (`review-items.ts`, `not-provisioned.tsx`). React
+  components: PascalCase exports. Route folders: lower-case, plural
+  (`/queues`, `/claims`, `/sources`, `/cycles`, `/browse`, `/records`).
+  **One file is PascalCase and stays that way**: `src/components/EditableCell.tsx`,
+  the single old component §2 carries over by name ("re-earns its place"). §3's
+  map used to draw it inside `ui/`; the tree has it at the components root,
+  which is where §2 put it (structure walk, 2026-09-03 — the map was corrected,
+  not the file: a rename costs four test files and buys a letter).
+- **Contract vocabulary is the app's vocabulary**, in code as in copy:
+  `claim`, `review item`, `decision` / `signal`, `verdict`, `override`,
+  `cycle` (resolver) / `run` (adapter), `bucket`, `tier`, `canonical`
+  (LOOK_AND_FEEL glossary). A variable named `task`, `alert`, or `job` is a
+  defect in a review-item module.
+- Machine identifiers (`data_conflict`, `admin_locked`, `wont_fix`,
+  `awaiting_row`) render **verbatim in mono**, never prettified.
+  **Through the shared primitive, not through the class pair** (structure
+  walk, M2, 2026-09-09): the rule is currently hand-spelled as
+  `type-data text-ink` 44 times across 24 files, with two byte-identical
+  file-local components (`TableName` in the record page, `ReviewItems` in the
+  queues item page) that cannot see each other — which is how three M2 bugs
+  arrived one route at a time (BUG-0112, then BUG-0120 "the face BUG-0112
+  fixed one paragraph above", then BUG-0121 "the face BUG-0120 fixed one
+  route over"). DEBT-0011 builds the primitive; until it lands, a ticket
+  rendering an identifier states in its criteria which face it uses, and
+  after it lands a new hand-spelling is a defect. A rule spelled as two
+  Tailwind classes at every call site also has nowhere to hold the bidi
+  isolation the row-15 ruling requires of foreign text.
+- **A count read is `countRead`, and prose calls it a count read** (ruled
+  2026-09-15, after four lanes on one class: DEBT-0022 → BUG-0231 → BUG-0232 →
+  BUG-0233). There is exactly one count SHAPE in this app — `countRead`, a GET
+  with `{ count: "exact" }` and `limit 0` (§4.3) — and exactly one NAME for it
+  in prose. `head: true` appears in this repo only where the subject is the
+  shape the app does NOT issue and why; a comment that offers it as a
+  description of a leg this app has is wrong the moment it is written.
+- **A comment naming a MECHANISM names the symbol the code calls; a comment
+  naming a WORLD names no install state at all** (same ruling; the two halves
+  cost four lanes and 19 stale sites). Mechanism: say `countRead`,
+  `readComplete`, `unreadableAnswer` — the thing a reader can grep — never a
+  paraphrase of an option set, which drifts silently because nothing grades a
+  comment. World: what is installed on staging or in production is stated in
+  ONE place, §9.2, and every other file points there. Fourteen files spent
+  2026-09-11 to 2026-09-15 asserting that the two §9 objects were absent from
+  staging, four days after Ben installed them (admin-window/BUG-0235). This is
+  LESSONS 11 — one fact, one derivation — applied to prose: a comment is a
+  COPY of a fact, and a copy nothing grades is a copy that rots.
+- **The kind is derived, never stored** (spec §6): `lib/review/shapes.ts` is
+  the one place that maps a shape to `decision` or `signal`. The three shapes
+  today: `data_conflict` fact item → decision; `entity_link` fact item
+  (`source_id` null) → decision; `entity_link` source-pattern item
+  (`source_id` set) → signal.
+- **Browse's "newest first"** is `events.created_at desc` — arrival order,
+  because the view is "everything that came through the pipeline, newest
+  first" (spec §4), not the calendar. `starts_at` is a column the view shows,
+  never its sort.
+
+## 12. Open questions (blocked ASK tickets — never decided in code)
+
+These are contract silences. Each is a blocked ticket for Ben; **no builder
+may resolve one by choosing.** Tickets are scoped so the settled work proceeds
+without them.
+
+Each carries a marker. **A question is closed only when its marker leaves this
+list** — that is the structural bar its ASK ticket checks, and the architect is
+the only one who removes a marker.
+
+**No question is open.** The two filed at the M2 decomposition on 2026-09-08
+were answered by Ben the same day and their markers left this list for that
+reason — they are not spelled here, because each ASK ticket's structural check
+is its marker's ABSENCE from this file and quoting one would re-open the
+question on a grep. In one line each, with the door each closes in its dated
+`DECISIONS.md` paragraph:
+
+- **The admin voice is a registered source row of its own** — `source = 'admin'`,
+  `tier = 'admin'`, `lifecycle = 'active'`, `kind = 'registered'`. Staging holds
+  no such row, so the `settle_review_item` handoff artifact carries an idempotent
+  insert for it and Ben installs the row and the function in one paste; the name
+  is spelled once as `ADMIN_SOURCE` in `lib/verdict/decision.ts` (§9.2;
+  admin-window/TASK-0043 → TASK-0046).
+- **The editable columns are** events `title`, `description`, `poster_url`,
+  `starts_at`, and venues `name`, `city`, `country`, `address` — the columns Ben
+  ruled visible on 2026-09-02, now writable through the override path.
+  `event_type`, `status` and `time_precision` stay out as CHECK-constrained, and
+  the list may be widened later by ONE edit to the two map entries, never by a
+  second list (§9; admin-window/TASK-0044 → TASK-0054).
+
+An empty list is the state this section is now in, and it is a state it is
+allowed to be in — it is not an invitation to invent a third question: a new
+silence is a new blocked ASK ticket with its own marker, never a choice made in
+code.
+
+**The sixth question — the claims-cost one — was settled 2026-09-03**, and its
+marker left this list for that reason (it is not spelled here: the ticket's
+structural check is the marker's ABSENCE from this file, so quoting it would
+re-open the question on a grep). `pending_claims` could not be read on staging
+in any shape but an unordered `limit 1`, the fix was a
+scraper-repo artifact and therefore a handoff, and Ben licensed the migration
+that carries it — an index on `field_provenance` and one `materialized` hint on
+the view's creation-bar CTE. Re-measured through the same live guard, the
+Claims page's own shape returns all 859 rows in 281–312 ms with **no change to
+Admin**, which is what the handoff was for. See §6 trap 12, whose two standing
+rules (no workaround code; Admin never re-computes the classification) survive
+the fix untouched, and admin-window/TASK-0031.
+
+**Five questions were settled 2026-09-02** by Ben, and their markers are gone
+from this list for that reason — each ruling is a dated paragraph in
+`DECISIONS.md` with the door it closes. In one line each: the app keeps reading
+`SUPABASE_*` while the live suite reads the staging names in
+`tests/live/setup.ts` alone, and parity stays two PostgREST paths with no pg
+driver; the resolver tables are applied to staging and populated, and a live
+test may write and sweep `groups`/`idols` and nothing else; the stuck-pattern
+threshold line stays absent for M1, with dials-as-rows an ecosystem
+design-queue item; the provenance slot on a pre-cutover table reads "no
+provenance recorded (pre-cutover table)"; and **the adapter-runs half of Cycles
+& runs shows nine of the `runs` table's 22 columns** — `source`, `started_at`,
+`ended_at` (a null one renders as still running), `outcome`, `error_summary`,
+`records_parsed`, `claims_emitted`, `records_unlinked`, `failure_class` — and
+that half honours `?source=<name>`, matched by name because `runs.source` is
+text with no foreign key (§6 trap 6). Built by admin-window/TASK-0016; the
+other thirteen columns are out of scope for M1.
+
+## 13. Decomposition guidance — what a ticket on this tree must carry
+
+*(Written at the M1 root-cause pass, 2026-09-03, from the milestone's 60 bugs.
+`agenticflow/docs/LESSONS.md` is the builder-facing half of the same pass — the
+six classes; this is the authoring half. Each rule below exists because a class
+of bugs would not have survived it.)*
+
+1. **A ticket whose `touch_scope` includes a page under `src/app/**` — or a
+   shared render primitive under `src/components/ui/**` — carries that page's
+   live suite in its `## Checks`.** `ci_command` is
+   `npm run lint && tsc --noEmit && npm test`, and `npm test` is the **offline
+   and isolated projects only**: `tests/live/**` and `tests/http/**` run in no
+   gate at all. That is the whole mechanism behind BUG-0024 (the app selected a
+   column the schema owner had dropped; the offline stub still had it),
+   BUG-0056 and BUG-0057 (a page change left its live parity oracle red, both
+   caught by a walker rather than by the ticket), and BUG-0058 (a live sweep
+   nobody had ever executed). The form is
+   `npm run test:live -- tests/live/<page>.live.test.ts`, and it is
+   **measured runnable inside `receipt.py`'s private worktree** — BUG-0037's
+   receipt (2026-09-03) records that exact command at exit 0 with six live
+   tests green in `agenticflow/.worktrees/_receipt-32069`. It costs ~30 s per
+   file. When the staging names are absent from the environment the live guard
+   refuses non-zero, so the failure mode is a false RED that names the missing
+   name — never a silent green.
+2. **Offline checks are TARGETED** — the page's own test files, not `npm test`.
+   The full suite belongs to `ci_check` and the run-end gate. The exception is
+   a ticket whose scope touches a shared surface (`components/ui/**`,
+   `lib/db/result.ts`, `lib/format.ts`, the edit config): say so in the ticket.
+3. **A user-facing ticket's criteria name the ABSENT case explicitly** — the
+   null field, the empty set, the missing table — because eight M1 bugs were a
+   value that renders as nothing (LESSONS 1). "Renders X" is half a criterion;
+   "renders X, and renders the dash with no qualifier when X is null, and
+   renders a labelled 0 when the set is empty" is the whole one.
+4. **A ticket that adds or changes a structural guard states BOTH fixtures** in
+   its criteria: the input the guard must flag, and the input it must NOT flag.
+   Ten M1 bugs were guards that passed vacuously or reddened correct work
+   (LESSONS 3, common violations 4 and 5).
+5. **A ticket that writes a command into a doc carries that command as a
+   check.** Three M1 bugs were recipes in STACK.md that had never been run
+   (BUG-0038/0039/0051). A `grep -q` for the doc's own words proves the
+   sentence exists, not that it works.
+6. **A new page ships with its own `src/components/<page>/` module.** The page
+   function reads, shapes and hands plain props down (§5); its presentation
+   lives beside every other page's. Promoted from common violation 8.
+7. **A helper two pages will need is seeded as its own ticket, first.**
+   Builders work in isolated worktrees and cannot see each other's code, so a
+   helper nobody seeded becomes N hand-copies that drift (common violation 9:
+   `StateOf` stands in four pages byte-for-byte, including its comment).
+8. **A ticket that touches the edit surface carries the no-direct-catalog-write
+   line, verbatim** (Ben's ruling, 2026-09-08; §9's three-regime bullet;
+   DECISIONS 2026-09-08): *after M2 the only path by which a catalog value
+   changes from Admin is the override path through the gate; the struck direct
+   path is never re-implemented, under any name.* A ticket whose work would
+   re-add a catalog table to `EDIT_CONFIG` under the `sandbox` regime, give a
+   `resolver_owned` table a direct write, or route a catalog write around
+   `settle_review_item` is wrong on its face, and the builder says so instead of
+   building it. The one pin that catches it: the only table whose write path is
+   `direct` is `walk_sandbox`.
+9. **Consolidation-shaped M2 work is chained at its DESTINATION, not at its
+   source.** `src/lib/edit/config.ts`, `tests/offline/edit/config.test.ts`,
+   `src/app/queues/[reviewItemId]/page.tsx` and `src/lib/db/verdict.ts` are each
+   written by several M2 features; every ticket that lands in one of them
+   depends on the previous one that does, because worktrees isolate builds and
+   not landings.
+
+10. **An http-tier clause names the status that tier will actually answer.**
+    Before writing "over HTTP …" into a criterion, say what the harness answers
+    that exact request: it has no database and no allowlist, so every gated ask
+    is a fail-closed `403` and a handler's own answer is unreachable there
+    (§10, "What the http tier CAN prove"). BUG-0171 shipped with the clause
+    "over HTTP … on a signed-in GET", which is unsatisfiable by design; QA
+    discharged it by hand on staging and the discovery cost a lane its session.
+    Write the positive claim against the offline stub, and where the wire
+    matters require a QA measurement recorded in the ticket — never a stored
+    check.
+
+## Common violations
+
+The milestone structure walk maintains this ledger: violation class, count, one
+example. A class that reaches 2 becomes a rule above and is cited in the
+decomposition brief of every ticket touching that surface.
+
+| # | class | count | one example | status |
+| --- | --- | --- | --- | --- |
+| 1 | **A `../` import inside `src/`, which §1.2 as written banned outright** | 8 | `src/lib/db/review-items.ts` imports `../review/shapes` (landed, TASK-0006); the six `src/lib/gauges/*.ts` import `../db/result` (in flight, TASK-0007) | **Rule narrowed 2026-09-02, no code churn.** The contract was over-broad, not the code: §1.2 exists to stop a path *leaving the product tree* (worktrees make `../` resolve inside this repo), and an import that stays inside `src/` cannot do that. §1.2 now says so. Logged here because a class that hits 8 in one milestone is a rule that needed rewriting, and because the next reader must not "fix" the code to match the old wording. |
+| 2 | **A read helper substituting a number the database did not give (`count ?? 0`)** | 2 | `countRows` in `tests/live/parity.ts` (BUG-0007, fixed under TASK-0003); `readCount` in `src/lib/db/result.ts` (the user-visible twin, TASK-0026) | **Promoted to a rule 2026-09-02** — §4.3, last paragraph: a null count is a refusal, never a zero. Cited in the brief of every ticket owning a `lib/db/*.ts` module. |
+| 3 | **A list read with no `.range()`, no `.limit()` and no `.order()`** | 1 | `src/lib/db/review-items.ts` (TASK-0006), whose `readReviewAttention` count and oldest age would have been wrong rather than refused | **Design-shaped, so fixed as design rather than left to accumulate**: §4.3 (new) plus TASK-0026, seeded before the eight remaining `lib/db` modules are written. Count is 1 and stays there only if the rule holds; the structure walk should re-count at M1 close. |
+
+| 4 | **An absence pin keyed on a WORD rather than on the write it forbids — false RED on correct work** | 4 | `! grep -rq settle_review_item src` (TASK-0010) reddens on the *comment* in `src/lib/edit/config.ts:43`; `! grep -rl verdicts src \| grep -qv tables.ts` (TASK-0010) reddens on the doc comments in `queue-health.ts` and `trend-table.tsx`; `one-place.test.ts`'s declaration-name predicate forced TASK-0007 to rename `…SettledValues` exports and hit BUG-0012's `isVerdictUnset` | **Promoted to a rule 2026-09-02** — §10: an absence assertion reads code lines and pins a call, never a word; and one owner per structural guard. Both TASK-0010 checks amended (measured failing on today's tree), the test predicate narrowed by BUG-0020. |
+| 5 | **A ticket check pinning an incidental spelling instead of the landed API** | 2 | `grep -q settled-values src/app/sources/page.tsx` (TASK-0013) — the landed page-facing export is `readRejectionStampGauge`; `grep -q cycle-health …` (TASK-0014) — it is `readCycleHealth` | **Amended 2026-09-02.** Both checks now name the exported function the gauge's own docstring calls "what `/sources` calls". A check that pins a module-path spelling forbids the barrel import the app uses everywhere. |
+
+| 6 | **A live oracle whose fallback branch accepts the ERROR state, so a broken page grades as a pass (or an honest EMPTY page grades as a failure)** | 3 | `tests/live/claims.live.test.ts` — 4 of its 6 assertions passed on a page in its error state, because the not-provisioned branch only asks that the markup contain `pending_claims`; `queues.live.test.ts` and `sources.live.test.ts` — an empty queue takes the same branch and is graded not-provisioned | **Promoted to a rule 2026-09-02** — §10: a live test names the state kind (read structurally from `data-state`) before it compares a number; `empty` is a pass with a 0; `error` is always a FAIL. Filed as the test-hardening TASK of the same date; cited in the brief of every ticket owning a `tests/live/*.live.test.ts`. |
+
+| 7 | **A live oracle counting a DIFFERENT set than the surface it grades** | 2 | `tests/live/claims.live.test.ts`, the parked-bucket test: it grades the STANDING tab's list (`section:nth-of-type(1)`) against `claimCount()` — the whole view, 859 — so the page's honest EMPTY (staging holds 0 standing disagreements) reads as a failure, and three of the four param sets never reach the assertion the test exists for. Its own sibling test four lines above gets this right, counting `eq("bucket","standing_disagreement")`. | **Count 2 at the M1 structure walk — PROMOTED to a rule 2026-09-03** (§10, and cited in the brief of every ticket owning a `tests/live/*.live.test.ts`): an oracle's independent count reads the SAME narrowing the surface renders, and a per-tab or windowed surface takes a per-tab or windowed count. Second instance: BUG-0057 — BUG-0041 windowed the Claims table to 50 rows and `claims.live.test.ts` went on asserting that every claim of the view is rendered, so the oracle now grades a set the page never claimed to show. Original count-1 note follows. Filed as admin-window/BUG-0037 against the test alone — no product code is implicated, and the fix is the count, not the page. If a second instance appears, the rule is: an oracle's `counted` reads the same narrowing the surface renders, and a per-tab surface takes a per-tab count. Recorded 2026-09-03 by the architect, from the TASK-0031 confirmation run. |
+| 8 | **A live oracle addressing a surface by POSITION (`section:nth-of-type(n)`)** | 6 | `tests/live/cycles.live.test.ts:61` died the moment BUG-0040 added a section above it (`section:nth-of-type(1) matches 2 surfaces`); the same spelling stands in five more live files, filed as DEBT-0002 | **Promoted to a rule 2026-09-03** — §10: a live oracle names its surface with the `data-surface` attribute the page carries, never with a position. Position makes an oracle a hostage of layout: every page ticket becomes a live-test ticket, and the failure arrives as a walker's bug rather than as the builder's own check. BUG-0056 fixed `/cycles` only; DEBT-0002 owns the other five. |
+| 9 | **A page helper hand-copied into every page that needs it** | 4 | `StateOf` stands byte-for-byte, comment included, in `cycles`, `sources`, `claims` and `queues/[reviewItemId]` — and it is what renders the `data-not-provisioned` / `data-read-failed` hooks the live oracles read, so four copies is four chances for the oracle contract to drift. Also `WindowLine` ×3, `RETRY` ×4, `ARRIVES_WITH` ×8 | **Promoted to a rule 2026-09-03** — §13.7 (decomposition): a helper two pages will need is seeded as its own ticket BEFORE them, because builders in isolated worktrees cannot see each other's code. Existing copies: DEBT-0003. |
+| 10 | **A page's presentation living in `app/` because it has no component module** | 2 | `src/app/cycles/page.tsx` is 1,291 lines with 8 local components; `src/app/sources/page.tsx` is 793 with 6. Every other page has a `src/components/<page>/` directory and its page is 85–300 code lines | **Promoted to a rule 2026-09-03** — §13.6: a new page ships with its own `src/components/<page>/` module. §5's division (page reads and shapes, components render) was never wrong; nothing said where the components go, so two pages grew them inline. DEBT-0004 extracts the existing two. |
+| 11 | **A window line that disagrees with its own read — stated over a read that never happened, or dropped on a read that happened and found nothing** | 3 | BUG-0063 (`/claims` published `data-window-held="0"` over a refused read); BUG-0067 (`/cycles`, the same shape on two hooks); BUG-0070 (`/claims` drops the whole line on an ok-but-empty read, where six other hooks on two routes keep theirs — measured 2026-09-04) | **Promoted to a rule 2026-09-04** — §4.3: a window line states a read that happened, and an empty window is still a window. The first two were fixed one surface at a time and pinned only in their own page suites, which is how the third arrived under a test whose docstring claims to grade the rule; BUG-0070 generalises `tests/offline/absence/pages.test.ts` so the next surface inherits the rule rather than a comment about it. Cited in the brief of every ticket that renders a windowed surface. |
+
+| 12 | **A direct catalog write path from Admin** — the shape Ben struck from VISION on 2026-09-08 | 1 | The M1 `pre_cutover` regime: `groups`/`idols` PATCHed their own rows through `updateRecordField`. It was legal when it shipped (spec §8, AGENTS.md) and it is not legal now | **Standing rule from the day it was filed, not from a second instance** — the class is closed by a human ruling rather than by a count, so it is promoted at 1: §9's three-regime bullet and §13.8. Cited in the decomposition brief of every ticket touching `src/lib/edit/config.ts`, the PATCH route, or `src/components/records/**`. The teeth are structural and live in `tests/offline/edit/config.test.ts`: the only table whose write path is `direct` is `walk_sandbox`, so a catalog table re-added with a direct path reddens on two fixtures |
+
+| 13 | **A chip-filled span inside an anchor — a `<Badge>` standing as the whole body of a text link, or a badge classifying a card whose whole body is a link** | 2 | `src/components/claims/bucket-table.tsx`: BUG-0108 gave the five bucket anchors `IN_PAGE_LINK`, but the anchor's body was a `<Badge>` whose own `text-ink` and `bg-chrome` won over the inherited accent and painted over the underline — QA measured the anchor's crop byte-identical to the same crop with `text-decoration-line` forced to `none`, both themes, all five buckets (BUG-0113). Second instance: `src/app/page.tsx:193` (`AttentionDetail`) renders the severity `<Badge>` inside the Dashboard attention card, whose whole body is an anchor (`src/components/ui/stat-card.tsx:82`); card and chip share the `bg-chrome` token, so the chip's box measures 0 card-fill pixels in its own crop under the pointer, both themes (BUG-0115) | **PROMOTED at count 2, 2026-09-09** (architect, this ruling), exactly as the count-1 note said it would be: a rule in **§7** — no anchor in any page's delivered markup contains a chip-filled span, with the card-shaped-link case named — and **the assertion in the repo-wide link guard**, `tests/offline/ui/link-spelling.test.ts`, which is already the one owner of link spelling. The guard is a rendered whole-window sweep over `loadSurfaces()`, not a source-text heuristic: measured 2026-09-09 on the tree at run/admin-window, it returns 2 hits on `/` and 0 on the other seven routes, so it is red today for exactly the open defect and non-vacuous. It lands with BUG-0115's fix (criteria amended the same day), not as a ticket of its own — a guard authored apart from the defect it must flag is how row 4 was born. The count-1 reasoning stands as recorded and is why nothing was built at count 1: the designer had put the rule in LOOK_AND_FEEL, *Chips and badges* ("a badge never sits inside a link, and a link never wears one", walkable form "no anchor inside `main` contains a chip-filled span"), and a repo-wide structural guard authored against a single instance is how absence pins keyed on the wrong thing get born. BUG-0113's own narrow pin (`expectLinkSpellingReachesTheGlyphs`, `tests/fixtures/link-spelling.ts`) is unchanged and still grades the five bucket anchors
+
+| 14 | **A composed read's HELPER leg refusing the WHOLE read — rows the URL's own complete read returned, deleted by a leg that renders no row** | 1 | `readReviewQueues` in `src/lib/db/review-items.ts`, on the code BUG-0133 landed: the population leg is an unconditional `listReviewItems({})` — the whole table, which no URL facet narrows — and its refusal is returned as the whole read's refusal. Past `ROW_CAP` every faceted `/queues` URL renders the error state with zero rows, including the `?queue=`/`?status=` URLs PostgREST narrowed by a real column and answered in FULL, and the error line then tells the operator to narrow the filter they just narrowed. Measured offline 2026-09-09 (BUG-0135): leg 1 `{2 rows, count 2}`, leg 2 `{10 rows, count 1500}` → `kind:"error"`, the two rows gone; both blocks `data-state="error"` on `/queues?queue=data_conflict` | **Count 1, note only — NOT promoted.** The rule this violates already exists in three places: §4.1 ("a page composing several reads must be able to say WHICH read refused"), §4.3's window-line rule, and the landed practice on `/claims` (`src/app/claims/page.tsx` ~723-728 — the source registry refuses, every claim still renders, the refusal is reported on its own naming its own object) and on this very page in prose (`src/app/queues/page.tsx` ~565-567). What was missing is not a rule but its application to a leg that decides WORDS rather than rows — the shape a builder does not recognise as a composed read at all. Fixed at the instance by the BUG-0135 ruling (architect, 2026-09-09), both ways: the leg becomes a per-shape COUNT read (`head: true`) so a table of any size can no longer refuse it, AND its refusal is carried per kind as its own `DbResult`, reported as its own sub-surface beside the rows, with the scope decision falling back to BUG-0131's structural rule. **If a second composed read is found refusing whole for a leg it does not render, promote to §4.3:** a leg that renders no row of its own may not decide the surface's state, and its refusal is reported beside the rows or not at all. |
+
+| 15 | **A blocklist chased one codepoint class at a time — foreign text inlined into an app-authored sentence, then "made safe" by removing the family that last broke it** | 3 | One sentence, `/claims`' dropped-parameter line, patched three times: BUG-0127 (`trim()`, so `?=x` and `?%20%20=1` stopped naming nothing), BUG-0136 (`trim()` replaced by the app's one definition of blank, closing `Cf`/`Cc`/the Hangul fillers), BUG-0137 (the same 0px hole through `\p{Mn}`, the parked word `in_win<U+034F>dow` rendered legibly past bar 3, and an unterminated U+202E in a key reversing the rest of the app's own sentence in the copied-out text) | **PROMOTED at 3, 2026-09-09** (architect, this ruling): §7 gains the rule — foreign text reaches prose through an allowlist or inside its own bidi-isolated box, and never by scrubbing. BUG-0137's criteria were amended to the allowlist shape (`^[A-Za-z0-9_.-]{1,64}$`, counted-not-spelled otherwise) and its touch scope narrowed to drop `src/lib/verdict/decision.ts`, because the third patch's tempting move — widening `INK_LESS` to `\p{Mn}` — would have changed what the EDIT surface commits as a draft (`tests/offline/ui/editable-cell.test.ts` pins U+FE0F and U+2800 as content). That is the class's real cost: a shared predicate answering two different questions gets widened by whichever question broke last. Cited in the decomposition brief of every ticket that renders text the app did not author. The measurement the ruling was made on — the allowlist replayed against every fixture BUG-0123/0127/0136 pinned — is `agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`; it is what showed that QA's two strict pins were jointly satisfiable only by a fourth blocklist, so criterion 5 widens one of them by one field rather than leaving the builder to discover it. |
+
+| 14 (re-count) | **A surface deciding "nothing here yet" vs "nothing matched" from the URL ALONE** — the two-fact rule with one owner | **3** (1 → 3) | Two more surfaces found at the M2 structure walk, 2026-09-09, both measured on run/admin-window: `src/app/claims/page.tsx:647` (`isNarrowed(filter) ? NOTHING_MATCHED : …`, and again at :232 and :681 for the bucket caption) and `src/app/sources/page.tsx:200` (`data-empty={filter.source_id === undefined ? "registry" : "narrowing"}`). Both read fact 1 and nothing else, so a facet over an EMPTY set renders "nothing matched" and tells the operator to widen a filter that removed nothing. The ledger records staging holds 0 standing disagreements, so `/claims?tab=standing` with any facet is in that state today | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §4.3 gains "An empty surface is explained from TWO facts, never one", with the population fact and the note that it is a read the page already has. Row 14's count-1 note said "if a second composed read is found refusing whole for a leg it does not render, promote"; what the walk found is the *other* half of the same class — not a leg refusing, but a surface with only one fact — so the rule promoted is the one BUG-0133's own docstring already states, generalised off `/queues`. `isBlockNarrowed` in `src/lib/review/queue-filters.ts` is named as the reference implementation. DEBT-0008 carries the two surfaces, chained behind BUG-0141, and criterion 4 makes `tests/offline/absence/pages.test.ts` grade all three at once, on two population fixtures each — the file that already generalises absence rules across surfaces, so a fourth surface inherits the rule instead of a comment about it |
+| 16 | **The mono identifier face hand-spelled at the call site, with no primitive to import** | 3 | `grep -rno 'type-data text-ink' src` = **44 occurrences in 24 files** (measured 2026-09-09). `src/components/ui/` holds fifteen primitives and none of them is the identifier, so two pages grew private ones with byte-identical bodies: `TableName` (`src/app/records/[table]/[id]/page.tsx:277`) and `ReviewItems` (`src/app/queues/[reviewItemId]/page.tsx:174`). The three bugs are BUG-0112, BUG-0120 ("the face BUG-0112 fixed one paragraph above") and BUG-0121 ("the face BUG-0120 fixed one route over") | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §11's machine-identifier bullet now requires the shared primitive, not the class pair, and §3's `ui/` entry records the gap. This is Common violation 9 (a page helper hand-copied) in the form 9's own promotion did not cover: not a copied *component* but a copied *rule*, which no `wc -l` on declarations catches. DEBT-0011 builds it (milestone `patch`, behind BUG-0141 and DEBT-0008 — it rewrites 24 files, several of which they are writing), and its criterion 4 hangs the row-15 bidi isolation off the primitive, which is the second thing 44 call sites have nowhere to hold |
+| 17 | **A pure function parked in `lib/db/**` because that is where its first caller was** | 2 | `isRecordId` / `canonicalRecordId` (`src/lib/db/records.ts:167`) — the app's ONE uuid grammar, no client, no env, no table name, and §4 rule 7 therefore forbids every pure domain leaf from importing it. It cost a workaround written into a ruling (the BUG-0141 History entry has to specify that `source_id` is canonicalised at the page and "handed INTO the leaf as an argument, because a pure domain leaf may not import `lib/db/**`"), and it cost the grammar's reach: five call sites import it and `/claims` is not one, so BUG-0140's defect — a registered id in an uppercased or hyphen-less spelling reading as "nothing matched" — still ships on `/claims?record_id=`, one route over from where it was fixed. Second instance: `narrowedTo` in `src/lib/db/runs.ts:198`, a pure `(string\|undefined) => string\|null` facet canonicaliser in a db module, which is also half of row 18 | **PROMOTED at 2, 2026-09-09** (architect, M2 structure walk) — the rule is §4 rule 7 read forwards instead of backwards: **a function that touches no client, no env and no table name belongs in the leaf layer, wherever its first caller happened to live.** A leaf that cannot import what it needs is the defect, not the leaf. Cited in the decomposition brief of every ticket adding an exported function to `src/lib/db/**`: if it takes no `SupabaseClient` and returns no `DbResult`, it is a leaf. DEBT-0009 moves the uuid grammar to `src/lib/records/id.ts` and takes `/claims` with it |
+| 18 | **One exported identifier, two meanings — the narrowing vocabulary with no owner** | 3 | `narrowedTo` is exported twice with unrelated types: `src/components/ui/window-line.tsx:279` joins narrowing PHRASES into a scope sentence (and is re-exported from the `@/components/ui` barrel), `src/lib/db/runs.ts:198` canonicalises the `?source=` FACET for a query. Adjacent pages import different ones — `src/app/cycles/page.tsx:38` the db one, `src/app/claims/page.tsx:28` the ui one. `isNarrowed` is exported twice with two different definitions (`src/lib/claims/filters.ts:132`, `src/lib/review/queue-filters.ts:302`), and the second means two things by arity: with `within` it is "narrowed relative to this block's own scope" (BUG-0129/0131's question), with its default `within = {}` it collapses to the claims meaning — **and no production call site uses the default**; its only one-argument callers are `tests/offline/queues/filters.test.ts:85,102,143`, grading a meaning the app never asks | **PROMOTED at 3, 2026-09-09** (architect, M2 structure walk) — §11's "contract vocabulary is the app's vocabulary, in code as in copy" gets teeth: **no identifier is exported twice from `src/` with two meanings, and a predicate has one signature per question.** The narrowing vocabulary is the most-touched idea of M2 (nine bugs: 0109/0114/0118/0123/0124/0128/0129/0131/0133) and it is where a reader most needs one word to mean one thing. A default parameter kept alive by its tests is the mechanism row 15's ruling named — a shared predicate widened by whichever question broke last — one step earlier. DEBT-0010 carries it as a rename with a byte-for-byte criterion; no behaviour changes |
+| 19 | **A read answering questions the URL did not ask** | 3 | BUG-0138 (`/claims` reads the whole claim population every request: ~14 sequential round trips, 2.9-3.8s warm); BUG-0139 (`/sources` reads runs once per registered source then waits for both gauges: ~9 round trips, 2.0-2.3s warm); `readPopulation` in `src/lib/db/review-items.ts:203-231` maps over all three `SHAPES` unconditionally, so `/queues?kind=signal` issues two counts for shapes it will not render (found at the M2 structure walk; bounded `head: true` counts in parallel, so 2 extra round trips, no wrong number — DEBT-0012, P3). **The third instance is RESOLVED, 2026-09-09** (DEBT-0012, landed `b7da394`): `readPopulation` now counts only the kinds `kindsNarrowedBy(filter)` names, and every other kind answers a third state `not_asked` — neither a refusal nor a zero. Measured `review_items` reads per URL: bare `/queues` 1; `?kind=decision` 4→2; `?kind=signal` / `?queue=entity_link` / `?shape=entity_link_source_pattern` 4→3; `?status=` / `?source_id=` / `?queue=data_conflict` / `?shape=data_conflict_fact` 4 (unchanged — both blocks have a zero to explain). BUG-0138 and BUG-0139 are the two that remain open, so the count stays 3 | **Count 3, note only — NOT promoted, deliberately.** The rule this would become ("read what the URL asked for") is one Ben has open decisions in front of: paging past the window on Claims and Browse through on-demand client fetching against a route handler, search, retention on `runs`, the `runs` row-cap horizon on `/sources`, and BUG-0138's own A/B (`observations.observed_at` through the `pending_claims` view). Writing a read-shape rule into the contract before those land would pin a shape the answers may not want; §4.3's complete-or-refuse contract is what governs until then. Recorded here so the count is not lost and so the next architect promotes it *after* the rulings, not before. **One caveat the resolved instance bought, for whoever writes that rule** (architect, 2026-09-09, amending DEBT-0012 criteria 1 and 5 after the builder measured them): “read what the URL asked for” is NOT “read only what the URL NAMES”. On `/queues` both blocks always render, so the load-bearing population is the EXCLUDED kind’s — its rows are all gone from the filtered read, which is the fact BUG-0133 rests on — while the NAMED kind’s count can never change a word (`isSurfaceNarrowed` ANDs fact 1 with fact 2, and fact 1 is false for a kind the URL narrows no further than it narrows itself: BUG-0129/0131). DEBT-0012’s criterion 1 was authored the other way round and its literal reading reddens 21 offline tests including BUG-0133’s own pin (`data-empty` `queue`→`narrowing`), independently re-measured on this tree by negating `kindsNarrowedBy`. The question a read must be scoped by is which surfaces CONSULT its answer, never which values the URL happens to spell |
+
+| 20 | **A URL facet value whose rendered spelling is not the value the read used — one property of "a URL value inside a sentence this app wrote", per bug, seven bugs deep** | 7 | One family, one property each: BUG-0137 (no bidi in a key), BUG-0143 (a uuid in any spelling Postgres matches → `canonicalRecordId`), BUG-0145 (the padding a paste brought, by whitespace), BUG-0146 (the same padding by INK), BUG-0147 (`?cycle=` spelled through the allowlist), BUG-0153 (`?source=` the same), BUG-0155 (`?source=%20ticketmaster` narrows by `" ticketmaster"` and says, in the app's own words, "found no runs from ticketmaster at all" — over a source the same page draws five runs for one invisible character away, with nothing on the dropped-parameter line). Six of the seven are one value class getting one property; the seventh is the property no predicate can answer | **PROMOTED at 7, 2026-09-09** (architect, BUG-0155 ruling) — §7 gains "What is SHOWN is what was USED: one derivation per URL value class". Row 15 is the same family's OTHER half and stays as recorded: 15 is *may I spell it* (answered by an allowlist, once), 20 is *is this what I used* (answered by a derivation, once per value class). The class survived six fixes because the two questions were answered in different places and only one of them had a single home: `canonicalRecordId` was the uuid class's derivation from BUG-0143 on, and the free-text class never got one — its "derivation" was `sourceNarrowing`, four lines in `src/lib/db/runs.ts` that returned the value VERBATIM with a comment explaining why trimming would be wrong. BUG-0155 lands `canonicalUrlText` (`src/lib/url/text.ts`) as that home and retires `sourceNarrowing`, which also closes row 17's second instance (a pure function parked in `lib/db/**`) and the last half of row 18. Cited in the decomposition brief of every ticket that derives a value from a URL |
+| 3 (re-count) | A list read with no `.range()`, no `.limit()` and no `.order()` | **0 new** | — | **The rule held.** M1 structure walk, 2026-09-03: every `.select(` in `src/lib/db/**` was traced. Fourteen chains a crude scan flagged are all either `.maybeSingle()` by primary key or by-id chunks bounded with `.limit(ids.length)`; every list read goes through `readComplete` / `readRows` with a total order and a bound. Count stays 1 (the original, fixed under TASK-0026). |
+
+| 21 | **A server-rendered sentence stating a fact about rows a CLIENT press then changes** | 2 (one class, both paged surfaces) | `/browse`: `[data-window-truncated="true"]` ("events that arrived before the ones below are not shown") standing over 120 drawn rows beside `[data-paging="exhausted"]`, and `data-window-held` stuck at `"50"` under 100 rows; `/claims`: 616 rows under "the 50 longest-waiting are below — the rest are not shown", both measured in a browser by QA on 2026-09-11 (BUG-0172) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0172's ruling) — and it is DESIGN-shaped, so it is fixed as design rather than left to accumulate**: §4.3 read kind 3 gains "the window line of a paged surface states the read the operator now holds", and §5 names the provider + client line as the mechanism. The class exists because two correct rules met: §5's byte-identical first screen (which froze the line server-side) and §4.3's "a window line states the read that happened" (which the press then falsified). Neither rule is wrong; what was missing was where the line LIVES on a surface whose read continues. Cited in the decomposition brief of every ticket that adds a client-updated region under a server-rendered statement — and the general form, for the next reader: **if a press can change the rows, the sentence about those rows renders where the press can reach it.** |
+
+| 22 | **One field carrying two facts, the second one INFERRED from the first's size or presence** | 2 (one interface, one week) | `DrawnWindow` in `src/components/ui/window-line.tsx`. BUG-0174: `PagedWindowLine` decided what `held` COUNTS by asking whether it was bigger than the cap (`held <= limit ? drawn : held`) — two meanings of one field guessed apart by size; fixed by having the page STATE it (`heldFrom`). BUG-0183: `drawn`'s PRESENCE carries both "the rows on screen" and "a press may continue this window" (`pageable(info)` is `drawn != null`), so the unpaged `/claims` line could not state its own row count without also inheriting the paged arms, and `onScreen` fell back to the CAP — three screens holding 37, 10 and 49 claims each told the operator that 50 were below the line (QA, measured offline 2026-09-11) | **PROMOTED at 2, 2026-09-11 (architect, BUG-0183's ruling)** — §4.3 gains, beside the window-line rules: **a fact a sentence depends on is STATED by whoever knows it, never inferred from another field's size or from whether it is present.** The cost is not the wrong sentence; it is that the second surface cannot state a true fact without silently changing the first one's rendering, which is what made a one-line fix into an interface split. Both instances were caught only after they shipped a wrong number, because a presence test reads like a type guard. Cited in the decomposition brief of every ticket adding a field to a shared render contract: if a renderer asks `x != null` or compares a value to a cap to decide WHICH SENTENCE to say, the fact it is really asking for has no owner yet. |
+
+| 23 | **A derivation whose BAR was never stated positively, extended by one anchored question per QA lane — the account's foreign-text rule, seven tickets deep** | 7 | One class, one property each, all in `src/lib/db/result.ts`'s account derivation: BUG-0170 (a document reaching an app sentence → the `<` question), BUG-0173 (a body we serialised → the provenance question), BUG-0179 (the same question answered two ways depending on what else the part carried → asked at two granularities, and of the `code`), BUG-0181 (a mined column name → an identifier allowlist), BUG-0185 (which STRING may be mined → `databaseMessage`), BUG-0182 (one document counted once per LINE, account 2-3x LONGER than the page), BUG-0187 (a page whose TEXT sits on its own lines ends the run at every text line: part 402 → account 664, linear in text nodes, the intermediary's sentences and its Ray ID quoted verbatim). Every one was found by a different QA lane, on the shape the previous anchor did not cover, and each repair collided with the twin the previous ruling had pinned | **PROMOTED at 7, 2026-09-11 (architect, BUG-0187's ruling) — and the fix is to state the BAR, not to add the eighth anchor.** §4.1 gains "the PART is the unit, and a part carrying a document anywhere is foreign as a whole", with its three limits decided in the same breath. The ruling DELETES machinery (the per-line document question, the `PartLine` offsets and the run bookkeeping) rather than adding it, and collapses the two granularities into one code path. The lesson generalises past this file and is cited in the brief of any ticket that repairs a DERIVATION: when the third ticket in a class arrives, the defect is that no one wrote down what the derivation may not do — an anchored question answers the shape in front of you, a bar answers the shapes nobody has measured. **How the next lane grades it:** against the bar (does any line of a document-carrying part appear in the account?), never against the anchors. |
+
+| 24 | **A clause gated on a facet's PRESENCE while the sentence beside it is gated on EFFECT — one chip, two opposite verdicts** | 2 (both on `/claims`' narrowing vocabulary) | TASK-0071's instance: the bucket caption said "nothing above narrows these counts" with the bucket chip active, because the table drops that facet — fixed by STATING the standing facet (`everyBucket`). BUG-0191's QA residual, measured on staging 2026-09-11: `?source_id=<ticketmaster>` removes zero rows and takes the unnarrowed arm, `?source_id=<ticketmaster>&domain=events` draws `?domain=events`' own counts and says "under the filters above" — `bucketsNarrowed` (two facts) ANDed with `hasChipNarrowing` (a `!== undefined`), as though they asked one question about one subject | **PROMOTED at 2, 2026-09-11** (architect ruling, DECISIONS of the same day) — §4.3 gains "a clause NAMES a facet's effect, never its presence", with the three corollaries that keep it read-cheap. Cited in the decomposition brief of every ticket touching a narrowing sentence. Carried by BUG-0192 (the rendered arms, chained after TASK-0072) and by TASK-0072 (the vocabulary half: `hasChipNarrowing` → `hasChipFacet`, so the presence question and the effect question stop sharing a word) |
+
+| 25 | **A guard identifying "ours" in a tree this repo does not own by TEXT MATCHING rather than by a declaration both sides spell** | 3 (all `tests/offline/handoff/settle-review-item.test.ts`, all 2026-09-11) | BUG-0207: `ksCodesUnder(SIBLING_ROOT)` read every `KSnnn` next door as text, so our OWN installed handoff reddened the offline suite for every builder. BUG-0212: attribution moved to per-line corpus matching and went blind to the sibling's own raise idiom — a stranger's `using errcode = 'KS029',` is a line our handoff note also carries (measured next door: that idiom raises all of KS001–KS032). BUG-0213: the corpus's smallest "block" is TWO lines, and the sibling's next code (KS033) lands on the second of them, so the sibling allocating a code of its own reddens our suite | **Promoted to a rule 2026-09-11 (architect)** — §10, "a guard over a tree this repo does not own compares DECLARED FACTS, never text", with the (code → meaning) comparison spelled out and the corollary that a check a human's action next door can redden does not belong in the offline default project. BUG-0213's criteria were rewritten to that design rather than to a fourth patch |
+
+| 26 | **A repeated URL key read two ways in one request — one consumer joins the values, another judges the first** | 2 (both `/claims`, QA residuals) | BUG-0201: `?source_id=&source_id=deadbeef` — the page reads the whole registry (first value empty = "asked nothing", BUG-0127's arm) and no line explains it. BUG-0202: `?cols=&cols=banana` — the page JOINS repeated keys (`namedColumns`) while `droppedParams` judges the blank first value, so no dropped-params line is drawn for a column name that is not a column | **Promoted to a rule 2026-09-11 (architect)** — §8, "a repeated URL key has ONE reading, decided once": canonicalise in the module that owns the facet, every consumer reads the canonical value. Recorded and NOT ticketed: today the only visible effect is a missing explanatory line on a hand-built URL. Trigger for a ticket: the two readings producing different ROWS, or a third instance |
+
+| 27 | **A stored check that cannot be RED — a proxy measured in a place where its subject does not exist** | 2 (both authored 2026-09-11, both found by QA) | admin-window/BUG-0209 check 3: `test "$(git -C "../kspace Scraper" log --all --format=%s \| grep -c '^admin-window/')" -eq 0` — in the receipt worktree that path is `agenticflow/.worktrees/_receipt-<pid>/../kspace Scraper`, which does not exist, so `git` fails, the count is empty and the check exits 0 however many commits the sibling holds (QA demonstrated it from a directory with no sibling). admin-window/BUG-0218: `git status --porcelain -- src tests` as a "nothing else changed" proxy — always empty in a detached worktree at HEAD | **PROMOTED at 2, 2026-09-12 (architect, M3 queue pass).** Rule written into §1.2: a check reaches the sibling by ABSOLUTE path and asserts a diff as `git diff --name-only <merge-base>..HEAD -- <paths>`; and the general form, which is the one to cite in a decomposition brief — **a check is authored by RUNNING it on the tree it will run on and reading the number, and a check that is green before the work is done is a defect whatever it asserts** (LESSONS 12). Nothing is re-opened on the two closed tickets: rewriting a bar a ticket was already graded against is the edit this factory must not make (the BUG-0209 EC1 ruling, same week) |
+
+| 28 | **A transport answer admitted LEG BY LEG — one predicate added per QA lane, five lanes, one host** | 5 | admin-window/BUG-0224 (a bodyless 404 substituted `[]`, so `/claims` said "No claims waiting" over a failed read), BUG-0227 (`200 {"message":"no upstream"}` — `readRows` asked only `data === null`, so `.map is not a function` 500'd every surface), BUG-0228 (`[{"message":"no upstream"}]` — the array question passed, the element had no declared column, four surfaces 500), BUG-0229 (`count = NaN`, then `-5`, then `1e20` published as figures), BUG-0230 (`-0` published as "-0") | **Promoted to a rule 2026-09-15** — §4.1, "What a PostgREST ANSWER is": every leg the read named, in the shape PostgREST is specified to send it, or one refusal for the whole answer. Its four decided clauses (values are not types; contradicting legs are one refusal; "no row" needs a response that carried one; `parseInt` leniency is a named limit) exist so the next lane rules instead of adding a sixth predicate. Cited in the brief of every ticket on `lib/db/result.ts` or `lib/db/schema.ts`. |
+
+| 29 | **A comment asserting a fact nothing grades — a mechanism the code no longer has, or an install state of the world** | 4 lanes, 19 sites | Mechanism: DEBT-0022 → BUG-0231 → BUG-0232 → BUG-0233, four lanes fixing "head count" paraphrases one file at a time, with three more sites (tests/live/harness.live.test.ts:49, tests/live/claims.live.test.ts:1459, tests/offline/db/result.test.ts:3299) sitting on BUG-0233's own must-survive list, graded true. World: 16 files still saying the two §9 objects do not exist on staging, four days after they were installed. | **Promoted to a rule 2026-09-15** — §11's two vocabulary clauses, and one sweep ticket for the whole class (admin-window/BUG-0235) instead of a fifth per-file lane. The ledger's own lesson: the FIRST time a comment class is found, it is swept by class; per-file tickets on prose buy four receipts and leave the class open. |
+
+*(Rows 1–3 recorded by the architect at the 2026-09-02 ruling pass, from QA
+findings on TASK-0001/0003/0006; rows 4–5 at the second pass the same day,
+from measurement of the open tickets' own checks; row 6 at the third pass, from
+the first live parity run against staging. The milestone structure walk owns
+this table from here.)*
+
+## History
+
+- **2026-09-15, M3 close ruling pass (architect).** Four amendments and one
+  ratification, all from the close queue. **§4.1 gains the admission rule**
+  ("What a PostgREST ANSWER is") and **Common violations row 28**: the
+  five-ticket alien-host chain is stated once as a positive bar with its four
+  decided clauses, and the three legs that bar does not yet hold on are one
+  ticket (BUG-0234), not three. **§11 gains two vocabulary clauses** and
+  **row 29**: a count read is `countRead` and prose says so; a comment names
+  the symbol the code calls, and names no install state at all — the class is
+  swept whole in BUG-0235 rather than one file per lane. **§9.2's BUG-0223
+  rewrite is RATIFIED** — PostgREST's OpenAPI description answers whether a
+  function exists without calling it, which is the premise the 2026-09-08
+  subsection got wrong — with three limits named in place (the document is
+  admitted by §4.1; the cache stays affirmative-only; no in-flight dedupe, with
+  the trigger that would file one). **§10 gains the naming clause**: the
+  handoff tier is named in the close checklist, STACK §5 and the README, since
+  the README guard is one-directional and cannot see a tier it omits.
+  Deliberately NOT amended: §4.1's row leg still asks presence, never types —
+  the net for a render that throws on an admitted row is a route error boundary
+  (TASK-0082), not a fifth predicate in `lib/db`.
+
+- **2026-09-12, M3 queue ruling pass (architect).** Three amendments, all from
+  the M3 close queue, none a new feature. **§1.2 gains the stored-check
+  clause** and **Common violations gains row 27** (promoted at 2): a check run
+  in a receipt worktree cannot see `../kspace Scraper` and cannot see a working
+  tree, so two common proxies are vacuous rather than wrong. **§10 gains the
+  foreign-input rule**: a guard whose red can be produced by a repo this one
+  does not own leaves the every-builder suite for a fifth, opt-in vitest
+  project (admin-window/TASK-0080) — the cut is by input ownership, so every
+  guard over OUR own handoff artifact stays where every builder runs it. Not
+  amended, deliberately: **§4.3 kind 3's bound stays the OFFSET.** BUG-0221
+  measured a real skip at the seam and its honest fix (keyset) is the same
+  layer Ben is deciding in `tracker/for-human/M3-paging-shape-for-ben.md` —
+  page windows are positional by construction, so ruling keyset now would close
+  the door on his open option. The half of BUG-0221 that needs no ruling (one
+  id drawn twice, which "no snapshot across presses" never licensed) is split
+  out as admin-window/BUG-0222 and fixed in the client driver, where it
+  survives either shape.
+
+- **2026-09-11, M3 endgame ruling pass (architect).** Four amendments, all from
+  the endgame's own findings, none of them a new feature. **§4.3 gains the
+  count-read shape**: a count is `countRead` (a GET with `{ count: "exact" }`
+  and `limit 0`), not `head: true`, because a HEAD carries no body and
+  supabase-js rewrites a bodyless 404 into a 204 with `error: null, count:
+  null` — so a real `PGRST205` never reached the count leg, and `/claims` told
+  the operator `a count read requires { head: true, count: "exact" }` against a
+  database that simply has no table (BUG-0210). Four `head: true` mentions in
+  §4.3 and §7-adjacent prose are refreshed; the one in §6 trap 12 is left
+  alone because it records a probe that really was a HEAD. **§8 gains the
+  empty-window rule** — a figure states its zero, a block states its emptiness,
+  the split is figure-versus-block and never page-versus-page, and the surface's
+  window sentence is said ONCE (BUG-0206's residual and the designer's walk;
+  no ticket, because both pages are behaving correctly and what was missing was
+  the sentence that says so). **§8 also gains the repeated-URL-key rule**,
+  promoted at count 2 from BUG-0201/0202: one reading per facet, canonicalised
+  where the facet is owned. **§10 gains the cross-repo guard rule**, promoted at
+  count 3 from the BUG-0207 → 0212 → 0213 chain: identity in a tree we do not
+  own comes from a declaration both sides spell, never from text similarity, and
+  a check a human's action next door can redden does not belong in the offline
+  default project. Common violations gains rows 25 and 26; BUG-0213's criteria
+  were rewritten to the declared-facts design rather than to a fourth patch.
+
+- **2026-09-11, M3 §4.3 — a narrowing clause names a facet's EFFECT, never
+  its presence (architect ruling, from QA's residual on
+  admin-window/BUG-0191).** §4.3 gains the rule above and Common violations
+  gains row 24 (promoted at 2: TASK-0071's bucket instance and this one).
+  Why here rather than in one ticket: `/claims` answered "did a chip narrow
+  this?" with two facts in one clause and with a `!== undefined` in the clause
+  beside it, so one chip earned two opposite sentences on two URLs — and every
+  surface that grows a second facet family inherits that shape. **The door
+  this closes:** presence may no longer stand in for effect in any sentence
+  that points at a control or a named facet. **The doors it leaves open, so
+  they are not re-litigated:** the unnarrowed arm's denial stays exactly as
+  `isSurfaceNarrowed` leaves it (it is free and provable), the control-less
+  phrases of BUG-0160 keep their presence gate because they state a read's
+  scope rather than attribute an effect, and a family's effect costs at most
+  one bounded count in the single state where both families are in force.
+  Carried by admin-window/BUG-0192 (rendered arms) and admin-window/TASK-0072
+  (the rename that stops the two questions sharing a word).
+
+- **2026-09-11, M3 §4.1 — the account's foreign-text rule gets a BAR instead
+  of a fourth anchor (architect, ruling admin-window/BUG-0187).** §4.1 gains
+  the bullet above: the PART is the unit, and a part that carries a document
+  anywhere is foreign as a whole, counted once at the length it arrived with.
+  Why here rather than in the ticket: seven tickets (BUG-0170 → 0173 → 0179 →
+  0181 → 0185 → 0182 → 0187, Common violations row 23) each extended one
+  derivation by one anchored question, and each next QA lane measured the
+  shape the new anchor did not reach — the last one an account that grew
+  LONGER than the page it summarised while quoting 64 of its text lines. The
+  anchors were not wrong; what was missing was a statement of what the
+  derivation may never do. **The doors this closes:** a per-line or per-run
+  document question (deleted, with the `PartLine` offsets that served it); two
+  granularities of one question that can answer differently; and "the prose
+  standing beside a counted document crosses" — every such line measured in
+  this suite is the intermediary's own, and Postgres does not speak markup.
+  **The doors it deliberately leaves open, so they are not re-litigated:**
+  multi-line database prose still crosses whole, a part carrying frames still
+  gives up its cause sentence, and markup glued mid-line is not caught —
+  `includes("<")` is refused by `operator does not exist: text <-> integer`.
+  Evidence in that last shape re-opens the bar; it never adds a question.
+
+- **2026-09-11, M3 §4 rule 7 amendment — the em dash and the absence-of-text
+  predicate are leaf property (architect, ruling admin-window/BUG-0184).**
+  Rule 7 ¶2 gains the paragraph above. Why here rather than in the ticket: QA
+  measured a paged refusal whose reason is the app's own `—` reaching the
+  operator as the whole of a red alert, and the cause was structural, not a
+  builder's slip — `machine.ts` is a leaf, `isAbsent` and `EM_DASH` live in
+  `format.ts`, which imports React, so the leaf could ask only the first
+  clause of the app's own absence question and could not see the character at
+  all. A rule that says "one definition of blank" while the definition sits
+  where half the askers cannot reach it produces exactly this, one input at a
+  time. **The door this closes:** no module re-types the glyph to get at it,
+  and no one widens `hasVisibleContent` to cover the dash instead — the two
+  questions stay two, with the wider one now reachable from the bottom of the
+  app.
+
+- **2026-09-11, M3 account amendment — the one derivation covers every field of
+  the account, the `code` included (architect, ruling admin-window/BUG-0179).**
+  §4.1 gains the bullet above. Why here rather than in the ticket: BUG-0170
+  put the decision in one place and asked one question; BUG-0173 grew it to
+  three and pinned "no fourth question"; QA then measured the SAME harm arriving
+  through the one field the loop never sees (a 4,530-character Cloudflare
+  document rendered into three `/claims` error cards through `code`), plus two
+  more faces of the same unevenness — a non-2xx with an empty body rendering
+  `pending_claims —` with no failure named, and a document on line 2 of a
+  frameless part crossing whole. Three tickets on one function is the signature
+  of a rule that lives in ticket comments instead of the contract: what was
+  written down was the QUESTIONS, never the rule that every string reaching an
+  account is asked them. **The door this closes:** no field of an account gets a
+  bound of its own. If a part is unbounded, the answer is a rule for every part
+  — never a cap on the field that last hurt. BUG-0179 carries all three faces;
+  DEBT-0020 carries the cosmetic residual (the transport account's twice-stated
+  cause sentence) behind it, deliberately not folded, because a fourth pass over
+  prose inside a part is exactly what this bullet refuses to grow casually.
+
+- **2026-09-11, M3 test-tier amendment — an http-tier clause names what that
+  tier can answer (architect, from admin-window/BUG-0171's close).** §10's
+  `tests/http/**` bullet gains the ceiling that was implicit in "needs no
+  database": `requireAdmin()` fails closed on every gated request there, so a
+  handler's own answer — status, body, headers, which arm ran — is unreachable,
+  and an absence asserted on that tier passes vacuously on the 403. §13 gains
+  rule 10, the authoring half. Why here rather than in a ticket comment:
+  BUG-0171's criteria demanded a proof its own tier could not give, the builder
+  found it mid-lane and QA discharged it by hand against staging; the next
+  decomposition would have authored the same clause, because nothing written
+  down said the tier could not answer it. `DEBT-0019` is the one-file
+  consequence — the case asserts the status it actually graded, so a harness
+  that ever gains a database reddens instead of silently grading something
+  else.
+
+- **2026-09-10, M3 oracle-grain amendment — a block's empty card is not its
+  surface's state (architect, ruling BUG-0169).** §10 gains one bullet: a
+  surface's state kind is the state of the read behind its figures, a state
+  card rendered by a gauge BLOCK carries `data-gauge-block` and is excluded
+  from it, and `emptyAtZero: false` keeps its meaning instead of being flipped
+  to green a file. Why here rather than in a ticket comment: `/cycles` proved
+  the contradiction is structural, not local — every gauge surface that holds a
+  distribution is latently red against its own oracle the day its window
+  empties, so the rule has to be inherited by the next surface rather than
+  patched per call site. The losing reading is pinned, not deleted: the
+  labelled figures must still read a real `0` at a counted zero, offline and
+  live.
+
+- **2026-09-10, M3 residual-fold pass — two rules the second paging surface
+  would otherwise have had to discover (architect, from QA's TASK-0066
+  residuals).** **§4.3 kind 3** gains *the count that grades exhaustion is the
+  READ's own count*: nothing may drop a row between `.range()` and the answer,
+  because a row removed in code turns a full page into a short one and a short
+  page is EXHAUSTION under the full-or-exhausted rule directly above it — the
+  operator's paging then ends with rows still behind it. Written as a contract
+  rather than as a TASK-0068 criterion because the trap is latent in the
+  landed claims read (`selectClaims` after `.range()`, harmless only while the
+  query carries the same `neq`) and the next paged read would copy the shape
+  before anyone re-read the ticket. **§5** gains *an answer that carries gated
+  data says it may not be stored*: pages get Next's `private, no-cache,
+  no-store, max-age=0, must-revalidate`; Route Handlers get nothing unless they
+  say so, and the row-serving routes are exactly the answers that must not sit
+  in a store. One declared constant, every arm, independent of what is in front
+  of Railway. TASK-0068 carries both; BUG-0171 carries the header to the claims
+  route behind it. The third residual — the `URLSearchParams` adapter's
+  `__proto__` key — is a ticket, not a contract line: it is one leaf's
+  `Object.create(null)`, folded into TASK-0068, which is what gives the adapter
+  its second caller.
+
+- **2026-09-10, M3 ruling pass 2 — the paged legs reach the state, and the one
+  fetch refuses in the app's own words (architect).** **§4.3 kind 3** gains
+  *the legs that fill columns travel with the page*: QA measured on TASK-0068
+  that `GET /api/admin/browse/rows` carries `notes` on its `ok` arm while
+  `requestPage` returns a `PageState` with no such field, so both legs were
+  dropped at the driver and no surface could render what no state carried. The
+  contract now names all three halves — the driver carries them, `isPageNotes`
+  refuses foreign ones instead of rendering them, and they merge per leg across
+  presses. Filed as TASK-0076 (the leaf: `lib/paging/**` plus the widget's
+  fetch), with TASK-0069 and DEBT-0017 chained behind it — DEBT-0017 because it
+  writes the same two files, and consolidation-shaped work is serial at its
+  destination. TASK-0069's contract also lost its `total` prop, which
+  contradicted its own criteria: Browse's window read has no count beside it,
+  so a `more` derived from a total is always false and the affordance would
+  have been unreachable. **The door this closes:** notes are never narrowed,
+  reworded or reduced on the way to a surface, and a surface never invents a
+  second reduction of its own — the same rule §4.1 holds for an account.
+
+- **2026-09-10, M3 ruling pass — the paging contract gets its client half, and
+  two leaf directories join the list (architect).** **§4.3 kind 3** gains
+  *full-or-exhausted, on both sides of the wire*: the route emits only
+  full-and-continuing or short-and-exhausted, and the driver REFUSES anything
+  else instead of reinterpreting it, so `held` leaves the bound grid only on
+  the last page and the surface can never silently claim a set is complete
+  (BUG-0168, found by QA on TASK-0064; the ruling and the door it closes are in
+  DECISIONS.md, same date). **§4's leaf list** was two directories behind the
+  executable rule it documents — `lib/order/**` (DEBT-0016) and `lib/paging/**`
+  (TASK-0063) were in `LEAF_MODULES` and not here; `lib/cycles/**` already
+  covered `lib/cycles/state.ts`. The doc now points at `LEAF_MODULES` as the
+  executable copy, so the next reader amends both. **§10's one-owner bullet**
+  now names the owner of the twice-exported-name guard (the `OWNER` map in
+  `tests/offline/url/narrowing.test.ts`), which DEBT-0016's criteria got wrong
+  and its builder had to rule around at the bench.
+
+- **2026-09-10, M3 opening amendment — paging is legal, inside a frame
+  (architect).** Three contracts amended before any M3 page diff, which is what
+  M3.md EC3 grades: **§4.3** gains read kind 3, the paged window read, and
+  supersedes *"Paging is not the answer to a cap and none is built"* in place
+  (the superseded sentence is quoted where it stood, so the next reader sees
+  what changed and when); **§4 rule 1** gains one framed exception — a named
+  paging control may `fetch` this app's own route handler under
+  `src/app/api/admin/**` and nothing else, as a two-line binding to a pure
+  driver in `src/lib/paging/**`; **§5** records that paged-in rows are client
+  state on purpose and that the first server-rendered screen is byte-identical
+  to today's. Why now: SPEC F14 was added 2026-09-10 on Ben's ruling
+  (DECISIONS, same date), and the contract as written forbade the feature the
+  spec asks for. **What the amendment deliberately does NOT license:** fetching
+  from components generally (the exception is one control on two named
+  surfaces), a second Browse view, whole-table browsing, search, a raised
+  `ROW_CAP`, or a page presented as a total. The boundary is: **the server
+  decides the size, validates the bound and refuses out loud; the client
+  decides only WHEN to ask.** Decomposed the same day into TASK-0062 (the concurrent second leg), TASK-0063…TASK-0069 (paging) and TASK-0070…TASK-0073 (windowed-figure honesty), chained by destination;
+  a builder that finds any of this in its way files a blocked question and
+  never re-interprets it.
+
+- **2026-09-09, BUG-0155 ruling (architect).** **§7 gains a rule** — "What is
+  SHOWN is what was USED: one derivation per URL value class" — and **Common
+  violations gains row 20**, promoted at seven bugs (BUG-0137, 0143, 0145,
+  0146, 0147, 0153, 0155). Why now: six fixes on this family each closed one
+  property of a URL value inside an app-authored sentence, and the seventh
+  defect is the property a *spelling* predicate cannot answer at all. The
+  uuid class has had a single derivation since BUG-0143 (`canonicalRecordId`,
+  which is why a padded `?cycle=` changes no page); the free-text class never
+  had one, so `?source=%20ticketmaster` reached `.eq("source", " ticketmaster")`
+  while every sentence naming it rendered `ticketmaster`. The rule names the
+  home — `canonicalUrlText` in `src/lib/url/text.ts`, beside the allowlist it
+  calls — and the invariant: the derived value is the only string that reaches
+  the query, the facet box and the prose, or the facet is not applied and the
+  shared dropped-parameter line says so. **Two decisions inside it, both
+  made rather than left to the builder.** (1) The interior case
+  (`?source=tic%20%20ketmaster`) is REFUSED, not boxed in `white-space: pre`:
+  measured, QA's own pin collapses the rendered text before comparing it, so
+  the box arm cannot pass, and the box would put a non-wrapping foreign run
+  inside six authored sentences to preserve a spelling no registered source
+  uses. (2) The ends-only ink-padding strip gets ONE declaration
+  (`trimInkPadding`), called by `canonicalRecordId` and `canonicalUrlText`
+  both — without that, the second derivation is a hand-copy of the first, which
+  is row 9's class and how this family grew. `sourceNarrowing` is retired in
+  the same move: it is row 17's named second instance (a pure function parked
+  in `lib/db/**`) and the last half of row 18, and once its body is one call to
+  the derivation it is a second name for one question. **§3's module map** now
+  records what `lib/url/` holds (`narrowing.ts`, `spellable.ts`, and `text.ts`
+  as the map's one forward entry) instead of `dropped-params.ts` alone. No
+  other section changed; §4's leaf list already carries `lib/url/**`.
+  BUG-0155 criteria amended and its milestone set to `patch` (P3, the same
+  price and family as BUG-0152 and BUG-0154, both already `patch`; M2's tag is
+  the verdict slice, and the bidi harm on this sentence is closed).
+  DEBT-0014 set to `patch` and BUG-0155 chained behind it — both write the
+  OWNER map in `tests/offline/url/narrowing.test.ts`, and consolidation-shaped
+  work is serial at its destination.
+
+- **2026-09-09, M2 structure walk (architect).** The `src/` tree walked
+  against §3 and §4 on run/admin-window. **Amendments, each with its why:**
+  §3's module map now records the five modules the tree holds and the map did
+  not (`lib/verdict/decision.ts`, `lib/cycles/state.ts`,
+  `lib/sources/names.ts`, `lib/db/verdict.ts`, `lib/gauges/index.ts`) plus the
+  two non-component modules at the components root (`edit-cell-layout.ts`,
+  `edit-refusal.ts`, shared by the edit surface's two widgets), marks
+  `lib/url/` as the map's one forward entry (in flight under BUG-0141), and
+  records that `ui/` has no identifier primitive. §4's leaf list gains
+  `lib/cycles/**` and `lib/verdict/**`. **§4 rule 7 is widened by ruling, with
+  no code churn**: a leaf may import a leaf and the leaf layer is a DAG. The
+  diagram's `lib/<leaf>/** -> (nothing)` read as absolute while the tree has
+  held `lib/format.ts -> lib/verdict/decision` and
+  `lib/claims/filters.ts -> lib/verdict/decision` since M2 — and those edges
+  are what this contract wants: `visibleContent` is the app's ONE definition
+  of "is there anything here", and four M2 bugs (0089, 0095, 0127, 0136) are
+  that question answered twice. Same precedent as row 1: the rule was
+  over-broad, not the code, and the next reader must not "fix" the code to
+  match the old wording. The invariant that matters — a leaf reaches nothing
+  that can reach a database — is unchanged, no cycles at any depth including
+  type-only imports, and a leaf another leaf imports states which question it
+  owns. **§4.3 gains "An empty surface is explained from TWO facts, never
+  one"** (row 14 promoted at 3) and **§11's machine-identifier bullet now
+  requires the shared primitive** (row 16 promoted at 3). Ledger rows 17
+  (a pure function parked in `lib/db/**`) and 18 (one identifier, two
+  meanings) promoted at 2 and 3; row 19 (a read answering questions the URL
+  did not ask) recorded at 3 and deliberately NOT promoted, because five of
+  Ben's read-shape rulings are still open and a contract rule written now
+  would pin a shape those answers may not want. Filed: DEBT-0008 through
+  DEBT-0013. **One walk observation that is NOT a violation and got no
+  ticket:** the evidence tables carry up to 7 columns (`recordColumn` …
+  `payloadColumn`, `src/components/review/shape-views.tsx:525-532`) inside
+  `DataTable`'s `overflow-x-auto`, so `observed` and `payload` fall off-screen
+  with no affordance saying columns exist there. LOOK_AND_FEEL explicitly
+  sanctions that scroll ("Tables that exceed their width scroll horizontally
+  *inside their own border*; the page does not") and no bar requires a hint,
+  so inventing one here would be the architect writing design. Routed to the
+  designer's walk jurisdiction and recorded in the M2 milestone notes.
+
+- **2026-09-09, BUG-0141 ruling (architect).** `/queues` **gains the
+  `source_id` facet**; the dropped-parameter line alone was the cheaper answer
+  and the wrong one — spec F5 says "a source links to its review items", and an
+  anchor labelled `review items` that lands on every source's items with an
+  apology beside it does not satisfy it. `review_items.source_id` is a real,
+  populated column, so the narrowing is the shape three surfaces already carry:
+  the field joins `ReviewItemFilter` and the app's one predicate, the query
+  narrows with `.eq` like `queue`/`status` (so a table past `ROW_CAP` still
+  answers completely), and the value is canonicalised ONCE at the page with
+  `canonicalRecordId` — handed INTO the leaf as an argument, because a pure
+  domain leaf may not import `lib/db/**` (§4 rule 7) and a second uuid grammar
+  is what BUG-0139/0140 closed. Two facts the ruling pins so a lane cannot get
+  them wrong: `narrowingOfKind` never carries a source (no kind implies one, so
+  a source facet always counts as narrowing), and the POPULATION counts stay
+  unnarrowed (that is what makes a source with no items read "nothing matched"
+  rather than "this queue is empty" — BUG-0133). `source_id` gets no chip row:
+  its vocabulary is unbounded data and `/queues` reads no registry, so the
+  narrowing is stated instead by a scope element (`data-scope="source_id"`,
+  spelling the CANONICALISED id, with a link back that drops it) — a narrowing
+  visible only in the URL is a page claiming a population its read did not
+  cover. **The dropped-parameter line comes too, and with one owner**: it is
+  required anyway for `?source_id=not-a-uuid`, and copying it would be common
+  violation 9 with four blocklist fixes (BUG-0123/0127/0136/0137) left behind,
+  so the rule moves to the leaf `src/lib/url/dropped-params.ts` and the
+  rendering to `src/components/ui/dropped-params.tsx`, with `lib/claims/filters.ts`
+  re-exporting so `/claims`' markup, callers and tests do not move. Module map
+  and the leaf set above amended in the same pass (they were also missing
+  `lib/sources/**`). Ticket criteria and checks amended; the inherited checks
+  were a defective gate — `npm test -- <offline path>` can never exit 0, because
+  the script is two vitest project runs and the isolated one then finds no files
+  (measured on the unmodified tree).
+
+- **2026-09-09, BUG-0137 ruling (architect).** The Claims dropped-parameter line
+  is fixed by a RULE, not by a fourth blocklist. **§7 gains it** and **Common
+  violations gains row 15, promoted at 3**: text this app did not author never
+  sits inside a sentence this app wrote — it comes through an allowlist, or it
+  renders in its own box. The line now spells a key only from
+  `^[A-Za-z0-9_.-]{1,64}$` (the class every facet name satisfies) and counts
+  every other key through the `withheld` arm that already exists for the parked
+  word, so the U+FE0F/U+034F/U+0301 0px name, the `in_win<U+034F>dow` bar-3 leak
+  and the U+202E sentence reversal close together instead of one family per
+  bug. The alternative — widening `INK_LESS` in `src/lib/verdict/decision.ts` to
+  `\p{Mn}` — was rejected and the file removed from BUG-0137's touch scope: it
+  is the app's one definition of blank for the EDIT surface ("did the operator
+  type anything?"), where U+FE0F and U+2800 are content and a draft of them
+  commits. One predicate, two questions, is how a shared definition gets widened
+  by whichever question broke last. Ruled and measured against every fixture the
+  three predecessor bugs pinned
+  (`agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`, 2026-09-09): 42
+  cases, every BUG-0123/0127 pin unchanged, three BUG-0136 assertions moving
+  from named to counted (`記録`, U+2800, `record_id<U+200B>` — all now
+  counted-not-spelled, with `.`/`-`/`_`/`0`/`record_id`/`bucket`/`in_windows`
+  still named verbatim so the test keeps its non-vacuity), and QA's strict pin A
+  widening by one field, because A (`{named: [], withheld: 0}` for a lone mark)
+  and B (`{named: [], withheld: 1}` for the parked word plus a mark) are jointly
+  satisfiable ONLY by a predicate that calls U+FE0F blank and U+2800 not — the
+  fourth blocklist. Also ruled: **BUG-0139 dispatches before BUG-0137** (set to
+  P1) — BUG-0138 is blocked on 0139 and inherits its read shape, so the perf
+  chain idles behind anything dispatched ahead of it, while BUG-0137 blocks
+  nothing. No `depends_on` edge between them: they share no file and a false
+  edge outlives the cap of 1 that made the order matter.
+
+- **2026-09-09, BUG-0135 ruling (architect).** No section of the contract changed; **Common violations gains row 14** — a composed read's helper leg refusing the whole read — at count 1, note only, because the rule it violates is already written three times over (§4.1, §4.3, and the landed `/claims` practice) and a fourth spelling would not have caught it. The ruling on `readReviewQueues` is a combination and both halves are required: **the surface takes shape B** (the population leg's refusal is reported as its own per-kind sub-surface inside the block, below the rows, on its own `data-surface`, exactly as `/claims` reports a source registry that would not read) and **the scope decision takes shape A** (population carried per kind as a `DbResult<number>`; on a refusal the block falls back to BUG-0131's structural `isNarrowed` and the sub-surface is what says so — a silent fallback would be a state derived from a read that did not happen, the class §4.3 exists to forbid). **And the leg becomes a COUNT read** (`readCount`, `head: true, count: "exact"`, one per shape, summed over `shapesOfKind`), so `ROW_CAP` cannot reach it at all: a figure no row depends on is never bought with a thousand rows, and the fallback above becomes the rare path rather than the permanent state of the page the day `review_items` outgrows the cap. The kind mapping keeps its ONE owner — the column conditions each `Shape` is defined by are declared in the pure `src/lib/review/shapes.ts` beside `shapeOf` and the `lib/db` module builds its queries FROM that declaration, because a queue value or a null-check spelled in `lib/db` would be a second definition of kindhood (§6, "no column carries it"). BUG-0133's rule is kept verbatim wherever the population IS readable, and its sibling pin — a truncated FILTERED leg still refuses whole — stays green. BUG-0135 set to M2.
+
+- **2026-09-09, chip-inside-a-link promoted to a rule (architect, rulings batch 2).** BUG-0115 is the second instance of Common-violations row 13, so both halves the count-1 note promised landed together: **§7 gains the rule** (no anchor in any page's delivered markup contains a chip-filled span, with the card-shaped-link case spelled out — a badge classifying a `StatCard` with an `href` sits inside the shell and outside the anchor), and **the assertion goes into `tests/offline/ui/link-spelling.test.ts`**, the one owner of link spelling, as a rendered whole-window sweep over the shared `loadSurfaces()` harness rather than a source-text heuristic. Dry-run before it was written into criteria: the sweep returns 2 hits on `/` and 0 on the other seven routes today, so BUG-0115's fix is its red-to-green target and the guard cannot pass vacuously. Row 13 now reads count 2 with both examples. No other section changed.
+
+- **2026-09-09, BUG-0110 reopen ruling (architect, rulings batch 2).** The Cycles-in-window sub-line names its excluded set by the property TRUE of every row in it — no end recorded — and never by an outcome verdict, because the excluded set (`duration.unmeasurable`) is a strict superset of the dead and the page pins one word per cycle state in `src/lib/cycles/state.ts` (`STATE_WORD`; BUG-0055, BUG-0074). The alternative shape — splitting running from died from unrecorded on the card — was rejected: it puts a second state vocabulary on a card the Look allows exactly one sub-line, duplicating the outcome panel three cards down. BUG-0110 criterion 4 was the defect QA bounced on (it demanded the excluded count EQUAL the `died` row, which is unsatisfiable with criterion 1 on any mixed window); it now binds the count to the duration note's, from the one field, and forbids the line from implying a verdict. BUG-0116 is closed as the duplicate it is; its strict pin is BUG-0110's red-to-green target. No section of this contract changed.
+
+- **2026-09-09, BUG-0113 criteria ruling (architect).** No section of the contract changed; two things did. (1) **Common violations gains row 13** — a badge standing as the whole body of an anchor — recorded at count 1 and NOT promoted: the designer's ruling already put the rule in LOOK_AND_FEEL, and the row exists so the second instance reads as a class. (2) **BUG-0113 criterion 3 amended** (`ticket.py amend-criteria`): as inherited from BUG-0108 criterion 6 it forbade the fix it was attached to — dropping the chip removes its `inline-block` box and the buckets rows lose about 4px. It now binds the table's own density (cell padding 8/6, column set, order, alignment, no other cell moves) and explicitly permits the row box to shrink by the removed chip's vertical padding. Criteria 1, 2 and 4 and all three checks are unchanged; the red-to-green target stays the `expectLinkSpellingReachesTheGlyphs` pin.
+
+- **2026-09-08, M2 contract answers (architect).** Ben answered both open
+  questions and §12 is empty again. (1) **The admin voice** is the registered
+  `sources` row `admin` (tier `admin`, lifecycle `active`, kind `registered`);
+  staging has none, so the `settle_review_item` artifact carries the idempotent
+  insert and Ben applies row and function in one paste — §9.2 fact 1 rewritten
+  from a question into the answer, with the name spelled ONCE as `ADMIN_SOURCE`
+  in the pure leaf and asserted from there by the artifact's own test. (2) **The
+  editable columns** are events `title`/`description`/`poster_url`/`starts_at`
+  and venues `name`/`city`/`country`/`address`; the CHECK-constrained three stay
+  out; §9 gains the move-from-`display` rule (a column never stands in both
+  halves of the one map) and the one-edit widening rule. (3) §9.2 gains the
+  **parameter-name coupling** QA measured on TASK-0048: the artifact's test
+  pins the SQL's argument name to `SETTLE_ARGUMENT`, because a drift makes an
+  installed function read as permanently absent. Both marker strings are gone
+  from this file, History included — that absence is what closes an ASK.
+
+- **2026-09-08, M2 decomposition (architect).** Three amendments, all traceable
+  to one human ruling and one read of the sibling's installed schema.
+  (1) **§9's regimes are now `sandbox` / `resolver_owned`**, and `pre_cutover`
+  is gone as an identifier and as a concept — Ben struck VISION's "groups/idols
+  edit directly within it" on 2026-09-08 with the instruction not to
+  re-implement it. `groups`/`idols` leave the map outright (first drafted this
+  day as a third `read_only` regime; re-ruled the same day against it — with no
+  door and no write, a uuid-only record page is a surface nobody can reach, and
+  the reference-as-link mechanism stands on `events.venue_id`), so the teeth
+  move from the type to a structural pin: the only table whose write path is
+  `direct` is `walk_sandbox`;
+  `walk_sandbox` becomes `sandbox`, which is the door §9.1 item 5 explicitly
+  left open and which also pays off the "goes to the catalog" inaccuracy that
+  section was carrying. (2) **§9.2 is new**: the override path, the eight action
+  names (ruled here because no contract spells them and two builders may not
+  each invent one), the decision envelope as a pure leaf, what the envelope may
+  NOT carry because the database already knows it, the two installed-schema
+  facts that decide the override's shape (the gate's KS007 source refusal; a
+  reference is observed as a `ref` and resolved through `confirmed_matches`),
+  and the ruling that a surface reads the presence of the `verdicts` TABLE
+  rather than probing a function PostgREST cannot introspect. (3) **§12 is no
+  longer empty**: the edit-allowlist question and the admin-source question,
+  both blocked for Ben, the first now framed as a closed candidate list read
+  from the registry rather than an open invitation. (Their two marker strings
+  were removed from this History line on 2026-09-08 when the questions closed:
+  each ASK's structural check is its marker's absence from this FILE, so a
+  mention here would have held the question open.) Common violations gains row
+  12, promoted at count 1 because a human ruling closed the class, and §13 gains
+  rules 8 and 9.
+- **2026-09-04, key-shape ruling + residual pass (architect).**
+  **§9.1 item 9 (new)** — the walk sandbox is uuid-keyed. Text keys made
+  `isRecordId`'s stated premise false and left both of the sandbox's required
+  states unreachable at its own keys; the invariant kept is that the gate never
+  refuses an id the table could hold, and the rejected alternative (a per-table
+  `idShape` in the edit config) is written down with its cost. The DDL in
+  `agenticflow/tracker/for-human/TASK-0034.md` changed with it, before Ben
+  pasted anything.
+  **§4.3** — the window-line rule promoted: a window line states a read that
+  happened, and an empty window is still a window (violation class 11, third
+  instance; BUG-0070 filed to fix `/claims` and to generalise the one test that
+  grades the rule).
+  Filed the same pass: BUG-0068 (the PATCH route makes the page's own id
+  decision), BUG-0069 (focus is never returned when an edit ends), both from QA
+  residuals that had no ticket. Doors closed are in
+  `agenticflow/docs/DECISIONS.md`, same date.
+
+- **2026-09-03, M1 endgame: root-cause pass + structure walk (architect).**
+  Six recurring bug classes written whole into `agenticflow/docs/LESSONS.md`
+  (the builder-facing half) and seven authoring rules into the new **§13**
+  (the ticket-facing half) — the load-bearing one being §13.1: a ticket
+  touching a page under `src/app/**` carries that page's live suite in its
+  checks, because `npm test` is the offline and isolated projects only and the
+  live and http tiers therefore run in no gate. Amendments from walking the
+  tree against the contract: **§3's module map** was stale in five places and
+  now documents what is (the six per-page component directories, the four pure
+  leaves, `lib/db/gauges.ts`, `lib/gauges/gauge.ts`, and `EditableCell.tsx`
+  where §2 actually put it); **§4 rule 3** now records its one ruled exemption
+  (`src/lib/supabase.ts`, the sign-in path's carried-over service-role client
+  that `admin.ts`/`auth.ts` import — the rule read as absolute while the tree
+  never was, and the exemption is a ratchet in `layering.test.ts`); **§9's
+  `TableEditConfig` block** gained the `reference` member `config.ts` has
+  declared since BUG-0034; **§10** gained the oracle rule promoted from common
+  violations 7 and 8; **§11** records that `EditableCell.tsx` is PascalCase by
+  §2's carry-over and stays so. Verified clean and recorded as such in
+  `tracker/milestones/M1.md`: dependency rules 1, 2, 5, 6, 7 and 8 (zero
+  violations), the DbResult contract (no `throw` anywhere in `src/lib/`), the
+  one-async-boundary rule, and common violation 3 re-counted at **0 new**.
+  Filed: DEBT-0003 (four byte-identical `StateOf` copies, and a `WindowLine`
+  that has already drifted on `/claims`), DEBT-0004 (two pages carry their own
+  presentation), DEBT-0005 (the unclamped `error_summary` in the `/cycles`
+  lead — BUG-0040's residual, ticketed rather than left as a note).
+
+- **2026-09-03, claims-cost confirmation (TASK-0031)** — the handoff landed in
+  the scraper repo and I confirmed it read-only rather than taking it on
+  report. What landed there:
+  `20260903000001_the_creation_bar_is_read_once_and_the_incumbent_is_one_seek.sql`,
+  Ben-licensed in session, carrying **candidate A exactly as this campaign
+  specified it** (`field_provenance_current_per_fact` on `field_provenance
+  (entity_type, entity_id, field, applied_at desc, provenance_id desc)` — that
+  table previously held nothing but its primary key) and a **different, better
+  candidate B than the one I proposed**: not `not materialized` on the
+  five-times-referenced `live_pending_claim`, but `materialized` on
+  `required_column`, which was referenced ONCE and therefore inlined into
+  `record_bar`'s per-record lateral — 6,586 `pg_attribute` scans, ~10s of the
+  11.5s their own EXPLAIN measured. My diagnosis named the right table and the
+  right kind of fix and the wrong dominant cost; recording that here because
+  the next reader should trust their EXPLAIN over my inference from SQL.
+  Amendments: **§6 trap 12 rewritten** from "cannot be read today" to what was
+  measured, what fixed it, and the re-measurement (every one of thirteen shapes
+  returns; the Claims page's own shape returns all 859 rows in **281–312 ms**
+  against 8.1s and `57014` before — evidence `claims-probe3.tsv` beside the
+  earlier two). Its two rules — no workaround code, and Admin never re-computes
+  the classification — are **unchanged and still binding**: they were never
+  contingent on the cost. **§12's claims-cost marker struck**, leaving that list
+  empty, which is a legal state and not an invitation. **§4's pure-leaf list
+  corrected** to `lib/review/**`, `lib/browse/**`, `lib/claims/**`,
+  `lib/records/**`, `lib/format.ts`, `lib/edit/config.ts` — `lib/records/**` is
+  the leaf DEBT-0001 landed (`routes.ts`, `provenance.ts`, both importing
+  nothing), and the list still carried "`lib/browse/**` when TASK-0015 lands"
+  after TASK-0015 was done and never named `lib/claims/**` at all. **No product
+  code changed, by anyone, for any of this** — which was the whole point of
+  ruling that no Admin-side mitigation existed. One live assertion is still red
+  and it is a defect in the test's arithmetic, not in the page: Common
+  violations row 7, admin-window/BUG-0037.
+
+- **2026-09-02, fourth ruling pass (one item)** — Ben answered the adapter-runs
+  column question (TASK-0023), so **§12's runs marker is struck** and the
+  nine-column set plus the `?source=<name>` facet moved into the settled
+  paragraph. The marker string itself is deliberately absent from this file now:
+  TASK-0023's structural bar is that the marker leaves it. Why recorded here and
+  not only on the ticket — §12's own rule is that a question is closed when its
+  marker leaves the list, and the human reviews this file instead of the
+  tracker. No other section changed: the set is the Dashboard's four (`source`,
+  `started_at`, `ended_at`, `outcome`, `error_summary`) widened by
+  `records_parsed`, `claims_emitted`, `records_unlinked`, `failure_class`, and
+  `src/lib/db/runs.ts` stays a **window** read under §4.3 because no figure on
+  the page is computed over the rows. The door is in `DECISIONS.md`, same date.
+  Comments in `src/app/page.tsx`, `src/lib/db/dashboard.ts`,
+  `src/lib/db/sources.ts` and the Dashboard offline tests still call the runs
+  column set an open question; they are outside TASK-0016's scope and are not a
+  defect — TASK-0016 corrects the ones in the files it owns.
+- **2026-09-02, third ruling pass** — staging became reachable and the first
+  live parity run happened, so this pass is written from measurement rather
+  than from reading. Amendments:
+  **§6 trap 12 (new)** — `pending_claims` cannot be read on staging in ANY
+  shape but an unordered `limit 1`; I measured eight shapes myself (evidence
+  `agenticflow/tracker/evidence/architect/claims-probe*.tsv`) before ruling,
+  because the question the campaign actually had to answer was "is there an
+  honest fast read we can write here" and the answer is no. The trap carries
+  the two rules that follow: no workaround code, and Admin never re-computes
+  the classification the view owns.
+  **§9** — `TableEditConfig` gains `display`, the read-only half of the one
+  map (Ben's ruling on TASK-0029). It is not a second allowlist: `decideEdit`
+  still answers the write question, and a column is not editable by being
+  displayed.
+  **§10, three rules** — a live test names the STATE KIND before it compares a
+  number (`error` is a FAIL, `empty` is a pass with a 0, `not_provisioned`
+  needs the absence code from the test's own read); the live suite's write
+  permission is `groups`/`idols` only; and what staging holds — one review
+  item, zero `data_conflict` — is recorded so no one reads a 0-to-0 comparison
+  as coverage.
+  **§12** — four markers removed on Ben's rulings, one added: the
+  `pending_claims` cost is now an open question with a handoff behind it.
+  **Common violations row 6** — the live-oracle class, at 3 in one run.
+  **§6 trap 1 was corrected by BUG-0024's builder, not by me** — the
+  correction is right, is cited to the migration, and stands. Recording it
+  here so the amendment is not invisible: this file has one writer, and the
+  reason is that the human reviews it instead of reading code. A builder who
+  finds this contract wrong should say so on the ticket; if the fix is as
+  clearly right as that one was, it survives the pass.
+
+- **2026-09-02, second ruling pass** (BUG-0016/0017/0018 landed, TASK-0007/
+  0008/0015/0017/0018/0026-0028 landed; campaign `admin-window`, M1 in
+  flight). Amendments:
+  **§3 + §4 diagram + new rule 8** — `next.config.ts` is drawn: it is a BUILD
+  HOST that imports `EDITABLE_TABLES` from the pure leaf so BUG-0017's
+  `/records` backstop rewrite is derived from the one map. The arrow holds
+  only while the leaf imports nothing, which is why that guard is named here.
+  **§4.1** — the `DbResult` error arm in the snippet now shows `reading`,
+  which the code has carried since BUG-0016; a contract that disagrees with
+  the module beside it is worse than none.
+  **§5, two rules** — a dynamic route that calls `notFound()` inherits the
+  Next 16.2.2 error shell unless its miss is ROUTED (the `/records` rewrite is
+  not inherited), and the auth gate is never given a handler (next-auth runs
+  it in the branch before the redirect).
+  **§7, three rules** — `ErrorLine.reading` required, the state card carries
+  the replaced surface's eyebrow, and a rows surface can no longer render
+  headers with no body. Filed as TASK-0030.
+  **§10, two rules** — an absence assertion reads code lines and pins a call
+  rather than a word; one owner per structural guard, and tickets run that
+  file instead of copying its predicate.
+  **Common violations 4 and 5** — both measured on the open tickets' own
+  checks, both promoted on the spot.
+- **2026-09-02, ruling pass** (QA findings on TASK-0001, TASK-0003, TASK-0006;
+  campaign `admin-window`, M1 in flight). Five amendments, each because the
+  contract was wrong or silent where a builder was about to guess:
+  **§1.2 narrowed** — the `../` ban is about leaving `src/`/`tests/`, not about
+  relative imports as such; as written it contradicted two landed modules and
+  six in-flight ones, and would have bought a pointless refactor.
+  **§4 diagram + new rule 7** — pure domain leaves (`lib/review/**`,
+  `lib/format.ts`, `lib/edit/config.ts`) sit *below* `lib/db/**`, which is
+  what TASK-0006 landed and what its two-module contract required; the old
+  arrow pointed the wrong way. The leaf may never import `lib/db/**` back,
+  not even a type: a type-only edge erases at runtime but still writes a
+  directory-level cycle into this file. `lib/gauges/**` is unaffected — it
+  fetches, so it sits above `lib/db/**` as drawn.
+  **New §4.3** — the read-kind split. An unbounded PostgREST select returns an
+  arbitrary subset in unspecified order, so a complete read now refuses rather
+  than truncates and an `ok` array is the whole matching set. This is the
+  amendment with the widest blast radius: eight unwritten `lib/db` modules
+  would otherwise each have invented a bound.
+  **§6 trap 11** — `shapeOf`'s fall-through default, and the migration that
+  makes it reachable, recorded rather than ticketed.
+  **Common violations** — seeded with three classes; two were promoted to
+  rules on the spot (classes 1 and 2 are at 2+).
+  Doors closed by these are in `agenticflow/docs/DECISIONS.md`, same date.
+- **2026-09-01, intake.** Written from the `contracts/` snapshots read that
+  day, the scraper repo's migrations, and a code walk of `src/`. Decisions that
+  close a door are recorded separately in `agenticflow/docs/DECISIONS.md`:
+  the `DbResult` union, the one-async-boundary rule, TypeScript-side gauge
+  aggregation, and the scraper-repo freeze.

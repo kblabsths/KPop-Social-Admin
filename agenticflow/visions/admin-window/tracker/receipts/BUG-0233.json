@@ -1,0 +1,50 @@
+{
+ "id": "BUG-0233",
+ "created": "2026-09-15T07:25:10Z",
+ "green": true,
+ "git_head": "e8bb9518ab3884aaacea99968767e4a44fc62d34",
+ "scope": [
+  "src/app/queues/page.tsx",
+  "tests/offline/review/review-items.test.ts",
+  "tests/offline/queues/page.test.ts",
+  "tests/offline/claims/read.test.ts",
+  "tests/offline/live-guard.test.ts",
+  "tests/offline/claims/population.ts",
+  "tests/offline/claims/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "743bd5bc2e83b5c2def30fee71634bb55a801ce24ba513ffaa50d9e50ed36b0e",
+ "commands": [
+  {
+   "cmd": "grep -q 'countRead' src/app/queues/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'countRead' tests/offline/claims/population.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'countRead' tests/offline/claims/read.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'countRead' tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

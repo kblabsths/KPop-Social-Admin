@@ -1,0 +1,26 @@
+{
+ "id": "TASK-0041",
+ "created": "2026-09-09T01:34:26Z",
+ "green": true,
+ "git_head": "7031bed2940c9e24fd9647b7ac519f4f728ace3c",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md",
+  "agenticflow/tracker/for-human",
+  "agenticflow/docs/DECISIONS.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "5e3bbaf806940bd687c9b0fd2e19e14ee154c9ebef0e263cb96a531bdb7a51dc",
+ "commands": [
+  {
+   "cmd": "bash -c 'npm test'",
+   "exit": 0,
+   "output_tail": "49.67s, tests 155.83s, environment 35ms, prepare 20.59s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14452\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 54777ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1968ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  2392ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  7777ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  42636ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  18:33:30\n   Duration  55.87s (transform 58ms, setup 0ms, collect 67ms, tests 54.78s, environment 0ms, prepare 405ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:14480) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14506) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14525) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14597) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:15200) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'test \"$(shasum agenticflow/docs/vision/VISION.md | cut -d\" \" -f1)\" = 4b934d15c8e415b1745b0473ec89ea8f0fbbd5d2'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

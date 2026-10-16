@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0154",
+ "created": "2026-09-10T00:12:38Z",
+ "green": true,
+ "git_head": "fa1671ceb9c37cf6014376412c4e252155696751",
+ "scope": [
+  "src/lib/sources/names.ts",
+  "src/lib/db/review-item.ts",
+  "src/components/review/evidence-cells.tsx",
+  "src/components/claims/claim-list.tsx",
+  "tests/offline/review-item/page.test.ts",
+  "tests/offline/sources/names.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "948c37981237861046f2723b5a26278a3f23148e87bdddcdfb5bff5ce22de31f",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts -t \"renders no blank cell\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-83131\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (116 tests | 115 skipped) 36ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 115 skipped (116)\n   Start at  17:12:36\n   Duration  883ms (transform 347ms, setup 0ms, collect 562ms, tests 36ms, environment 0ms, prepare 101ms)\n\n(node:83151) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/sources/names.test.ts tests/offline/ui/evidence-pair.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-83131\n\n \u2713 |offline| tests/offline/sources/names.test.ts (11 tests) 6ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (33 tests) 79ms\n\n Test Files  2 passed (2)\n      Tests  44 passed (44)\n   Start at  17:12:37\n   Duration  542ms (transform 108ms, setup 0ms, collect 247ms, tests 85ms, environment 0ms, prepare 139ms)\n\n(node:83174) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

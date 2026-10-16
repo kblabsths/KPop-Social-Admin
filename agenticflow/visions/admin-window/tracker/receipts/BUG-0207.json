@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0207",
+ "created": "2026-09-11T20:56:54Z",
+ "green": true,
+ "git_head": "73bb034d0da5e60b69f741ebfb7e544cf7ac659f",
+ "scope": [
+  "tests/offline/handoff/settle-review-item.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "61894869f0ec0abe4433f63b7ca6bcdaa065ad1487d3d22e0fc8670f1912402a",
+ "commands": [
+  {
+   "cmd": "env -u STAGING_SUPABASE_URL -u STAGING_SUPABASE_SERVICE_ROLE_KEY ./node_modules/.bin/vitest run --project=offline",
+   "exit": 0,
+   "output_tail": "5ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  692ms\n   \u2713 what a filled window promises > says what it is not showing and offers no way to it  376ms\n   \u2713 a parameter the page did not apply > ignores a key with no visible content the way it ignores an empty value, and moves nothing else  333ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=(absent)  448ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=standing_disagreement  325ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  365ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=in_window  363ms\n\n Test Files  80 passed (80)\n      Tests  3973 passed (3973)\n   Start at  13:55:54\n   Duration  12.57s (transform 4.76s, setup 0ms, collect 22.72s, tests 62.00s, environment 12ms, prepare 5.41s)\n\n(node:46892) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:46914) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:46920) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:46925) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "env -u STAGING_SUPABASE_URL -u STAGING_SUPABASE_SERVICE_ROLE_KEY ./node_modules/.bin/vitest run --project=isolated",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-46885\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (8 tests) 36061ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1579ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1599ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  6186ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  12782ms\n   \u2713 a probe left behind by a run that died > is gone after the next run of the suite that plants probes, parent kept  2084ms\n   \u2713 a probe left behind by a run that died > cannot redden `npm run lint` while it sits there  11828ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  13:56:07\n   Duration  36.31s (transform 37ms, setup 0ms, collect 40ms, tests 36.06s, environment 0ms, prepare 52ms)\n\n(node:47164) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

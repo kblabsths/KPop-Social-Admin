@@ -1,0 +1,82 @@
+{
+ "id": "TASK-0033",
+ "created": "2026-09-03T21:38:00Z",
+ "green": true,
+ "git_head": "a0e5318411c578caaff59c8c4c7f7f3cbcfbd061",
+ "scope": [
+  "tests/walk",
+  "tests/offline/walk",
+  "tests/http",
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "e649033c9535a7e1d4fcf02f647461f57d255a93c18d249d151f9f0cd4d44d4c",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/walk/session-cookie.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-34231\n\n \u2713 |offline| tests/offline/walk/session-cookie.test.ts (15 tests) 1154ms\n\n Test Files  1 passed (1)\n      Tests  15 passed (15)\n   Start at  14:37:41\n   Duration  1.54s (transform 43ms, setup 0ms, collect 77ms, tests 1.15s, environment 0ms, prepare 68ms)\n\n(node:34264) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/toolchain.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-34231\n\n \u2713 |offline| tests/offline/toolchain.test.ts (17 tests) 2565ms\n\n Test Files  1 passed (1)\n      Tests  17 passed (17)\n   Start at  14:37:43\n   Duration  2.99s (transform 47ms, setup 0ms, collect 142ms, tests 2.57s, environment 0ms, prepare 100ms)\n\n(node:34298) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:34319) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:34322) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:34325) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": " map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  743ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  616ms\n \u2713 |http| tests/http/walk-cookie.http.test.ts (1 test) 968ms\n   \u2713 the walker's minted cookie against the running app > opens the gated pages, and only under the server's own secret  968ms\n \u2713 |http| tests/http/edit.http.test.ts (1 test) 741ms\n   \u2713 the record PATCH route over http > gates it, refuses every forged edit, and offers no other method  741ms\n\n Test Files  3 passed (3)\n      Tests  13 passed (13)\n   Start at  14:37:55\n   Duration  5.17s (transform 68ms, setup 0ms, collect 112ms, tests 4.77s, environment 0ms, prepare 67ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-34231/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:34382) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:34426) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "test \"$(grep -rl 'next-auth/jwt' tests | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -rl 'next-auth/jwt' tests)\" = \"tests/walk/session-cookie.mts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rn 'AUTH_SECRET' src",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(node -p 'Object.keys(require(\"./package.json\").dependencies).length + Object.keys(require(\"./package.json\").devDependencies).length')\" -eq 17",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'SUPABASE_URL=\"$STAGING_SUPABASE_URL\"' agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'AUTH_URL=\"http://localhost:8771\"' agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'node tests/walk/session-cookie.mts' agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF 'add_cookies' agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

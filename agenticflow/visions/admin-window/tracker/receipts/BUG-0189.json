@@ -1,0 +1,39 @@
+{
+ "id": "BUG-0189",
+ "created": "2026-09-11T12:24:47Z",
+ "green": true,
+ "git_head": "5a32d6505fd1219dff9a9d978beee1747c0dd591",
+ "scope": [
+  "tests/live/queues.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "3e1378832f6d4e2a96a360c1aa57c58e041e28070f754e0308efdf738cda3145",
+ "commands": [
+  {
+   "cmd": "! grep -q \"window.present ? await windowCounts\" tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"objectIsAbsent\" tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/queues.live.test.ts",
+   "exit": 0,
+   "output_tail": ".2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89374\n\n \u2713 |live| tests/live/queues.live.test.ts (14 tests) 7589ms\n   \u2713 the two queues against staging > renders the open decision count the database holds  490ms\n   \u2713 the two queues against staging > renders the open signal count the database holds  364ms\n   \u2713 the two queues against staging > renders every row the table holds, split between the two queues  537ms\n   \u2713 the filters against staging > returns exactly the matching items for every queue and status value  2033ms\n   \u2713 the filters against staging > returns exactly the matching items for every shape value  751ms\n   \u2713 the queue-health gauge against staging > renders each queue's open count over its own window  332ms\n   \u2713 the verdict log against staging > renders the window the database holds, or names the table it lacks  409ms\n   \u2713 the whole-queue population against staging > counts each kind's whole-queue population, and it is the census the database holds  491ms\n   \u2713 the whole-queue population against staging > renders a faceted URL with no block reporting a count it could not make  431ms\n   \u2713 a source narrowing against staging > renders exactly the items of the source the URL names, in both blocks  491ms\n   \u2713 a source narrowing against staging > renders the honest empty for a registered source with no items  386ms\n   \u2713 a source narrowing against staging > names a source_id it cannot use and renders the whole table, never an error  394ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Start at  05:24:10\n   Duration  8.31s (transform 230ms, setup 30ms, collect 413ms, tests 7.59s, environment 0ms, prepare 51ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/queues.live.test.ts\n(node:89408) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

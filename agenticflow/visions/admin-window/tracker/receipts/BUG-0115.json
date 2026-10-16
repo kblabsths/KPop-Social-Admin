@@ -1,0 +1,39 @@
+{
+ "id": "BUG-0115",
+ "created": "2026-09-09T11:25:45Z",
+ "green": true,
+ "git_head": "521bda0de314a0f82747934ff86f71195e63cd42",
+ "scope": [
+  "src/app/page.tsx",
+  "src/components/ui/stat-card.tsx",
+  "src/components/ui/badge.tsx",
+  "tests/offline/dashboard/page.test.ts",
+  "tests/offline/ui/link-spelling.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "5609c5b75fb2c104c0383079b09aad7d6ae4640a2151893cedb71b6a9e18acaf",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "bash -c '! grep -qE \"^[[:space:]]*it\\.fails\\(\" tests/offline/dashboard/page.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -q loadSurfaces tests/offline/ui/link-spelling.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/link-spelling.test.ts tests/offline/dashboard/page.test.ts tests/offline/ui/primitives.test.ts tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-32255\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (85 tests) 96ms\n \u2713 |offline| tests/offline/ui/link-spelling.test.ts (23 tests) 202ms\n \u2713 |offline| tests/offline/dashboard/page.test.ts (62 tests) 376ms\n \u2713 |offline| tests/offline/claims/page.test.ts (105 tests) 2407ms\n\n Test Files  4 passed (4)\n      Tests  275 passed (275)\n   Start at  04:25:41\n   Duration  3.42s (transform 1.34s, setup 0ms, collect 2.24s, tests 3.08s, environment 1ms, prepare 554ms)\n\n(node:32368) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

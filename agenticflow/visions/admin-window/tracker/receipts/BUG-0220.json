@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0220",
+ "created": "2026-09-12T01:27:28Z",
+ "green": true,
+ "git_head": "ffa23b7b9eee64376703ddfc0088ae5ed2e50e0b",
+ "scope": [
+  "tests/offline/handoff/settle-review-item.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "cac6f32684ceb796c5efac2b841b199c194555ce7215a231215cd30c332880d1",
+ "commands": [
+  {
+   "cmd": "env -u STAGING_SUPABASE_URL -u STAGING_SUPABASE_SERVICE_ROLE_KEY ./node_modules/.bin/vitest run --project=offline tests/offline/handoff/settle-review-item.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-70808\n\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (47 tests) 222ms\n\n Test Files  1 passed (1)\n      Tests  47 passed (47)\n   Start at  18:27:21\n   Duration  623ms (transform 94ms, setup 0ms, collect 146ms, tests 222ms, environment 0ms, prepare 72ms)\n\n(node:70816) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

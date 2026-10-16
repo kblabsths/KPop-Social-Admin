@@ -1,0 +1,35 @@
+{
+ "id": "BUG-0188",
+ "created": "2026-09-11T11:59:41Z",
+ "green": true,
+ "git_head": "17657eea113edad1588bf363a177c798411134c9",
+ "scope": [
+  "tests/offline/db/layering.test.ts",
+  "tests/isolated/probe-race.isolated.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "a98e56544d9eaabe7d4b346c4a4e588bbf49ef9e4b308854024cdb2eeb058d76",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts -t \"dead run that had this pid\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-80588\n\n \u2713 |offline| tests/offline/db/layering.test.ts (42 tests | 40 skipped) 54ms\n\n Test Files  1 passed (1)\n      Tests  2 passed | 40 skipped (42)\n   Start at  04:58:36\n   Duration  366ms (transform 54ms, setup 0ms, collect 61ms, tests 54ms, environment 0ms, prepare 61ms)\n\n(node:80595) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-80588\n\n \u2713 |offline| tests/offline/db/layering.test.ts (42 tests) 1110ms\n\n Test Files  1 passed (1)\n      Tests  42 passed (42)\n   Start at  04:58:37\n   Duration  1.42s (transform 54ms, setup 0ms, collect 60ms, tests 1.11s, environment 0ms, prepare 60ms)\n\n(node:80620) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "0ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1843ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1844ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  6762ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  12812ms\n   \u2713 a probe left behind by a run that died > is gone after the next run of the suite that plants probes, parent kept  1911ms\n   \u2713 a probe left behind by a run that died > cannot redden `npm run lint` while it sits there  11215ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  04:59:04\n   Duration  36.70s (transform 41ms, setup 0ms, collect 45ms, tests 36.39s, environment 0ms, prepare 57ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:80764) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80795) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80798) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80801) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:81058) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

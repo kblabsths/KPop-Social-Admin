@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0059",
+ "created": "2026-09-04T01:20:23Z",
+ "green": true,
+ "git_head": "5bbf35fa73a07e15e4a0901e9b3cfcd429a97d66",
+ "scope": [
+  "src/components/ui/not-provisioned.tsx",
+  "tests/offline/absence/pages.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "6aed9a6dc197399781349bd90c9e5937e0149383a3f456329235a1eff84291d0",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-31090\n\n \u2713 |offline| tests/offline/absence/pages.test.ts (247 tests) 1054ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  401ms\n\n Test Files  1 passed (1)\n      Tests  247 passed (247)\n   Start at  18:20:21\n   Duration  1.83s (transform 770ms, setup 0ms, collect 481ms, tests 1.05s, environment 0ms, prepare 96ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/absence/pages.test.ts\n(node:31117) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

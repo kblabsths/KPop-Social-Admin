@@ -1,0 +1,33 @@
+{
+ "id": "BUG-0101",
+ "created": "2026-09-09T06:35:20Z",
+ "green": true,
+ "git_head": "6ff331771c4d06936185e0130a1d7439e288c56e",
+ "scope": [
+  "src/components/EditableCell.tsx",
+  "src/components/edit-cell-layout.ts",
+  "src/components/records/record-fields.tsx",
+  "tests/offline/ui/editable-cell.test.ts",
+  "tests/offline/records/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "32b8c2b3f7169042412cf4eac77bbcd6a6690b888484109e08db6001d906aa42",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/editable-cell.test.ts tests/offline/records/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-26090\n\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (116 tests) 120ms\n \u2713 |offline| tests/offline/records/page.test.ts (99 tests) 437ms\n\n Test Files  2 passed (2)\n      Tests  215 passed (215)\n   Start at  23:34:18\n   Duration  1.34s (transform 393ms, setup 0ms, collect 912ms, tests 557ms, environment 0ms, prepare 319ms)\n\n(node:26405) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": " event that has one  833ms\n   \u2713 a resolver-owned record page > shows the venue source on EVERY event the log holds a venue decision for, and moves no scalar's line  42091ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1079ms\n   \u2713 the walk sandbox > writes label, and the database keeps it as label's own type  514ms\n   \u2713 the walk sandbox > writes tally, and the database keeps it as tally's own type  514ms\n   \u2713 the walk sandbox > writes is_flagged, and the database keeps it as is_flagged's own type  546ms\n   \u2713 the walk sandbox > writes note, and the database keeps it as note's own type  543ms\n   \u2713 the walk sandbox > writes observed_on, and the database keeps it as observed_on's own type  496ms\n   \u2713 the walk sandbox > clears note to the app's own absence, then fills it in again  752ms\n   \u2713 the walk sandbox > clears observed_on to the app's own absence, then fills it in again  867ms\n   \u2713 the walk sandbox > reports the database's refusal when label is cleared, and label still stands  648ms\n   \u2713 the walk sandbox > reports the database's refusal when tally is cleared, and tally still stands  644ms\n   \u2713 the walk sandbox > reports the database's refusal when is_flagged is cleared, and is_flagged still stands  598ms\n   \u2713 the walk sandbox > meets a real type refusal with the database's words AND a fix in the app's voice  595ms\n   \u2713 the walk sandbox > clears a nullable column and meets the database's refusal on a required one  3945ms\n\n Test Files  1 passed (1)\n      Tests  25 passed (25)\n   Start at  23:34:20\n   Duration  60.54s (transform 241ms, setup 37ms, collect 440ms, tests 59.59s, environment 0ms, prepare 151ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:26450) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

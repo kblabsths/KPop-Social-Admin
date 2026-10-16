@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0011",
+ "created": "2026-09-02T10:02:21Z",
+ "green": true,
+ "git_head": "f1a87d415642ee2d75c588f79a4320c8de55b653",
+ "scope": [
+  "src/app/api/admin/records/[table]/[id]/route.ts",
+  "tests/offline/edit"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "d38fdc4816d7a9596759ece0f75695e296f626e3302ff6e5fece8043c10108f3",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/edit",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-92841\n\n \u2713 |offline| tests/offline/edit/route.test.ts (17 tests) 25ms\n \u2713 |offline| tests/offline/edit/records.test.ts (17 tests) 6ms\n \u2713 |offline| tests/offline/edit/config.test.ts (19 tests) 56ms\n\n Test Files  3 passed (3)\n      Tests  53 passed (53)\n   Start at  03:02:18\n   Duration  493ms (transform 169ms, setup 0ms, collect 251ms, tests 86ms, environment 0ms, prepare 216ms)\n\n(node:92848) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

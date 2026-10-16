@@ -1,0 +1,40 @@
+{
+ "id": "DEBT-0011",
+ "created": "2026-09-09T22:56:08Z",
+ "green": true,
+ "git_head": "e9b31e1ffd567e58bb83e85b1369e0a40987f089",
+ "scope": [
+  "src/components/ui/identifier.tsx",
+  "src/components/ui/index.ts",
+  "src/app",
+  "src/components",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/records/page.test.ts",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d219d791cae867d5f5719a5aaa4afe1bfb6a67481fc3947f1da28108fd018891",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline",
+   "exit": 0,
+   "output_tail": "ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=agreeing  593ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=in_window  949ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the buckets tab, under bucket=ESCALATED  864ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the standing tab, under bucket=(absent)  460ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the standing tab, under bucket=standing_disagreement  400ms\n   \u2713 QA: the whole tab x bucket x source x domain cross-product > renders exactly the claims and counts the view holds, on the standing tab, under bucket=awaiting_row  492ms\n\n Test Files  72 passed (72)\n      Tests  3177 passed (3177)\n   Start at  15:55:18\n   Duration  20.75s (transform 8.45s, setup 0ms, collect 32.60s, tests 114.93s, environment 12ms, prepare 8.64s)\n\n(node:47599) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:47649) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:47657) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:47682) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "test \"$(grep -rlo \"type-data text-ink\" src | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rq \"function TableName\\|function ReviewItems\" src",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

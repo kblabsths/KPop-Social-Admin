@@ -1,0 +1,1023 @@
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+import { spawn, type ChildProcess } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import { EDITABLE_TABLES } from "@/lib/edit/config";
+import { HTTP_TEST_PORT } from "../suite-globs";
+import { SESSION_COOKIE_NAME, mintSessionCookie } from "../walk/session-cookie.mjs";
+import {
+  AUTH_SECRET,
+  assertChildOwnsPort,
+  base,
+  host,
+  startServer,
+  stopServer,
+} from "./server-harness";
+
+const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+
+/* ── the route inventory, derived from the filesystem ─────────────────────── */
+
+/**
+ * Every route this app serves, read off `src/app/**` rather than listed
+ * (campaign admin-window/TASK-0019, acceptance test 12: "an unauthenticated
+ * request to every new page and route redirects to login").
+ *
+ * DERIVED is the whole point. A hand-kept list covers the routes someone
+ * remembered; the route that escapes the gate is by definition the one nobody
+ * remembered. Adding a `page.tsx` or a `route.ts` adds it here, and the sweep
+ * below then demands it redirect a stranger — including the API handler, whose
+ * gate is the same proxy and whose data is the same service role.
+ *
+ * The one regression this inventory exists to catch, named because nothing
+ * else in the repo would: `src/middleware.ts` is `export { auth as middleware }`
+ * and must never become `auth(handler)` — next-auth runs a supplied handler in
+ * the branch BEFORE the unauthenticated-redirect branch
+ * (`node_modules/next-auth/lib/index.js`, lines 148-156), so wrapping it
+ * silently removes the redirect from every route at once.
+ */
+interface DerivedRoute {
+  /** The route as `src/app` spells it: `/records/[table]/[id]`. */
+  readonly pattern: string;
+  /** A URL of that shape, dynamic segments filled with sample values. */
+  readonly url: string;
+  readonly kind: "page" | "handler";
+}
+
+/** Sample values for dynamic segments, by segment name. Never real ids. */
+const SEGMENT_SAMPLE: Readonly<Record<string, string>> = {
+  // A table the edit map DOES carry, so the URL reaches the record page rather
+  // than `next.config.ts`'s unmapped-table rewrite. The unmapped spelling is
+  // asserted separately below. It was `groups` until Ben struck the direct
+  // catalog edit on 2026-09-08 and both catalog tables left the map
+  // (admin-window/TASK-0040); `events` is mapped, and stays mapped.
+  table: "events",
+};
+const SAMPLE_ID = "2f0bc11e";
+
+function fillSegment(segment: string): string {
+  const dynamic = /^\[(?:\.\.\.)?(\w+)\]$/.exec(segment);
+  if (dynamic === null) return segment;
+  return SEGMENT_SAMPLE[dynamic[1]] ?? SAMPLE_ID;
+}
+
+/** Every `page.tsx` and `route.ts` under `src/app`, as routes. */
+function derivedRoutes(): DerivedRoute[] {
+  const appDir = path.join(repoRoot, "src", "app");
+  const routes: DerivedRoute[] = [];
+  const walk = (current: string) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const kind =
+        entry.name === "page.tsx" ? "page" : entry.name === "route.ts" ? "handler" : null;
+      if (kind === null) continue;
+      const relative = path.relative(appDir, path.dirname(full));
+      const segments =
+        relative === ""
+          ? []
+          : relative
+              .split(path.sep)
+              // Route groups and private folders never appear in a URL.
+              .filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")))
+              .filter((segment) => !segment.startsWith("_"));
+      routes.push({
+        pattern: segments.length === 0 ? "/" : `/${segments.join("/")}`,
+        url: segments.length === 0 ? "/" : `/${segments.map(fillSegment).join("/")}`,
+        kind,
+      });
+    }
+  };
+  walk(appDir);
+  return routes.sort((a, b) => (a.pattern < b.pattern ? -1 : 1));
+}
+
+/**
+ * The paths the app declares PUBLIC, read out of the proxy's own matcher
+ * (`src/middleware.ts`) rather than repeated here.
+ *
+ * Adding a public path is a design change (STACK §3). Reading the exceptions
+ * from the matcher means such a change reddens this file instead of quietly
+ * shrinking the sweep below it.
+ */
+function publicPathsFromMatcher(): string[] {
+  const source = fs.readFileSync(path.join(repoRoot, "src", "middleware.ts"), "utf8");
+  const matcher = /\(\?!([^)]*)\)/.exec(source);
+  if (matcher === null) {
+    throw new Error("src/middleware.ts carries no negative-lookahead matcher");
+  }
+  return matcher[1]
+    .split("|")
+    .map((alternative) => alternative.replace(/\\/g, "").trim())
+    .filter((alternative) => alternative.length > 0);
+}
+
+/** Asset paths in the matcher that are not routes of this app. */
+const NON_ROUTE_EXCEPTIONS = ["_next/static", "_next/image", "favicon.ico"];
+
+/** The route-bearing public paths: what the sweep is allowed to skip. */
+function publicRoutePrefixes(): string[] {
+  return publicPathsFromMatcher()
+    .filter((exception) => !NON_ROUTE_EXCEPTIONS.includes(exception))
+    .map((exception) => `/${exception}`);
+}
+
+function isPublic(url: string): boolean {
+  return publicRoutePrefixes().some(
+    (prefix) => url === prefix || url.startsWith(`${prefix}/`),
+  );
+}
+
+/** Every derived route the gate must cover — the sweep's subject. */
+const GATED = derivedRoutes().filter((route) => !isPublic(route.url));
+
+/**
+ * The URLs of those routes. Named as before so the forgery and gate loops read
+ * unchanged; what changed is where the list comes from.
+ */
+const GATED_ROUTES = GATED.map((route) => route.url);
+
+/** The six pages plus the edit surface: routes that must actually render. */
+const RENDERING_ROUTES = [
+  "/",
+  "/queues",
+  "/claims",
+  "/sources",
+  "/cycles",
+  "/browse",
+  "/records/events/2f0bc11e",
+];
+
+/**
+ * The deprecated surfaces. They are gone from disk, so the app must answer a
+ * signed-in visitor with a 404 — not a redirect to a working page, and not a
+ * page that still renders.
+ */
+const RETIRED_ROUTES = [
+  "/analytics",
+  "/database",
+  "/data-management",
+  "/data-management/completeness",
+];
+
+/** The identity this suite signs in as. Not a real address, and not the walker's. */
+const SUITE_CLAIMS = { sub: "http-suite", email: "http-suite@example.invalid" };
+
+/** How long every cookie minted in this file is good for. */
+const ONE_HOUR = 60 * 60;
+
+/**
+ * A session cookie the running app accepts.
+ *
+ * Auth.js JWT sessions are encrypted with a key derived from the secret and
+ * the cookie name as salt. `mintSessionCookie` (`tests/walk/session-cookie.mts`)
+ * wraps the same `encode` the app's own sign-in uses and is the ONE copy of
+ * that call in `tests/` — a walker mints its cookie with the very same function
+ * (admin-window/TASK-0033), so this suite and the endgame walk cannot drift
+ * apart on the cookie name, the salt or the shape.
+ *
+ * Nothing here reaches a database — the JWT strategy decodes the cookie and
+ * never looks a user up, which is why this works against a server started with
+ * every Supabase name stripped from its environment.
+ */
+async function signedInCookie(): Promise<string> {
+  const { name, value } = await mintSessionCookie({
+    secret: AUTH_SECRET,
+    claims: SUITE_CLAIMS,
+    maxAgeSeconds: ONE_HOUR,
+  });
+  return `${name}=${value}`;
+}
+
+/**
+ * Session cookies the running app must REFUSE.
+ *
+ * The whole signed-in half of this suite rests on one claim: the app accepts
+ * the minted cookie only because `next start` was given the same throwaway
+ * AUTH_SECRET in its environment. If any of these is accepted, that claim is
+ * false and the gate is not a gate — so each is asserted against every route,
+ * not just the root.
+ */
+async function forgedCookies(): Promise<ReadonlyArray<readonly [string, string]>> {
+  const name = SESSION_COOKIE_NAME;
+  const claims = SUITE_CLAIMS;
+  // Every forgery is the SAME mint with one thing wrong — which is the point:
+  // if the mint and the forgeries came from different code, a change to the
+  // mint could make the forgeries stale and this suite quietly vacuous.
+  const mint = (overrides: Parameters<typeof mintSessionCookie>[0]) =>
+    mintSessionCookie({ claims, maxAgeSeconds: ONE_HOUR, ...overrides });
+
+  const wrongSecret = (await mint({ secret: `${AUTH_SECRET}-but-not-really` })).value;
+  // Right secret, wrong salt: Auth.js binds the cookie name into the key it
+  // derives, so a token minted for another cookie must not open this one.
+  const wrongSalt = (await mint({ secret: AUTH_SECRET, salt: "authjs.csrf-token" })).value;
+  const expired = (await mint({ secret: AUTH_SECRET, maxAgeSeconds: -60 })).value;
+  const valid = (await mint({ secret: AUTH_SECRET })).value;
+
+  return [
+    ["a token signed with a different secret", `${name}=${wrongSecret}`],
+    ["a token bound to a different cookie name", `${name}=${wrongSalt}`],
+    ["an expired token", `${name}=${expired}`],
+    ["a structurally broken token", `${name}=not.a.real.token`],
+    ["an empty token", `${name}=`],
+    // Same bytes, one flipped in the payload: proves the signature is checked
+    // rather than the envelope merely parsed.
+    ["a tampered token", `${name}=${valid.slice(0, -3)}${valid.slice(-3) === "AAA" ? "BBB" : "AAA"}`],
+  ] as const;
+}
+
+describe("the route inventory", () => {
+  /**
+   * These need no server: they are about what the sweep below is going to
+   * ask for. A derivation that quietly returned nothing would make every
+   * assertion in this file vacuous, so it is checked before it is used.
+   */
+  it("finds every page and every handler on disk", () => {
+    const routes = derivedRoutes();
+    const pages = routes.filter((route) => route.kind === "page").map((r) => r.pattern);
+    const handlers = routes
+      .filter((route) => route.kind === "handler")
+      .map((route) => route.pattern);
+
+    // The six pages of the window, the two dynamic children, and sign-in.
+    expect(pages).toEqual([
+      "/",
+      "/browse",
+      "/claims",
+      "/cycles",
+      "/login",
+      "/queues",
+      "/queues/[reviewItemId]",
+      "/records/[table]/[id]",
+      "/sources",
+    ]);
+    expect(handlers).toEqual([
+      // The browse paging route (campaign admin-window/TASK-0068): GET only,
+      // gated by the same proxy, and swept below like every other route.
+      "/api/admin/browse/rows",
+      // The claims paging route (campaign admin-window/TASK-0066): GET only,
+      // gated by the same proxy, and swept below like every other route.
+      "/api/admin/claims/rows",
+      "/api/admin/records/[table]/[id]",
+      // The close's one write path (campaign admin-window/TASK-0049): POST
+      // only, gated by the same proxy, and swept below like every other route.
+      "/api/admin/review-items/[reviewItemId]/settle",
+      "/api/auth/[...nextauth]",
+      "/api/health",
+    ]);
+  });
+
+  it("skips exactly the three paths the app declares public", () => {
+    expect(publicRoutePrefixes().sort()).toEqual(["/api/auth", "/api/health", "/login"]);
+    // …and the sweep therefore covers everything else, the API route included.
+    expect(GATED_ROUTES).toContain(`/api/admin/records/events/${SAMPLE_ID}`);
+    expect(GATED_ROUTES).toContain(`/api/admin/review-items/${SAMPLE_ID}/settle`);
+    expect(GATED_ROUTES).toContain("/api/admin/claims/rows");
+    expect(GATED_ROUTES).toContain("/api/admin/browse/rows");
+    expect(GATED_ROUTES).not.toContain("/login");
+    expect(GATED.filter((route) => route.kind === "handler").length).toBe(4);
+    expect(GATED.length).toBe(12);
+  });
+
+  it("keeps the gate as an export, never as a wrapped handler", () => {
+    /**
+     * The one line whose regression the behavioural sweep would catch but no
+     * reader would: next-auth runs a SUPPLIED handler in the branch before the
+     * unauthenticated-redirect branch, so `export default auth(handler)` turns
+     * the gate off for every route at once while still looking like auth.
+     */
+    const source = fs.readFileSync(path.join(repoRoot, "src", "middleware.ts"), "utf8");
+    expect(source).toMatch(/export\s*\{\s*auth as middleware\s*\}/);
+    expect(source, "the gate wraps a handler").not.toMatch(/\bauth\s*\(/);
+  });
+});
+
+describe("the built app over http", () => {
+  it("serves health and sends an unauthenticated visitor to the login page", async () => {
+    const { child } = await startServer();
+    try {
+      const health = await fetch(`${base}/api/health`);
+      expect(health.status).toBe(200);
+
+      const root = await fetch(`${base}/`, { redirect: "manual" });
+      expect(root.status).toBeGreaterThanOrEqual(300);
+      expect(root.status).toBeLessThan(400);
+
+      const location = root.headers.get("location");
+      expect(location).not.toBeNull();
+      expect(new URL(location as string, base).pathname).toBe("/login");
+    } finally {
+      await stopServer(child);
+    }
+  });
+  /**
+   * The suite must assert against the app IT started, never against whatever
+   * happens to hold the port. Two lanes running `npm run test:http` at once,
+   * or an orphaned server from a crashed run, both put a foreign listener on
+   * HTTP_TEST_PORT — and a green earned from a stranger is not a green.
+   */
+  it("refuses to certify a server it did not start when the port is already held", async () => {
+    const foreign = http.createServer((req, res) => {
+      if (req.url === "/api/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end('{"ok":true}');
+        return;
+      }
+      if (req.url === "/") {
+        res.writeHead(307, { location: "/login" });
+        res.end();
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      foreign.listen(HTTP_TEST_PORT, host, () => resolve()),
+    );
+
+    try {
+      let started: { child: ChildProcess } | undefined;
+      try {
+        started = await startServer();
+      } catch {
+        // Correct behaviour: the harness refused loudly.
+        return;
+      }
+      await stopServer(started.child);
+      throw new Error(
+        `startServer() reported ready while a foreign listener held port ${HTTP_TEST_PORT}; ` +
+          "every assertion in this suite would have been answered by that listener",
+      );
+    } finally {
+      foreign.closeAllConnections();
+      await new Promise<void>((resolve) => foreign.close(() => resolve()));
+    }
+  });
+
+  /**
+   * Lock 1 (the pre-flight bind) refuses before we ever spawn, which means it
+   * masks lock 3 on every ordinary run. This exercises lock 3 on its own: a
+   * live child that is demonstrably NOT the process holding the port must be
+   * rejected. Keeps the OS-ownership path from rotting into dead code.
+   */
+  it("refuses a listener that is outside the process tree of the child it spawned", async () => {
+    const foreign = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"ok":true}');
+    });
+    await new Promise<void>((resolve) =>
+      foreign.listen(HTTP_TEST_PORT, host, () => resolve()),
+    );
+    // Alive, ours, and binds nothing — a stand-in for a `next start` that
+    // survived losing the port.
+    const decoy: ChildProcess = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      { detached: true, stdio: "ignore" },
+    );
+
+    try {
+      expect(() => assertChildOwnsPort(decoy, [])).toThrowError(
+        /refusing to certify a server it did not start/,
+      );
+    } finally {
+      if (decoy.pid !== undefined) {
+        try {
+          process.kill(-decoy.pid, "SIGKILL");
+        } catch {
+          decoy.kill("SIGKILL");
+        }
+      }
+      foreign.closeAllConnections();
+      await new Promise<void>((resolve) => foreign.close(() => resolve()));
+    }
+  });
+});
+
+describe("the gate over the whole window", () => {
+  /**
+   * One server, every route (campaign admin-window/TASK-0005). Starting and
+   * stopping `next start` costs seconds, and the file's other tests need the
+   * port to themselves, so the whole route sweep lives in one test body rather
+   * than a `beforeAll` that would collide with them.
+   */
+  it("sends a stranger to /login and answers a signed-in visitor honestly", async () => {
+    const { child } = await startServer();
+    try {
+      // 1. Unauthenticated: every route, including the dynamic children,
+      //    redirects to the sign-in page. Adding a page adds protection
+      //    automatically — this is what asserts that stayed true.
+      for (const route of GATED_ROUTES) {
+        const res = await fetch(`${base}${route}`, { redirect: "manual" });
+        expect(res.status, route).toBeGreaterThanOrEqual(300);
+        expect(res.status, route).toBeLessThan(400);
+        const location = res.headers.get("location");
+        expect(location, route).not.toBeNull();
+        expect(new URL(location as string, base).pathname, route).toBe("/login");
+      }
+
+      // 1b. A route handler is not reached by GET alone. Every method a
+      //     caller could send at it is turned away by the same proxy, before
+      //     the handler runs — which is what makes "the gate covers every
+      //     route" true of the write path as well as the read paths.
+      for (const route of GATED.filter((one) => one.kind === "handler")) {
+        for (const method of ["GET", "POST", "PATCH", "PUT", "DELETE"]) {
+          const res = await fetch(`${base}${route.url}`, {
+            method,
+            headers: { "content-type": "application/json" },
+            body: method === "GET" ? undefined : JSON.stringify({ field: "name", value: "x" }),
+            redirect: "manual",
+          });
+          const where = `${method} ${route.url}`;
+          expect(res.status, where).toBeGreaterThanOrEqual(300);
+          expect(res.status, where).toBeLessThan(400);
+          expect(
+            new URL(res.headers.get("location") as string, base).pathname,
+            where,
+          ).toBe("/login");
+        }
+      }
+
+      // 1c. The public paths are public — otherwise "everything else
+      //     redirects" would be a claim about an app nobody can sign in to.
+      for (const open of ["/login", "/api/health", "/api/auth/session"]) {
+        const res = await fetch(`${base}${open}`, { redirect: "manual" });
+        expect(res.status, open).toBeLessThan(300);
+      }
+
+      const cookie = await signedInCookie();
+
+      // 2. The cookie has to actually sign us in, or every 404 below would be
+      //    a redirect misread as proof. This assertion is that guard.
+      for (const route of RENDERING_ROUTES) {
+        const res = await fetch(`${base}${route}`, {
+          headers: { cookie },
+          redirect: "manual",
+        });
+        expect(res.status, route).toBe(200);
+        const body = await res.text();
+        // Each page renders its own h1 and a data-surface state; the words are
+        // the walk's business, the structure is this suite's.
+        expect(body, route).toMatch(/<h1[\s>]/);
+      }
+
+      // 3. The retired surfaces are gone, not redirected to something that
+      //    works: to a visitor who is past the gate they are simply 404 —
+      //    answered by THIS app's not-found surface, not the framework's
+      //    (campaign admin-window/BUG-0014).
+      for (const route of RETIRED_ROUTES) {
+        const res = await fetch(`${base}${route}`, {
+          headers: { cookie },
+          redirect: "manual",
+        });
+        expect(res.status, route).toBe(404);
+        expectOurNotFound(route, await res.text());
+      }
+
+      // 4. …and a retired path is answered exactly as a path that never
+      //    existed is, so none of them kept a special case on the way out.
+      const neverExisted = await fetch(`${base}/no-such-surface-here`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(neverExisted.status).toBe(404);
+      expectOurNotFound("/no-such-surface-here", await neverExisted.text());
+
+      // 5. Nothing the server hands a browser carries credential material.
+      for (const route of ["/login", ...RENDERING_ROUTES]) {
+        const res = await fetch(`${base}${route}`, { headers: { cookie } });
+        expectNoCredentialMaterial(`response body of ${route}`, await res.text());
+      }
+
+      // 6. The minted cookie works only because this server was started with
+      //    the harness's throwaway AUTH_SECRET. Every forgery of it — wrong
+      //    secret, wrong cookie binding, expired, tampered, malformed — is
+      //    turned away on EVERY route, exactly as no cookie at all is.
+      for (const [what, forged] of await forgedCookies()) {
+        for (const route of GATED_ROUTES) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie: forged },
+            redirect: "manual",
+          });
+          const where = `${route} with ${what}`;
+          expect(res.status, where).toBeGreaterThanOrEqual(300);
+          expect(res.status, where).toBeLessThan(400);
+          const location = res.headers.get("location");
+          expect(location, where).not.toBeNull();
+          expect(new URL(location as string, base).pathname, where).toBe("/login");
+        }
+        // A forged session must not reach past the gate to a retired path
+        // either: it gets the sign-in page, never a 404 that would confirm
+        // what does and does not exist behind the gate.
+        const retired = await fetch(`${base}/analytics`, {
+          headers: { cookie: forged },
+          redirect: "manual",
+        });
+        expect(retired.status, `/analytics with ${what}`).toBeLessThan(400);
+        expect(retired.status, `/analytics with ${what}`).toBeGreaterThanOrEqual(300);
+      }
+    } finally {
+      await stopServer(child);
+    }
+  });
+});
+
+/**
+ * The same table name, spelled with EVERY character percent-encoded —
+ * `events` as `%65%76%65%6e%74%73`.
+ *
+ * `encodeURIComponent` is no use here: it leaves an unreserved character
+ * alone, and an unreserved character is all a table name is. This is the
+ * maximal spelling of the same URI (RFC 3986 §6.2.2.2), which is what makes it
+ * the honest probe of the rewrite's encoding behaviour
+ * (admin-window/BUG-0081) — deliberately written out here rather than shared
+ * with `next.config.ts`, so the test and the thing it tests do not agree by
+ * construction.
+ */
+function percentEncoded(table: string): string {
+  return [...new TextEncoder().encode(table)]
+    .map((byte) => `%${byte.toString(16).padStart(2, "0")}`)
+    .join("");
+}
+
+/**
+ * The same maximal spelling with UPPERCASE hex digits — `%6E` where
+ * `percentEncoded` writes `%6e`.
+ *
+ * A percent-encoding's hex digits are case-INSENSITIVE (RFC 3986 §6.2.2.1)
+ * even though the name they spell is not, and since admin-window/BUG-0083 the
+ * rewrite's matcher no longer folds case for anything: that one equivalence is
+ * now carried by two-case classes written into the pattern by hand, so it is
+ * the half of the fix that could silently rot. `%6E` and `%6e` are the same
+ * URI, so both must reach the record surface. Uppercasing is safe to do over
+ * the whole string precisely because every character of the name is encoded
+ * here: the only letters left in it are hex digits.
+ */
+function percentEncodedUpper(table: string): string {
+  return percentEncoded(table).toUpperCase();
+}
+
+/**
+ * A record URL for a table the edit map does not carry must reach the operator
+ * as the SAME served page an unmatched URL does (campaign
+ * admin-window/BUG-0017).
+ *
+ * `/records/[table]/[id]` calls `notFound()` for such a table, and a thrown
+ * `notFound()` cannot produce a server-rendered document AND a 404 status on
+ * Next 16 — so `next.config.ts` rewrites the URL to a path no route matches
+ * and Next's routing-level 404 answers instead. Everything below asserts that
+ * arrangement from the outside: the served bytes, the status, and the two
+ * things the rewrite must not have cost — the gate, and the record surfaces
+ * the map DOES carry.
+ */
+describe("a record URL for a table the edit map does not carry", () => {
+  it("answers with the app's own 404, server-rendered, without weakening the gate", async () => {
+    const { child } = await startServer();
+    try {
+      const cookie = await signedInCookie();
+
+      // 1. Every unmapped table answers exactly as an unmatched URL does.
+      //    `notFound()` used to answer here with an empty document that only
+      //    became the 404 page after hydration; these bytes are what a
+      //    browser with JavaScript disabled is given.
+      const unmapped = [
+        "/records/no-such-table/2f0bc11e",
+        // The dropped table and the raw archive: two names an operator could
+        // plausibly still have bookmarked.
+        "/records/artists/2f0bc11e",
+        "/records/scraped_events/2f0bc11e",
+        // The two Ben struck on 2026-09-08 (admin-window/TASK-0040). They
+        // served a real record page until the map lost them, which makes them
+        // the likeliest bookmark of all — and the rewrite is derived from
+        // `EDITABLE_TABLES`, so their URLs became routed 404s by that edit
+        // alone. This is the inversion of the 200 this file used to assert.
+        "/records/groups/2f0bc11e",
+        "/records/idols/2f0bc11e",
+        // A percent-encoded spelling is the SAME URI as the plain one
+        // (RFC 3986 §6.2.2.2), so it gets the same answer — the framed 404,
+        // not the client-rendered error shell (admin-window/BUG-0081). Loop 3
+        // below is the other half: encoding a table the map DOES carry still
+        // renders its record surface.
+        "/records/no-such-%74able/2f0bc11e",
+        `/records/${percentEncoded("scraped_events")}/2f0bc11e`,
+      ];
+      for (const route of unmapped) {
+        const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+        expect(res.status, route).toBe(404);
+        expectOurNotFound(route, await res.text());
+      }
+
+      // 1b. A CASE variant of a configured table. Case is not an encoding
+      //     equivalence — a URI path is case-sensitive (RFC 3986 §6.2.2.1) —
+      //     so `EVENTS` must stay a miss, and since admin-window/BUG-0083 the
+      //     rewrite decides that miss itself (its matcher is case-sensitive,
+      //     the same exactness `editConfigFor` has). This line pins the half
+      //     that must hold whatever the routing layer does: it is a 404, and
+      //     it is NOT a record surface. The DOCUMENT it is refused with is
+      //     pinned by the BUG-0083 block below.
+      const caseVariant = await fetch(`${base}/records/EVENTS/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(caseVariant.status).toBe(404);
+      expect(await caseVariant.text()).not.toContain("events record");
+
+      // 1c. The other half of that trade, and the one with a user behind it: a
+      //     percent-encoded spelling of a configured table is the SAME URI as
+      //     the plain one (RFC 3986 §6.2.2.2) and serves a real record, so the
+      //     rewrite must never swallow it — even though it now claims encoded
+      //     segments in general (admin-window/BUG-0081), which is what gives
+      //     an encoded spelling of an UNMAPPED table the framed 404 loop 1
+      //     asserts. Those two are one pattern and can only be pinned
+      //     together: widen the rewrite carelessly and this line goes red.
+      //     The read fails here (dead port), so this asserts the surface
+      //     RENDERED, framed and not-404 — the same bar as loop 3 below.
+      const encodedConfigured = await fetch(`${base}/records/ev%65nts/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(encodedConfigured.status, "/records/ev%65nts/<id> is /records/events/<id>").toBe(200);
+      const encodedBody = await encodedConfigured.text();
+      expect(encodedBody).toMatch(/<h1[\s>]/);
+      expect(encodedBody).not.toContain('id="__next_error__"');
+
+      // 2. The rewrite's destination must stay a path no route matches. If a
+      //    later route ever claims it, an unmapped table would silently start
+      //    rendering that page instead of the 404 — this is the tripwire.
+      const destination = await fetch(`${base}/__no-record-surface__`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(destination.status).toBe(404);
+      expectOurNotFound("/__no-record-surface__", await destination.text());
+
+      // 3. …and it cost the map nothing: every table EDIT_CONFIG carries still
+      //    has a record surface. Reads fail here (the harness points the app
+      //    at a dead port), so these render their error or empty state — the
+      //    point is that they render, framed, and are not 404.
+      //    Each is asked for twice: as its plain name, and with EVERY
+      //    character percent-encoded — the same URI, and the strongest
+      //    spelling of it, so the rewrite is proved to leave the map's own
+      //    surfaces alone under encoding rather than only for one hand-picked
+      //    letter (admin-window/BUG-0081).
+      for (const table of EDITABLE_TABLES) {
+        for (const spelling of [table, percentEncoded(table)]) {
+          const route = `/records/${spelling}/2f0bc11e`;
+          const res = await fetch(`${base}${route}`, { headers: { cookie }, redirect: "manual" });
+          expect(res.status, route).toBe(200);
+          const body = await res.text();
+          expect(body, route).toMatch(/<h1[\s>]/);
+          expect(body, `${route} served the client-render error shell`).not.toContain(
+            'id="__next_error__"',
+          );
+        }
+      }
+
+      // 4. The API surface under a similar path is not swept up by the rewrite:
+      //    it still answers as a route handler, never with the HTML 404.
+      const api = await fetch(`${base}/api/admin/records/no-such-table/2f0bc11e`, {
+        headers: { cookie },
+        redirect: "manual",
+      });
+      expect(api.status).not.toBe(404);
+      expect(api.headers.get("content-type") ?? "").not.toContain("text/html");
+    } finally {
+      await stopServer(child);
+    }
+  });
+
+  /**
+   * admin-window/BUG-0081, closed — kept as the regression it was filed as.
+   *
+   * A percent-encoded spelling of a STRUCK table is the same URI as the plain
+   * one (RFC 3986 §6.2.2.2 — the reasoning `next.config.ts` itself carries,
+   * and the reason block 1c above pins `/records/ev%65nts/<id>` as a working
+   * record surface), so it must get the same answer: the app's framed 404, not
+   * the client-rendered error shell admin-window/BUG-0017 exists to remove.
+   *
+   * Measured on a production build, cookie-authed: before the fix
+   * `/records/gro%75ps/<uuid>` answered 404 with `id="__next_error__"`, no
+   * `<h1>` and no navigation, where `/records/groups/<uuid>` answered 404
+   * framed. This was QA's `it.fails` pin until the rewrite's exclusion became
+   * encoding-aware; it is a plain `it` now, and it fails the day the rewrite
+   * goes back to reading `%` as "leave it to the page".
+   */
+  it(
+    "BUG-0081: serves the framed 404 for a percent-encoded spelling of a struck table",
+    async () => {
+      const { child } = await startServer();
+      try {
+        const cookie = await signedInCookie();
+        for (const route of [
+          "/records/gro%75ps/2f0bc11e",
+          "/records/idol%73/2f0bc11e",
+        ]) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(404);
+          expectOurNotFound(route, await res.text());
+        }
+      } finally {
+        await stopServer(child);
+      }
+    },
+  );
+
+  /**
+   * admin-window/BUG-0083 — the CASE-VARIANT twin of admin-window/BUG-0081,
+   * on the class admin-window/BUG-0017 exists to close.
+   *
+   * A rewrite `source` was compiled case-insensitively (path-to-regexp, as
+   * Next 16.2.2 configures it by default) while `editConfigFor` is exact, so
+   * the matcher read `/records/EVENTS/<id>` as a CONFIGURED table, did not
+   * claim it, and the URL reached `src/app/records/[table]/[id]/page.tsx` —
+   * where the map does not carry `EVENTS` and `notFound()` throws inside the
+   * render shell. The operator got the client-rendered `id="__next_error__"`
+   * document instead of the app's framed 404, which is the exact divergence
+   * BUG-0081 removed for encoded spellings.
+   *
+   * Closed by making the matcher case-sensitive
+   * (`experimental.caseSensitiveRoutes`, and the move of the rule to
+   * `afterFiles` that is what lets the flag reach it — `next.config.ts` has
+   * the measurement). This was QA's `it.fails` pin; it is a plain `it` now,
+   * and it goes red the day the rewrite's notion of "a configured table" stops
+   * agreeing with the map's — an upgrade that drops the flag included.
+   *
+   * The two spellings are the same URI only under encoding, never under case,
+   * so this is not "the same bug": a URI's path is case-SENSITIVE (RFC 3986
+   * §6.2.2.1), which is why `EVENTS` is correctly not a record surface. What
+   * is wrong is only the DOCUMENT it is refused with — every other
+   * not-a-configured-table spelling gets the framed 404.
+   *
+   * Measured on a production build of run/admin-window @ 269bad0, cookie-authed
+   * (`next start --port 8792`, DB pointed at a dead port), 2026-09-08:
+   *   /records/events%20/<id>  -> 404, len 9728, framed (<h1>, nav, no shell)
+   *   /records/EVENTS/<id>     -> 404, len 8004, id="__next_error__", no <h1>
+   *   /records/Events/<id>     -> 404, len 8004, id="__next_error__"
+   *   /records/WALK_SANDBOX/<id> -> 404, len 8016, id="__next_error__"
+   *   /records/EV%65NTS/<id>   -> 404, len 8006, id="__next_error__"
+   *
+   * After the fix, on a production build of this tree: all four answer 404 at
+   * len 9728 — byte-for-byte the length of the `/analytics` routed-miss
+   * control in the same sweep — framed, with `<h1>` and a way back, and no
+   * `id="__next_error__"`. Block 1b above pins the STATUS of the same URL and
+   * that it is not a record surface; this is the document half.
+   */
+  it(
+    "BUG-0083: serves the framed 404 for a case variant of a configured table",
+    async () => {
+      const { child } = await startServer();
+      try {
+        const cookie = await signedInCookie();
+        for (const route of [
+          "/records/EVENTS/2f0bc11e",
+          "/records/Events/2f0bc11e",
+          "/records/WALK_SANDBOX/2f0bc11e",
+          "/records/EV%65NTS/2f0bc11e",
+        ]) {
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(404);
+          expectOurNotFound(route, await res.text());
+        }
+
+        // The fixture this guard must NOT flag, and the one only a
+        // case-sensitive matcher can get wrong: uppercase hex digits. `%6E` is
+        // `%6e` is `n` (RFC 3986 §6.2.2.1), so every mapped table spelled that
+        // way is still its record surface — the exclusion carries that
+        // equivalence in the pattern now that nothing folds case for it.
+        for (const table of EDITABLE_TABLES) {
+          const route = `/records/${percentEncodedUpper(table)}/2f0bc11e`;
+          const res = await fetch(`${base}${route}`, {
+            headers: { cookie },
+            redirect: "manual",
+          });
+          expect(res.status, route).toBe(200);
+          const body = await res.text();
+          expect(body, route).toMatch(/<h1[\s>]/);
+          expect(body, `${route} served the client-render error shell`).not.toContain(
+            'id="__next_error__"',
+          );
+        }
+      } finally {
+        await stopServer(child);
+      }
+    },
+  );
+
+  /**
+   * The rewrite must not reach past the sign-in gate. A stranger asking for an
+   * unmapped record URL gets the sign-in page, exactly as they do for every
+   * other route — never a 404, which would confirm what does and does not
+   * exist behind the gate.
+   */
+  it("still sends a stranger to the sign-in page", async () => {
+    const { child } = await startServer();
+    try {
+      for (const route of [
+        "/records/no-such-table/2f0bc11e",
+        // The case variant the rewrite started claiming in
+        // admin-window/BUG-0083, for the same reason the encoded one below is
+        // here: what the rewrite claims must never answer a stranger.
+        "/records/EVENTS/2f0bc11e",
+        // The encoded spelling the rewrite started claiming in
+        // admin-window/BUG-0081: widening what the rewrite claims must not
+        // reach past the gate, which runs before every rewrite (proxy is step
+        // 3 of Next's routing order; the rule moved to `afterFiles`, step 6,
+        // in admin-window/BUG-0083). A 404 here would tell a stranger which
+        // record surfaces exist.
+        "/records/gro%75ps/2f0bc11e",
+        "/__no-record-surface__",
+      ]) {
+        const res = await fetch(`${base}${route}`, { redirect: "manual" });
+        expect(res.status, route).toBeGreaterThanOrEqual(300);
+        expect(res.status, route).toBeLessThan(400);
+        const location = res.headers.get("location");
+        expect(location, route).not.toBeNull();
+        expect(new URL(location as string, base).pathname, route).toBe("/login");
+      }
+
+      for (const [what, forged] of await forgedCookies()) {
+        const route = "/records/no-such-table/2f0bc11e";
+        const res = await fetch(`${base}${route}`, {
+          headers: { cookie: forged },
+          redirect: "manual",
+        });
+        const where = `${route} with ${what}`;
+        expect(res.status, where).toBeGreaterThanOrEqual(300);
+        expect(res.status, where).toBeLessThan(400);
+      }
+    } finally {
+      await stopServer(child);
+    }
+  });
+});
+
+/**
+ * The 404 the built app actually serves is OURS (campaign
+ * admin-window/BUG-0014).
+ *
+ * Without `src/app/not-found.tsx` Next answers every unmatched URL with its
+ * built-in `HTTPAccessErrorFallback`, which renders inside our Frame while
+ * belonging to another product: `system-ui` type off the scale, and — the part
+ * that reaches past itself — an injected stylesheet that paints `body` with
+ * literal hexes, overriding the token layer for the whole document.
+ *
+ * So this asserts the two things that distinguish them, on the built artifact
+ * rather than on source: none of the framework fallback's own markers are
+ * present, and the token layer is what styled the document. It deliberately
+ * pins no wording of ours — the copy is the walk's business.
+ */
+function expectOurNotFound(route: string, html: string): void {
+  // 1. Not the framework's. Its h1 class and its message are its own
+  //    literals, not ours, so naming them here churns on no copy edit of ours.
+  expect(html, `${route} carries Next's fallback h1`).not.toContain("next-error-h1");
+  expect(html, `${route} carries Next's fallback copy`).not.toContain(
+    "This page could not be found.",
+  );
+
+  // 2. Nothing in the document paints `body` with a literal colour. Our token
+  //    layer paints it through `var(--color-page)` / `var(--color-ink)`; the
+  //    fallback's injected `body{color:#000;background:#fff;margin:0}` (with a
+  //    dark arm of #fff/#000) is what this forbids, in either theme arm.
+  const bodyPaintedRaw = /body\s*\{[^}]*(?:^|[;{\s])(?:color|background(?:-color)?)\s*:\s*(?:#|rgb|hsl)/i;
+  expect(bodyPaintedRaw.test(html), `${route} ships a raw body colour rule`).toBe(false);
+
+  // 3. Ours: a page heading, styled through the app's own type scale, with a
+  //    link back to a route that exists.
+  expect(html, route).toMatch(/<h1[\s>]/);
+  expect(html, `${route} was not styled by the token layer`).toMatch(
+    /class="[^"]*\btype-(figure|title|body|data|micro)\b/,
+  );
+  expect(html, `${route} offers no way back`).toMatch(/href="\/"/);
+}
+
+/**
+ * Credential shapes, asserted by NAME and by SHAPE — never by value. A test
+ * that compared against the real key would put it in this file, in the run
+ * log, and in every transcript that quotes them.
+ */
+const CREDENTIAL_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
+  // The env name itself. Its presence in client output means the build
+  // inlined a read of it, which is the leak one step before the value.
+  ["a service-role env name", /SUPABASE_[A-Z0-9_]*(?:KEY|SECRET)/],
+  // A Supabase key in the legacy JWT form: three base64url segments.
+  ["a JWT-shaped key", /eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/],
+  // The current secret-key form, and Supabase personal access tokens.
+  ["a Supabase secret-key prefix", /\bsb_secret_[A-Za-z0-9_-]{8,}/],
+  ["a Supabase access-token prefix", /\bsbp_[A-Za-z0-9]{16,}/],
+  // The PostgREST role name itself. It is not a credential, but a client
+  // bundle carrying the word is a bundle that was handed a service-role
+  // client or its key's payload — the leak one step before the value
+  // (campaign admin-window/TASK-0066, M3 EC6).
+  ["the service-role role name", /\bservice_role\b/],
+  // A staging name in client output means the build inlined one: the app
+  // reads `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` and never a `STAGING_`
+  // name at all (STACK §5; `tests/offline/db/layering.test.ts` pins the
+  // source side of the same rule).
+  ["a staging env name", /\bSTAGING_SUPABASE[A-Z0-9_]*/],
+  // Any Supabase project host, by SHAPE — a 20-character project ref. Named
+  // by shape and never by ref, so this pins no project into the repo and
+  // still catches staging and production alike. Every read is server-side,
+  // so no client byte has a reason to carry one.
+  ["a Supabase project host", /\b[a-z0-9]{20}\.supabase\.co\b/],
+];
+
+/** Fails naming the pattern and where it hit — never quoting what it matched. */
+function expectNoCredentialMaterial(what: string, text: string): void {
+  for (const [name, pattern] of CREDENTIAL_PATTERNS) {
+    const hit = pattern.exec(text);
+    expect(
+      hit,
+      hit === null ? "" : `${what} contains ${name} at offset ${hit.index}`,
+    ).toBeNull();
+  }
+}
+
+/** Every file under `dir` whose extension is in `extensions`, recursively. */
+function filesUnder(dir: string, extensions: readonly string[]): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const found: string[] = [];
+  const walk = (current: string) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (extensions.some((ext) => entry.name.endsWith(ext))) found.push(full);
+    }
+  };
+  walk(dir);
+  return found;
+}
+
+describe("the client bundle", () => {
+  /**
+   * `next build` runs with the repo's real environment — it loads `.env` from
+   * the repo root — so anything the build inlined into client output was
+   * inlined from real names. That is what makes this scan worth running on the
+   * artifact rather than on the source.
+   */
+  it("ships no service-role name and no key-shaped material", () => {
+    const clientFiles = [
+      ...filesUnder(path.join(repoRoot, ".next", "static"), [
+        ".js",
+        ".mjs",
+        ".css",
+        ".json",
+        ".txt",
+        ".map",
+      ]),
+      // Prerendered payloads: these bytes are sent to the browser verbatim.
+      ...filesUnder(path.join(repoRoot, ".next", "server", "app"), [".html", ".rsc"]),
+    ];
+
+    // A scan that found nothing because it looked at nothing is not a pass.
+    expect(clientFiles.length).toBeGreaterThan(5);
+
+    for (const file of clientFiles) {
+      const relative = path.relative(repoRoot, file);
+      expectNoCredentialMaterial(relative, fs.readFileSync(file, "utf8"));
+    }
+  });
+
+  /**
+   * The scanner guarding itself: a scan whose patterns match nothing would
+   * pass this suite forever while a key sat in plain sight.
+   */
+  it("recognises each shape it claims to scan for", () => {
+    // The JWT-shaped sample is assembled here rather than written out: a
+    // literal three-segment token in a source file trips every secret scanner
+    // that reads this repo, and a blocked handoff is a worse outcome than a
+    // two-line helper.
+    const segment = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const jwtShaped = [
+      segment({ alg: "HS256", typ: "JWT" }),
+      segment({ role: "sample-not-a-credential" }),
+      "no-signature-this-is-a-test-sample",
+    ].join(".");
+
+    const samples = [
+      "const k = process.env.SUPABASE_SERVICE_ROLE_KEY;",
+      jwtShaped,
+      "sb_secret_AAAAAAAAAAAAAAAAAAAA",
+      "sbp_AAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      'const role = "service_role";',
+      "const name = process.env.STAGING_SUPABASE_URL;",
+      // A host of the right SHAPE and no project's: 20 characters of the
+      // ref alphabet, spelling nothing.
+      "https://aaaaaaaaaaaaaaaaaaaa.supabase.co",
+    ];
+    expect(samples.length).toBe(CREDENTIAL_PATTERNS.length);
+    samples.forEach((sample, index) => {
+      expect(() => expectNoCredentialMaterial("sample", sample)).toThrowError();
+      expect(CREDENTIAL_PATTERNS[index][1].test(sample), CREDENTIAL_PATTERNS[index][0]).toBe(true);
+    });
+  });
+});

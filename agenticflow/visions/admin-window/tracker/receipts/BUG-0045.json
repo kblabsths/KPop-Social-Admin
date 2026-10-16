@@ -1,0 +1,34 @@
+{
+ "id": "BUG-0045",
+ "created": "2026-09-04T00:40:15Z",
+ "green": true,
+ "git_head": "feb0e8e45e3ccb72c196f22f3799858cffc013c2",
+ "scope": [
+  "src/app/sources/page.tsx",
+  "src/app/claims/page.tsx",
+  "src/app/cycles/page.tsx",
+  "tests/offline/sources/page.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/cycles/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "663ac00808d740484a897e94a2f773af559406320da686a9af4bb0a87355bb0a",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/sources/page.test.ts tests/offline/claims/page.test.ts tests/offline/cycles/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10982\n\n \u2713 |offline| tests/offline/sources/page.test.ts (45 tests) 437ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (49 tests) 1082ms\n \u2713 |offline| tests/offline/claims/page.test.ts (87 tests) 2474ms\n\n Test Files  3 passed (3)\n      Tests  181 passed (181)\n   Start at  17:40:01\n   Duration  3.36s (transform 621ms, setup 0ms, collect 1.48s, tests 3.99s, environment 0ms, prepare 327ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/sources/page.test.ts tests/offline/claims/page.test.ts tests/offline/cycles/page.test.ts\n(node:11009) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

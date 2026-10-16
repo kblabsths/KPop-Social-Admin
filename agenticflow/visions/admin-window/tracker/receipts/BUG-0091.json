@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0091",
+ "created": "2026-09-09T04:56:12Z",
+ "green": true,
+ "git_head": "72127c138b8201a68a5a73ca1bb095657601e8d5",
+ "scope": [
+  "src/lib/verdict/decision.ts",
+  "tests/offline/review-item/conflict-actions.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "fff4c097a3707c07e60f620b075f109cdc3e41f45274f41d5c8801f3c4b842cd",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/conflict-actions.test.ts tests/offline/verdict/decision.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-31636\n\n \u2713 |offline| tests/offline/verdict/decision.test.ts (67 tests) 34ms\n \u2713 |offline| tests/offline/review-item/conflict-actions.test.ts (47 tests) 77ms\n\n Test Files  2 passed (2)\n      Tests  114 passed (114)\n   Start at  21:56:10\n   Duration  1.09s (transform 360ms, setup 0ms, collect 601ms, tests 111ms, environment 0ms, prepare 413ms)\n\n(node:31647) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

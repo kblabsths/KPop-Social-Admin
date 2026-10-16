@@ -1,0 +1,28 @@
+{
+ "id": "BUG-0123",
+ "created": "2026-09-09T14:00:13Z",
+ "green": true,
+ "git_head": "4afff97efe0c30391b097fb8ed762db0566877a3",
+ "scope": [
+  "src/components/ui/window-line.tsx",
+  "src/app/claims/page.tsx",
+  "src/lib/claims/filters.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/ui/primitives.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "d0bfce56bff1fe6ee74f6a908d14bcb85dc64bb755f977531a5178b6038ceb34",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/ui/primitives.test.ts tests/offline/absence/in-window.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-98795\n\n \u2713 |offline| tests/offline/ui/primitives.test.ts (88 tests) 120ms\n \u2713 |offline| tests/offline/absence/in-window.test.ts (14 tests) 563ms\n \u2713 |offline| tests/offline/claims/page.test.ts (117 tests) 2553ms\n\n Test Files  3 passed (3)\n      Tests  219 passed (219)\n   Start at  07:00:10\n   Duration  3.50s (transform 1.18s, setup 0ms, collect 1.43s, tests 3.24s, environment 0ms, prepare 531ms)\n\n(node:98984) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

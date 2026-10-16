@@ -1,0 +1,54 @@
+{
+ "id": "TASK-0064",
+ "created": "2026-09-11T00:07:20Z",
+ "green": true,
+ "git_head": "6ba396c0828b98dda276cbd872080311e55bc31b",
+ "scope": [
+  "src/components/ui/paging.tsx",
+  "src/components/ui/index.ts",
+  "src/lib/paging/machine.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/paging/machine.test.ts",
+  "tests/offline/shell/client-boundary.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "8d4cb920e76ffc510e10ca75ba98b39cdcfd74d2369b7b1ce76b009cd115bccd",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/paging.test.ts tests/offline/ui/primitives.test.ts tests/offline/ui/tokens.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-66015\n\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 26ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (29 tests) 69ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (101 tests) 189ms\n\n Test Files  3 passed (3)\n      Tests  139 passed (139)\n   Start at  17:06:04\n   Duration  933ms (transform 311ms, setup 0ms, collect 1.14s, tests 284ms, environment 0ms, prepare 553ms)\n\n(node:66042) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-66015\n\n \u2713 |offline| tests/offline/paging/bounds.test.ts (8 tests) 7ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 5ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (32 tests) 18ms\n \u2713 |offline| tests/offline/db/layering.test.ts (29 tests) 955ms\n   \u2713 the credential guard itself > reports nothing for those same shapes naming an unrelated env name  337ms\n\n Test Files  4 passed (4)\n      Tests  76 passed (76)\n   Start at  17:06:05\n   Duration  1.33s (transform 159ms, setup 0ms, collect 265ms, tests 985ms, environment 1ms, prepare 307ms)\n\n(node:66095) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/shell/client-boundary.test.ts tests/offline/ui/copy.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-66015\n\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 109ms\n \u2713 |offline| tests/offline/shell/client-boundary.test.ts (20 tests) 570ms\n   \u2713 the client boundary under src/ > really resolves server imports of client components  347ms\n\n Test Files  2 passed (2)\n      Tests  32 passed (32)\n   Start at  17:06:07\n   Duration  959ms (transform 94ms, setup 0ms, collect 231ms, tests 679ms, environment 0ms, prepare 153ms)\n\n(node:66153) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "test \"$(grep -rn \"fetch(\" src/components | wc -l)\" -eq 1",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "ext.js 16.2.2 (Turbopack)\n- Environments: .env\n- Experiments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.5s\n  Running TypeScript ...\n  Finished TypeScript in 15.8s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/6) ...\n  Generating static pages using 9 workers (1/6) \n  Generating static pages using 9 workers (2/6) \n  Generating static pages using 9 workers (4/6) \n\u2713 Generating static pages using 9 workers (6/6) in 163ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-66015/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:66528) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "15\n\n \u2713 |live| tests/live/claims.live.test.ts (12 tests) 30883ms\n   \u2713 the column the Claims page rests on > pending_claims carries observed_at  347ms\n   \u2713 the two shapes of the pending-claims gauge against staging > the windowed claims read and the id-list join select the same claims  2666ms\n   \u2713 the Claims page's surface hooks against staging > names every surface on the page once, on both tabs  1993ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  2793ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  4872ms\n   \u2713 the classification buckets against staging > narrows the same way for every spelling of one source id  8654ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  1735ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  672ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  3856ms\n   \u2713 the parked bucket against staging > holds no row in the view either, so nothing was hidden that exists  309ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  1482ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  1503ms\n\n Test Files  1 passed (1)\n      Tests  12 passed (12)\n   Start at  17:06:48\n   Duration  31.80s (transform 280ms, setup 41ms, collect 599ms, tests 30.88s, environment 0ms, prepare 68ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:66902) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

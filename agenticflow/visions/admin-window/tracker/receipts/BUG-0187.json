@@ -1,0 +1,75 @@
+{
+ "id": "BUG-0187",
+ "created": "2026-09-11T10:59:36Z",
+ "green": true,
+ "git_head": "a454968a40b49aa86e1c28636f14db1b1fee8102",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "49b96dbfd7a5ee25e9a847d8e4958232573b84c62b925db5ccf8151288bcefc7",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-55099\n\n \u2713 |offline| tests/offline/db/result.test.ts (131 tests) 164ms\n\n Test Files  1 passed (1)\n      Tests  131 passed (131)\n   Start at  03:59:08\n   Duration  1.02s (transform 221ms, setup 0ms, collect 474ms, tests 164ms, environment 0ms, prepare 138ms)\n\n(node:55110) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/dashboard tests/offline/queues tests/offline/claims",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-55099\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 17ms\n \u2713 |offline| tests/offline/dashboard/read.test.ts (22 tests) 11ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (41 tests) 23ms\n \u2713 |offline| tests/offline/claims/read.test.ts (38 tests) 105ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (29 tests) 416ms\n \u2713 |offline| tests/offline/dashboard/page.test.ts (66 tests) 1169ms\n \u2713 |offline| tests/offline/queues/page.test.ts (117 tests) 4224ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  577ms\n \u2713 |offline| tests/offline/claims/page.test.ts (203 tests) 6165ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  325ms\n\n Test Files  8 passed (8)\n      Tests  564 passed (564)\n   Start at  03:59:09\n   Duration  8.41s (transform 3.98s, setup 0ms, collect 10.34s, tests 12.13s, environment 1ms, prepare 1.97s)\n\n(node:55153) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts a pretty-printed document whose text sits on its own lines\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"it.fails\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts two documents in one part as two\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts a pretty-printed document that IS the whole part exactly once\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts a document on any line of a part\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"drops the runtime frames of a stack\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"function carriesDocument(part: string): boolean\" src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -o \"documentInstead(\" src/lib/db/result.ts | wc -l)\" -eq 2",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

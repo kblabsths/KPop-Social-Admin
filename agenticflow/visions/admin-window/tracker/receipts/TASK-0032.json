@@ -1,0 +1,51 @@
+{
+ "id": "TASK-0032",
+ "created": "2026-09-02T21:42:51Z",
+ "green": true,
+ "git_head": "2e06cb212edaa65458600fadf7d3df929d4b5156",
+ "scope": [
+  "tests/live",
+  "tests/offline/live-guard.test.ts",
+  "src/components/ui"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "e2b3dca1fbdca1c0871ffdfb869c3e66034644d19f6014e2637c31563867d4c9",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22445\n\n \u2713 |offline| tests/offline/live-guard.test.ts (74 tests) 1301ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  1220ms\n\n Test Files  1 passed (1)\n      Tests  74 passed (74)\n   Start at  14:41:05\n   Duration  1.83s (transform 104ms, setup 0ms, collect 243ms, tests 1.30s, environment 0ms, prepare 66ms)\n\n(node:22454) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "lect 12.91s, tests 35.97s, environment 8ms, prepare 5.83s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22445\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 15124ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1303ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1369ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  3551ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  8899ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  14:41:16\n   Duration  15.49s (transform 32ms, setup 0ms, collect 31ms, tests 15.12s, environment 0ms, prepare 59ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:22549) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:22572) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:22578) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:22628) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:22749) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=live tests/live/queues.live.test.ts tests/live/dashboard.live.test.ts tests/live/cycles.live.test.ts tests/live/runs.live.test.ts tests/live/browse.live.test.ts tests/live/review-item.live.test.ts tests/live/harness.live.test.ts",
+   "exit": 0,
+   "output_tail": "the cycles of its window as the table holds them  1436ms\n   \u2713 the two gauges on this page against staging > separates the applies it measured from the decisions that name no claim  1282ms\n \u2713 |live| tests/live/runs.live.test.ts (7 tests) 24926ms\n   \u2713 the adapter framework's runs against staging > renders the newest runs, newest first, as the table holds them  2385ms\n   \u2713 the adapter framework's runs against staging > renders exactly the nine ruled columns, and no tenth  1713ms\n   \u2713 the adapter framework's runs against staging > renders every count, every failure class and every error line the row carries  1911ms\n   \u2713 the adapter framework's runs against staging > reads a run still in flight and a completed run as what they are  3574ms\n   \u2713 the ?source= facet against staging > narrows the runs half to the source name, matched by name  3264ms\n   \u2713 the ?source= facet against staging > renders the empty state with a 0 for a name nothing was filed under  1315ms\n   \u2713 the ?source= facet against staging > leaves the resolver's cycles unnarrowed, because they carry no source  10763ms\n \u2713 |live| tests/live/review-item.live.test.ts (4 tests) 68575ms\n   \u2713 a real review item, rendered > resolves exactly the evidence ids the row carries, in its fold order  17507ms\n   \u2713 a real review item, rendered > renders each claim's own instant, source tier and its shape's own column  17272ms\n   \u2713 a real review item, rendered > puts the fact's current canonical value beside them, from the latest decision  16895ms\n   \u2713 a real review item, rendered > carries the header the anatomy requires, and no control at all  16899ms\n\n Test Files  7 passed (7)\n      Tests  38 passed (38)\n   Start at  14:41:41\n   Duration  69.28s (transform 582ms, setup 251ms, collect 2.36s, tests 126.08s, environment 1ms, prepare 554ms)\n\n(node:23084) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"! grep -nE '\\b(it|test|describe)\\.(skip|todo|fails)\\b' tests/live/claims.live.test.ts tests/live/sources.live.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q TASK-0031 tests/live/claims.live.test.ts && grep -q TASK-0031 tests/live/sources.live.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

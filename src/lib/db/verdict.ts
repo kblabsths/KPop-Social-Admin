@@ -1,0 +1,626 @@
+import { accountText, type AccountSegment } from "../account/authored";
+import {
+  ANY_COLUMNS,
+  ROW_CAP,
+  callFunction,
+  readComplete,
+  readRows,
+  readRowsByIds,
+  selectList,
+  type DbCountedResponse,
+  type DbResponse,
+  type DbResult,
+  type DbUnavailable,
+} from "./result";
+import { readFunctionInstalled } from "./schema";
+import { FN, T, objectKindOf, type ObjectKind } from "./tables";
+import type { DbClient } from "./gauges";
+import { decisionRefusals, type VerdictDecision } from "../verdict/decision";
+import { newestFirst } from "../order/newest-first";
+
+/**
+ * The settlement seam — the ONE place in `src/` that calls a database
+ * procedure (campaign admin-window/TASK-0048, ARCHITECTURE.md §9.2).
+ *
+ * Two exports, and between them they answer the whole of M2's write question:
+ *
+ *  - `readSettlementReadiness` — may a surface offer a settlement or an
+ *    override at all? Since campaign admin-window/BUG-0223 that is the
+ *    CONJUNCTION of both objects the call below needs: the `verdicts` table
+ *    and the `settle_review_item` function, the second read out of the
+ *    database's schema description (`./schema.ts`) and never called.
+ *  - `settleReviewItem` — the one call to `settle_review_item`.
+ *
+ * The reads of the log itself live in the same module for the same reason it
+ * holds one call site: `readVerdictLog` (the tab's window) and
+ * `readItemVerdict` (one item's own verdict, campaign
+ * admin-window/TASK-0059). One module owns this object, so a page never
+ * spells a query against it.
+ *
+ * Both return a `DbResult` and neither throws, on every path (§4.1), so a
+ * database without M2's handoff migration draws a card instead of a stack
+ * trace. Seeded before the surfaces that need it because builders in isolated
+ * worktrees cannot see each other's code (§13.7): four pages hand-copying a
+ * readiness probe is common violation 9 happening again.
+ *
+ * **What must never be built here** (spec §10's one forbidden move, this
+ * campaign's brightest line): no Admin-side workaround for the absent
+ * function. No queued write, no "pending overrides" table, no retry buffer, no
+ * flag-guarded direct write, no second path "until Ben installs it". When the
+ * function is absent the surface degrades to what M1 already ships, with the
+ * reason named. `apply_resolution` — which exists, and writes the catalog — is
+ * not called from Admin at all, which is why `tables.ts` declines to spell it.
+ *
+ * **The client is OPTIONAL on both, as it is on every other read in this
+ * layer** (`readRows`, `callFunction`, `readOne`: `db?: SupabaseClient`) —
+ * widened by the close slot's ticket (campaign admin-window/TASK-0049), which
+ * is the first caller that is not a test. A required client would oblige the
+ * page and the route to call `getDbClient()` themselves, and that call THROWS
+ * when a credential name is unset (`lib/db/client.ts`) — outside the `try`
+ * that every classification happens inside, so the review-item page would 500
+ * where M1 renders a named refusal at 200. Passing none resolves the app's own
+ * client INSIDE that try, which is what keeps "neither throws, on every path"
+ * true of the callers as well as of these two functions. Every call that
+ * hands a client over — the offline seam suite, a live test — is unchanged.
+ */
+
+/**
+ * The row `settle_review_item` returns, as this app reads it.
+ *
+ * Five of the seven columns of `verdicts` (`contracts/admin-observability.md`
+ * §7): the receipt a surface can show or link. `actor` and `note` are the
+ * caller's own decision echoed back and are deliberately not read here — the
+ * surface already has them.
+ */
+export interface VerdictReceipt {
+  readonly verdict_id: string;
+  readonly review_item_id: string | null;
+  readonly action: string;
+  readonly observation_id: string | null;
+  readonly created_at: string;
+}
+
+/**
+ * The one argument name `settle_review_item` takes, and it is part of the
+ * contract rather than a detail.
+ *
+ * PostgREST resolves an RPC by name AND by argument names, and answers
+ * `PGRST202` for an installed function called with the wrong ones — the same
+ * code it answers for a function that is not there at all, and the app cannot
+ * tell the two apart (measured 2026-09-08, admin-window/TASK-0047; the shape
+ * is `functionNotInSchemaCache` in `tests/fixtures/stub-client.ts`). Spell it
+ * wrong and a provisioned function renders as an absent one, permanently and
+ * silently. So it is spelled ONCE, here, exported, so the handoff artifact's
+ * own offline test can assert the SQL's parameter name against it in the way
+ * that test already asserts the `action` CHECK against `VERDICT_ACTIONS`.
+ *
+ * `p_decision`, a jsonb argument, following the two shipped idioms in the
+ * sibling repo (`apply_resolution(p_decisions jsonb)`,
+ * `ingest_observations(p_batch jsonb)`) — ARCHITECTURE.md §9.2.
+ */
+export const SETTLE_ARGUMENT = "p_decision";
+
+/**
+ * How many rows a readiness read asks the database for. Zero: the question is
+ * whether the object is THERE, and no verdict data is needed to answer it.
+ */
+const READINESS_ROWS = 0;
+
+/**
+ * What an `error` result says when the decision never left the app. The
+ * refusal identifiers follow it, comma-separated, in `decisionRefusals`'
+ * own order.
+ *
+ * It is an identifier for a caller to branch on, not operator copy: the words
+ * a person reads are the surface's (LESSONS 5).
+ */
+export const REFUSED_BEFORE_SEND = "the decision was refused before it was sent:";
+
+/** What an `error` result says when the call succeeded but returned no row. */
+export const NO_RECEIPT =
+  `the call succeeded but returned no ${FN.settleReviewItem} row, so whether ` +
+  `the verdict landed is unknown`;
+
+/**
+ * The receipt in whatever envelope the function returns it, or `null` when
+ * what came back is not one.
+ *
+ * A PostgREST function returning a row hands back an object; one declared
+ * `returns setof` hands back an array. Both are read here rather than one
+ * being assumed, because the artifact that installs the function is authored
+ * separately (SPEC F9) and a seam that only understands one envelope would
+ * turn the other into a silent failure. Anything else — `null`, a scalar, an
+ * empty set, an object without the three not-null columns — is not a receipt,
+ * and the caller is told so rather than handed a half-built one.
+ */
+function receiptOf(data: unknown): VerdictReceipt | null {
+  const row = Array.isArray(data) ? (data.length > 0 ? data[0] : null) : data;
+  if (typeof row !== "object" || row === null) return null;
+
+  const fields = row as Record<string, unknown>;
+  const text = (key: string): string | null =>
+    typeof fields[key] === "string" ? (fields[key] as string) : null;
+
+  const verdictId = text("verdict_id");
+  const action = text("action");
+  const createdAt = text("created_at");
+  if (verdictId === null || action === null || createdAt === null) return null;
+
+  return {
+    verdict_id: verdictId,
+    review_item_id: text("review_item_id"),
+    action,
+    observation_id: text("observation_id"),
+    created_at: createdAt,
+  };
+}
+
+/**
+ * THE one call: settle a review item, or land an item-less override, through
+ * `settle_review_item` (spec §7, ARCHITECTURE.md §9.2).
+ *
+ * `decisionRefusals` runs FIRST, and a refused decision never reaches the
+ * database: the result is an `error` naming every refusal that applies, so a
+ * malformed payload is a named refusal rather than a Postgres exception. The
+ * form is a courtesy guard and the function's own `raise` is the contract;
+ * this is the third, and it is the one that cannot be skipped by a client that
+ * does not use the form.
+ *
+ * On the wire it is one call in one transaction — there is no client-side
+ * multi-step settlement and no second write path. Absence is the normal case
+ * for the whole of M2: `settle_review_item` is not installed on staging or in
+ * production, so `PGRST202` / `42883` come back and `callFunction` classifies
+ * them `not_provisioned` naming the function (admin-window/BUG-0080: an
+ * absence claim follows what was ASKED, and this seam is what asks for a
+ * function).
+ */
+export async function settleReviewItem(
+  client: DbClient | undefined,
+  decision: VerdictDecision,
+): Promise<DbResult<VerdictReceipt>> {
+  const refusals = decisionRefusals(decision);
+  if (refusals.length > 0) {
+    // This app's own constant followed by `decisionRefusals`' identifiers —
+    // no database wrote a word of it — so it is ONE `"this app"` segment.
+    // It must NOT be split at the refusals: `accountText` joins segments with
+    // exactly one SPACE and these are joined with `", "`, so splitting would
+    // change the account's bytes (admin-window/BUG-0200 criterion 3).
+    const authored: AccountSegment[] = [
+      { words: `${REFUSED_BEFORE_SEND} ${refusals.join(", ")}`, author: "this app" },
+    ];
+    return {
+      kind: "error",
+      reading: FN.settleReviewItem,
+      message: accountText(authored),
+      authored,
+    };
+  }
+
+  const result = await callFunction<unknown>(
+    FN.settleReviewItem,
+    (db) => db.rpc(FN.settleReviewItem, { [SETTLE_ARGUMENT]: decision }),
+    client,
+  );
+  if (result.kind !== "ok") return result;
+
+  const receipt = receiptOf(result.data);
+  if (receipt === null) {
+    // This app's own constant about a reply it could not read: one segment.
+    const authored: AccountSegment[] = [{ words: NO_RECEIPT, author: "this app" }];
+    return {
+      kind: "error",
+      reading: FN.settleReviewItem,
+      message: accountText(authored),
+      authored,
+    };
+  }
+  return { kind: "ok", data: receipt };
+}
+
+/**
+ * May a surface offer a settlement or an override at all?
+ *
+ * **READINESS IS THE CONJUNCTION OF EVERY OBJECT THE SAVE CALLS, and the
+ * refusal names the one that is missing** (campaign admin-window/BUG-0223).
+ * The save this authorises is one call to `settle_review_item`, and that call
+ * needs two objects in this database: the FUNCTION it invokes and the
+ * `verdicts` TABLE the function writes. Either absent and the surface is NOT
+ * ready — one derivation, with one owner, asked once per render.
+ *
+ * `ok` — yes. `not_provisioned` naming the object that is missing — no: the
+ * surface renders the card and offers no control. `error` — the question
+ * itself could not be answered, and the surface says so rather than guessing.
+ *
+ * **Both halves are READS, and neither is a call** (ruled 2026-09-08,
+ * DECISIONS; ARCHITECTURE.md §9.2). Calling `settle_review_item` to find out
+ * whether it exists is a write attempt dressed as a probe — measured, not
+ * theoretical: a live case that did exactly that applied a real admin override
+ * the day the function landed (admin-window/BUG-0215). The function's presence
+ * is read out of PostgREST's own schema description instead
+ * (`readFunctionInstalled`, `lib/db/schema.ts`), which is a GET.
+ *
+ * **Why the table is asked FIRST, and why that is not an ordering detail.**
+ * The table read is one bounded round trip; the schema description is 387 KB
+ * (measured 2026-09-14). Asking the table first means the world that has
+ * neither object — every database that has not had the handoff, which is
+ * production today — pays exactly what it paid before this ticket: one read,
+ * one card, naming `verdicts`. The description is read only where the table is
+ * already there, which is the half-installed window and the installed world;
+ * in the installed world it is read once per process (`exposedAt`).
+ *
+ * **Why the table read is GET-shaped and not the `head: true` count the ruling
+ * sketched.** Measured read-only on the declared staging target
+ * (`ubfjjqlvnpnoborczbdb.supabase.co`) 2026-09-08, against `verdicts`, which
+ * was genuinely absent there:
+ *
+ *   - `.select("*", { head: true, count: "exact" })` answers **`error === null`,
+ *     `count === null`, status 204** — supabase-js parses its error out of the
+ *     response BODY and a HEAD response has none (the raw request is a 404 with
+ *     zero bytes). Through `readCount` that is `kind: "error"` — an answer the
+ *     app cannot grade, which since admin-window/BUG-0224 refuses in the app's
+ *     own voice naming the object rather than in a sentence about our own call
+ *     arguments — so the graded-first normal case would render the WRONG card,
+ *     and no offline stub could show it (LESSONS 4; the same body-less-HEAD
+ *     fact is admin-window/TASK-0032 and ARCHITECTURE.md §10).
+ *   - `.select("*").limit(0)` answers **`PGRST205`** with the full body — which
+ *     `classify` turns into `not_provisioned` naming `verdicts` — and, against
+ *     a table that IS there, **200 with zero rows** (`groups`, same probe).
+ *
+ * So the table read is GET-shaped and bounded to zero rows: one round trip, no
+ * verdict data crosses the wire, and the absence classifies. Neither leg asks
+ * for a count or publishes a figure, so this is not a §4.3 complete read and
+ * nothing may present its result as one.
+ */
+export async function readSettlementReadiness(
+  client?: DbClient,
+): Promise<DbResult<"ready">> {
+  const log = await readRows<unknown>(
+    T.verdicts,
+    // It selects `*` and reads no column at all — only whether the read
+    // succeeded — so there is no list to hold the answer against
+    // (admin-window/BUG-0228). The element test still applies.
+    ANY_COLUMNS,
+    (db) => db.from(T.verdicts).select("*").limit(READINESS_ROWS),
+    client,
+  );
+  if (log.kind !== "ok") return log;
+
+  // The second object the save needs, established the only way it may be:
+  // read, never called. A refusal here is returned as it stands, so the card
+  // names `settle_review_item` — the object that is actually missing — rather
+  // than the table that is right there (criterion 2).
+  const seam = await readFunctionInstalled(FN.settleReviewItem, client);
+  if (seam.kind !== "ok") return seam;
+
+  return { kind: "ok", data: "ready" };
+}
+
+/* ── the verdict log ──────────────────────────────────────────────────────── */
+
+/**
+ * What the log's window read runs OVER — the word its window line ends its
+ * bound clause on.
+ *
+ * Derived from the same `T.*` constant the query passes to `.from()`, in the
+ * module that issues the query, so no page and no component gets a say: the
+ * object a window was read over is a fact of the READ
+ * (admin-window/BUG-0077, admin-window/DEBT-0006).
+ */
+export const VERDICTS_OBJECT: ObjectKind = objectKindOf(T.verdicts);
+
+/**
+ * The columns the log renders, spelled explicitly (ARCHITECTURE.md §4.2).
+ *
+ * All seven of `contracts/admin-observability.md` §7's table, because the log
+ * shows all seven. Explicit rather than `*` for the reason
+ * admin-window/BUG-0024 records: a name this table does not have must come
+ * back as a `42703` naming the column, not as a silently wider row.
+ */
+const VERDICT_LOG_COLUMNS = [
+  "verdict_id",
+  "review_item_id",
+  "actor",
+  "action",
+  "observation_id",
+  "note",
+  "created_at",
+] as const;
+
+/** The columns the observation leg needs, and nothing else. */
+const OBSERVATION_FACT_COLUMNS = ["observation_id", "domain", "entity_id"] as const;
+
+/**
+ * How many verdicts the log's tab shows.
+ *
+ * The log grows for as long as admins settle things, so "every verdict there
+ * has ever been" is not a set a page can hold or a reader can want
+ * (ARCHITECTURE.md §4.3, read kind 2). A hundred newest is a session's worth
+ * of history at a glance; the tab states the window in words beside the table,
+ * so the last row on screen is never mistaken for the last verdict that
+ * exists.
+ */
+export const VERDICT_WINDOW = 100;
+
+/** One row of `verdicts`, as the log reads it — §7's seven columns. */
+export interface VerdictLogRow {
+  readonly verdict_id: string;
+  /** Null on an `override` from the record surface, and only there. */
+  readonly review_item_id: string | null;
+  readonly actor: string;
+  readonly action: string;
+  /** Null on a settle-only verdict — nothing was observed. */
+  readonly observation_id: string | null;
+  readonly note: string | null;
+  readonly created_at: string;
+}
+
+/**
+ * Where one observation's fact lives: the canonical row it is about.
+ *
+ * `verdicts` carries the observation's id and nothing else about it, and this
+ * app has no observation-addressable URL — the one place a rendered
+ * observation already leads is the RECORD surface of its fact
+ * (`src/components/claims/claim-list.tsx`, the `record` column, whose href is
+ * `recordHref(domain, entity_id)`). So the log resolves the id the same way,
+ * through the second leg of a two-step join (ARCHITECTURE.md §4.2).
+ */
+export interface ObservationFact {
+  readonly observation_id: string;
+  readonly domain: string;
+  readonly entity_id: string | null;
+}
+
+/** The window of verdicts a read returned, and what it could resolve of them. */
+export interface VerdictLogWindow {
+  /** The verdicts, newest first. */
+  readonly rows: VerdictLogRow[];
+  /** The cap the query carried. */
+  readonly limit: number;
+  /**
+   * The read came back with exactly its cap, so older verdicts exist and were
+   * not returned. The tab says so rather than letting the last row read as the
+   * oldest verdict there is.
+   */
+  readonly truncated: boolean;
+  /**
+   * The fact each rendered `observation_id` is about, for the rows whose
+   * observation still has a row. An id missing from this map is rendered
+   * verbatim, unlinked — never dropped and never dashed, because the verdict
+   * really does carry it.
+   */
+  readonly facts: ReadonlyMap<string, ObservationFact>;
+  /**
+   * The observation leg's refusal, when that ONE leg refused — `null`
+   * otherwise.
+   *
+   * Carried BESIDE the rows rather than returned instead of them, exactly as
+   * `readItemEvidence` carries `sourcesUnavailable` (`lib/db/review-item.ts`):
+   * a missing `observations` costs this surface a LINK, never a verdict. The
+   * verdicts themselves were read, and dropping them would tell an operator
+   * that no admin action was ever taken when every one of them is in hand
+   * (admin-window/BUG-0021).
+   */
+  readonly factsUnavailable: DbUnavailable | null;
+}
+
+/**
+ * A sane row count: at least one row, never more than the platform will
+ * return. `limit(0)` and `limit(NaN)` are the defects a bound exists to
+ * prevent, and asking for more rows than PostgREST hands back makes the server
+ * truncate silently (ARCHITECTURE.md §4.3, admin-window/BUG-0009).
+ */
+function windowSize(limit: number): number {
+  if (!Number.isFinite(limit)) return VERDICT_WINDOW;
+  return Math.max(1, Math.min(Math.floor(limit), ROW_CAP));
+}
+
+/**
+ * The log's display order: **newest first by `created_at`**, `verdict_id`
+ * descending where two verdicts share an instant.
+ *
+ * The query already asks for exactly this order, so re-applying it normally
+ * changes nothing — it is done because "newest first" is a stated property of
+ * the surface (spec F13) and must not depend on a transport keeping its
+ * promise. A `created_at` that will not parse sorts last rather than poisoning
+ * the comparison, so the verdict still renders, at the end, where the
+ * unreadable stamp is visible instead of silently reordering the verdicts
+ * above it.
+ *
+ * The RULE is `newestFirst` (`src/lib/order/newest-first.ts`), the app's one
+ * "newest first"; this names only the two columns it reads here. Until
+ * admin-window/DEBT-0016 the rule itself was written out again in this module,
+ * over these columns, beside a second copy in `src/lib/db/cycles.ts` over
+ * `started_at` / `run_id` — one name, two declarations, and nothing keeping
+ * them in step.
+ */
+const NEWEST_VERDICT_FIRST = { instant: "created_at", key: "verdict_id" } as const;
+
+/** The facts behind a set of observation ids — the join's second leg (§4.2). */
+function readObservationFacts(
+  ids: readonly string[],
+  db?: DbClient,
+): Promise<DbResult<ObservationFact[]>> {
+  return readRowsByIds<ObservationFact>(
+    T.observations,
+    OBSERVATION_FACT_COLUMNS,
+    ids,
+    (client, chunkIds) =>
+      client
+        .from(T.observations)
+        .select(selectList(OBSERVATION_FACT_COLUMNS))
+        .in("observation_id", chunkIds)
+        // At most one row per id — `observation_id` is the table's key — so
+        // the leg can never ask for more rows than the ids it filtered on.
+        .limit(chunkIds.length) as unknown as PromiseLike<
+        DbResponse<ObservationFact[]>
+      >,
+    db,
+  );
+}
+
+/**
+ * The newest verdicts, newest first — the log's one read (spec F13).
+ *
+ * **Which read kind, and why** (ARCHITECTURE.md §4.3): a **WINDOW**, kind 2.
+ * The log is append-only and grows with every admin action, so no surface may
+ * claim to hold all of it; the window is stated in the query — a total
+ * `.order()` newest first, then an explicit `.limit()` — and the tab says
+ * which window it is showing, beside the table. No figure on that table is
+ * computed from these rows: every value in it is a column of the row it sits
+ * in, which is the same licence `lib/db/cycles.ts` reads under.
+ *
+ * The order is total — `created_at` descending then the primary key — so two
+ * verdicts landing on the same instant cannot swap places between reloads and
+ * the window is the same window twice running.
+ *
+ * **Absence is the graded normal case.** `verdicts` is not on staging and not
+ * in production, so this returns `not_provisioned` naming `verdicts`, the tab
+ * draws that card, and no window line is published for a read that never
+ * returned (ARCHITECTURE.md §4.3, DECISIONS 2026-09-04).
+ *
+ * The observation leg runs only when the first read RETURNED rows carrying an
+ * `observation_id`: an absent `verdicts` asks `observations` nothing at all.
+ */
+export async function readVerdictLog(
+  limit: number = VERDICT_WINDOW,
+  db?: DbClient,
+): Promise<DbResult<VerdictLogWindow>> {
+  const size = windowSize(limit);
+  const result = await readRows<VerdictLogRow>(
+    T.verdicts,
+    VERDICT_LOG_COLUMNS,
+    (client) =>
+      client
+        .from(T.verdicts)
+        .select(selectList(VERDICT_LOG_COLUMNS))
+        .order("created_at", { ascending: false })
+        .order("verdict_id", { ascending: false })
+        .limit(size) as unknown as PromiseLike<DbResponse<VerdictLogRow[]>>,
+    db,
+  );
+  if (result.kind !== "ok") return result;
+
+  const rows = newestFirst(result.data, NEWEST_VERDICT_FIRST);
+  const ids = [
+    ...new Set(
+      rows
+        .map((row) => row.observation_id)
+        .filter((id): id is string => id !== null && id.length > 0),
+    ),
+  ];
+  const observed = await readObservationFacts(ids, db);
+
+  return {
+    kind: "ok",
+    data: {
+      rows,
+      limit: size,
+      truncated: result.data.length >= size,
+      facts:
+        observed.kind === "ok"
+          ? new Map(observed.data.map((fact) => [fact.observation_id, fact]))
+          : new Map(),
+      factsUnavailable: observed.kind === "ok" ? null : observed,
+    },
+  };
+}
+
+/* ── one item's own verdict ───────────────────────────────────────────────── */
+
+/**
+ * The verdict a settled review item was settled WITH, and where its
+ * observation landed — the read behind the detail page's inline verdict
+ * (spec F13, campaign admin-window/TASK-0059).
+ *
+ * It lives here, beside the log's own read, because one module owns `verdicts`
+ * (ARCHITECTURE.md §9.2): a page issuing this query for itself is the
+ * hand-copied probe common violation 9 forbids, and it is how the log and the
+ * detail come to disagree about what a verdict is.
+ */
+export interface ItemVerdict {
+  /** The verdict itself — §7's seven columns, as the log reads them. */
+  readonly verdict: VerdictLogRow;
+  /**
+   * The fact this verdict's observation is about, when the second leg resolved
+   * it. `null` when the verdict wrote no observation, when the observation has
+   * no canonical row yet, or when the leg did not answer — the caller then
+   * renders the id verbatim rather than linking somewhere invented, exactly as
+   * the log's `observation` column does.
+   */
+  readonly fact: ObservationFact | null;
+  /**
+   * The observation leg's refusal, when that ONE leg refused — `null`
+   * otherwise. Carried BESIDE the verdict rather than returned instead of it
+   * (`readVerdictLog`'s `factsUnavailable`, `readItemEvidence`'s
+   * `sourcesUnavailable`): an unreadable `observations` costs this block a
+   * LINK, never the verdict (admin-window/BUG-0021).
+   */
+  readonly factUnavailable: DbUnavailable | null;
+}
+
+/**
+ * The verdict of ONE item, by id (spec F13's second half).
+ *
+ * **Which read kind, and why** (ARCHITECTURE.md §4.3): a **COMPLETE** read,
+ * kind 1. The surface presents its answer as *the* verdict this item was
+ * settled with, which is an exactness claim, so a silently truncated set may
+ * not become one: `{ count: "exact" }`, a total order ending in the primary
+ * key, and `.range(0, cap - 1)` with the cap handed in. The matching set is
+ * one item's own settlements and is bounded by what an admin can do, so the
+ * cap is never the thing that answers.
+ *
+ * `verdicts.review_item_id` carries no uniqueness — it is nullable precisely
+ * so an item-less override can share the table (`contracts/admin-observability.md`
+ * §7) — so this returns the NEWEST of whatever it read, by the app's one
+ * `newestFirst` over the log's own columns (`NEWEST_VERDICT_FIRST` above).
+ * Re-sorting the complete set is what makes the choice
+ * independent of the transport keeping its `.order()` promise; a `.limit(1)`
+ * would have had to trust it.
+ *
+ * `ok` with `null` is the honest gap the surface must say in its own words:
+ * the table is there and holds no row for this item. It is a different state
+ * from `not_provisioned`, which is the table not being there at all, and the
+ * detail renders the two differently.
+ *
+ * The observation leg runs only when the verdict it read actually carries an
+ * `observation_id`: a settle-only verdict asks `observations` nothing.
+ */
+export async function readItemVerdict(
+  reviewItemId: string,
+  db?: DbClient,
+): Promise<DbResult<ItemVerdict | null>> {
+  const result = await readComplete<VerdictLogRow>(
+    T.verdicts,
+    VERDICT_LOG_COLUMNS,
+    (client, cap) =>
+      client
+        .from(T.verdicts)
+        .select(selectList(VERDICT_LOG_COLUMNS), { count: "exact" })
+        .eq("review_item_id", reviewItemId)
+        .order("created_at", { ascending: false })
+        .order("verdict_id", { ascending: false })
+        .range(0, cap - 1) as unknown as PromiseLike<
+        DbCountedResponse<VerdictLogRow[]>
+      >,
+    db,
+  );
+  if (result.kind !== "ok") return result;
+
+  const verdict = newestFirst(result.data, NEWEST_VERDICT_FIRST)[0];
+  if (verdict === undefined) return { kind: "ok", data: null };
+
+  const observationId = verdict.observation_id;
+  if (observationId === null || observationId.length === 0) {
+    return { kind: "ok", data: { verdict, fact: null, factUnavailable: null } };
+  }
+
+  const observed = await readObservationFacts([observationId], db);
+  return {
+    kind: "ok",
+    data: {
+      verdict,
+      fact: observed.kind === "ok" ? (observed.data[0] ?? null) : null,
+      factUnavailable: observed.kind === "ok" ? null : observed,
+    },
+  };
+}

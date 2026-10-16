@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0084",
+ "created": "2026-09-09T03:14:36Z",
+ "green": true,
+ "git_head": "07b60df994e4902f20633187bfee696ed9132f8e",
+ "scope": [
+  "tests/offline/handoff/extract.ts",
+  "tests/offline/handoff/verdicts.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "bdeb3a1e59538e596f1f9ed49583c5585227fc7b46e9abc9fcfa40b2811b8697",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/handoff/verdicts.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-19434\n\n \u2713 |offline| tests/offline/handoff/verdicts.test.ts (27 tests) 23ms\n\n Test Files  1 passed (1)\n      Tests  27 passed (27)\n   Start at  20:14:35\n   Duration  611ms (transform 69ms, setup 0ms, collect 75ms, tests 23ms, environment 0ms, prepare 227ms)\n\n(node:19441) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

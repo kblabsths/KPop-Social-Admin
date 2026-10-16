@@ -1,0 +1,19 @@
+{
+ "id": "TASK-0031",
+ "created": "2026-09-03T05:07:13Z",
+ "green": true,
+ "git_head": "2214652c8e8ff4ba0bb6b7beccec43a137e4e5b2",
+ "scope": [
+  "agenticflow/docs/vision/ARCHITECTURE.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "2f51af3f2bda0b7b674cd767b0a9af15c6fcb40684d8e8a99d11c8c900a3aa76",
+ "commands": [
+  {
+   "cmd": "bash -c \"! grep -q OPEN-CLAIMS-COST agenticflow/docs/vision/ARCHITECTURE.md\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

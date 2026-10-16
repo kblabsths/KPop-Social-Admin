@@ -1,0 +1,59 @@
+"use client";
+
+import { EditableCell } from "@/components/EditableCell";
+import type { HintSide, StatusGrowth } from "@/components/edit-cell-layout";
+import { submitFieldEdit } from "./submit";
+
+/**
+ * The click-to-edit cell, wired to the record write route
+ * (campaign admin-window/TASK-0018).
+ *
+ * `EditableCell` knows nothing about routes or tables (TASK-0004) — this is
+ * the one place that knowledge is added, and it is the whole of it. The cell
+ * gets a callback and gives back an outcome; the failure it renders is the
+ * route's own refusal, unchanged.
+ *
+ * It is rendered ONLY for a field the map allows (`fields.ts` decides that
+ * from `decideEdit`), so there is no disabled variant of this component and
+ * none is added: a read-only field renders no widget at all rather than an
+ * input that could be re-enabled from the console (spec §8).
+ */
+export function FieldEditor({
+  table,
+  id,
+  field,
+  value,
+  multiline = false,
+  hintSide,
+  statusGrowth,
+}: {
+  table: string;
+  id: string;
+  field: string;
+  value: string | null;
+  multiline?: boolean;
+  /**
+   * Which side the open cell's hint hangs on — the surface knows where this
+   * line sits among its neighbours and the cell does not (campaign
+   * admin-window/BUG-0086, `hintSide`). Carried through unchanged, like every
+   * other prop here.
+   */
+  hintSide?: HintSide;
+  /**
+   * Which way this line's status grows, for the same reason and from the same
+   * knowledge (campaign admin-window/BUG-0101, `statusGrowth`). Carried
+   * through unchanged, like every other prop here.
+   */
+  statusGrowth?: StatusGrowth;
+}) {
+  return (
+    <EditableCell
+      value={value}
+      multiline={multiline}
+      hintSide={hintSide}
+      statusGrowth={statusGrowth}
+      label={`${field} of ${table}`}
+      onSave={(next) => submitFieldEdit(table, id, field, next, fetch)}
+    />
+  );
+}

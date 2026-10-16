@@ -1,0 +1,39 @@
+{
+ "id": "TASK-0044",
+ "created": "2026-09-09T03:32:57Z",
+ "green": true,
+ "git_head": "92fd99991379490b1924452c2f5fd130a0d2561c",
+ "scope": [
+  "agenticflow/tracker/for-human"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "736d96408875b3e8e95a441ba29da97b790d42a875d912cb10f06cbd8042b008",
+ "commands": [
+  {
+   "cmd": "bash -c '! grep -q EDIT_ALLOWLIST_EVENTS_VENUES agenticflow/docs/vision/ARCHITECTURE.md'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qE \"events: .title., .description., .poster_url., .starts_at.\" agenticflow/docs/vision/ARCHITECTURE.md'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qE \"venues: .name., .city., .country., .address.\" agenticflow/docs/vision/ARCHITECTURE.md'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qF \"the editable columns of\" agenticflow/docs/DECISIONS.md'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -rqF \"poster_url\" agenticflow/visions/admin-window/tracker/ --include=TASK-0054.md'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

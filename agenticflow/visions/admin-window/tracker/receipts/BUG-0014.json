@@ -1,0 +1,35 @@
+{
+ "id": "BUG-0014",
+ "created": "2026-09-02T11:02:48Z",
+ "green": true,
+ "git_head": "6ef51175543e8ddaf5bffd27d4ce267238867976",
+ "scope": [
+  "src/app/not-found.tsx",
+  "tests/offline/shell"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "bfa4d57248654354dea2c536f1476b0284c12526cb326069f268cbf993961764",
+ "commands": [
+  {
+   "cmd": "test -f src/app/not-found.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q '@/components/ui' src/app/not-found.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/shell",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-92144\n\n \u2713 |offline| tests/offline/shell/shell.test.ts (17 tests) 14ms\n\n Test Files  1 passed (1)\n      Tests  17 passed (17)\n   Start at  04:02:45\n   Duration  598ms (transform 141ms, setup 0ms, collect 291ms, tests 14ms, environment 0ms, prepare 72ms)\n\n(node:92161) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

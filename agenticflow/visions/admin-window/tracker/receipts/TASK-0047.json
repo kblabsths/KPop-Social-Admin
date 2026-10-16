@@ -1,0 +1,33 @@
+{
+ "id": "TASK-0047",
+ "created": "2026-09-09T01:55:58Z",
+ "green": true,
+ "git_head": "11dc5aa9a6aacb72f72ce8f1405976a094068ae2",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/offline/absence/surfaces.ts",
+  "tests/live/harness.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "ec0ba35d8de8b3867f0cad3edcd5fc5350cac92f211c45a31ff41a27cc04ff0e",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "ct 21.05s, tests 52.68s, environment 10ms, prepare 6.54s)\n\n\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39156\n\n \u2713 |isolated| tests/isolated/probe-race.isolated.test.ts (6 tests) 37441ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is readable  1512ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no walker when the probe is listed but cannot be opened  1943ms\n   \u2713 walking src/ while the layering probe comes and goes > survives the probe directory appearing and vanishing under the walk  5836ms\n   \u2713 walking src/ while the layering probe comes and goes > reddens no OTHER offline file that walks the tree either  28146ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  18:55:16\n   Duration  37.83s (transform 32ms, setup 0ms, collect 30ms, tests 37.44s, environment 0ms, prepare 98ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline && vitest run --project=isolated\n(node:40237) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:40320) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:40325) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:40362) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:40534) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/harness.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-39156\n\n \u2713 |live| tests/live/harness.live.test.ts (5 tests) 1663ms\n   \u2713 the live harness > reaches that project with the staging credentials  533ms\n   \u2713 a function this database does not have > is absent by the database's own account, while another one is there  305ms\n   \u2713 a function this database does not have > classifies as not_provisioned naming it, never as an error  562ms\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  18:55:55\n   Duration  2.70s (transform 147ms, setup 60ms, collect 395ms, tests 1.66s, environment 0ms, prepare 202ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/harness.live.test.ts\n(node:41370) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0088",
+ "created": "2026-09-09T04:36:10Z",
+ "green": true,
+ "git_head": "263f35d0bcf5054bb4eb9805b3e33a7d0a803679",
+ "scope": [
+  "agenticflow/tracker/for-human/M2-handoff-settle-review-item.md",
+  "tests/offline/handoff/settle-review-item.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "859d9d3ea0db267ab7d3f97dfd2dc6607771cbf28c7f12eafbffd34f1078ed00",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/handoff/settle-review-item.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-1900\n\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (40 tests) 264ms\n\n Test Files  1 passed (1)\n      Tests  40 passed (40)\n   Start at  21:36:08\n   Duration  1.39s (transform 212ms, setup 0ms, collect 277ms, tests 264ms, environment 0ms, prepare 296ms)\n\n(node:1915) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'grep -q \"it(\\\"adopts a claimed value only from a claim bound to the fact being settled\\\"\" tests/offline/handoff/settle-review-item.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

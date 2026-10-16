@@ -1,0 +1,36 @@
+{
+ "id": "BUG-0206",
+ "created": "2026-09-11T18:37:42Z",
+ "green": true,
+ "git_head": "eefe56259e200dfb873f421447fe66c2be654191",
+ "scope": [
+  "src/components/cycles/latency.tsx",
+  "tests/offline/cycles/page.test.ts",
+  "tests/live/cycles.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "b27d5f0f784d7840c2251ef90cfc25571164c7d4d2a62db43650e9912a3e3445",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/cycles/page.test.ts tests/offline/gauges/cycle-health.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10852\n\n \u2713 |offline| tests/offline/gauges/cycle-health.test.ts (20 tests) 8ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (175 tests) 3257ms\n\n Test Files  2 passed (2)\n      Tests  195 passed (195)\n   Start at  11:37:32\n   Duration  3.97s (transform 372ms, setup 0ms, collect 739ms, tests 3.26s, environment 0ms, prepare 103ms)\n\n(node:10895) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/cycles.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-10852\n\n \u2713 |live| tests/live/cycles.live.test.ts (7 tests) 4026ms\n   \u2713 the resolver's cycles against staging > names every surface on the page once, whatever order they are in  628ms\n   \u2713 the resolver's cycles against staging > renders the newest cycles, newest first, as the table holds them  450ms\n   \u2713 the resolver's cycles against staging > renders every count and every error line the row carries  1929ms\n\n Test Files  1 passed (1)\n      Tests  7 passed (7)\n   Start at  11:37:37\n   Duration  4.68s (transform 223ms, setup 29ms, collect 390ms, tests 4.03s, environment 0ms, prepare 53ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/cycles.live.test.ts\n(node:10939) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

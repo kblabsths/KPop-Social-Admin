@@ -1,0 +1,19 @@
+{
+ "id": "BUG-0195",
+ "created": "2026-09-11T15:01:18Z",
+ "green": true,
+ "git_head": "b1af049afe235b94f2e374125f665ed15fc20717",
+ "scope": [
+  "tests/offline/sources/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "2ebb1bdfeb97addb082ddddc903e87e67af302b2ac194a8e0d357ab1fc430fef",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

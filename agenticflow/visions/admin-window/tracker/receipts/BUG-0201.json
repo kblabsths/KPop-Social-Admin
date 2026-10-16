@@ -1,0 +1,45 @@
+{
+ "id": "BUG-0201",
+ "created": "2026-09-11T17:53:35Z",
+ "green": true,
+ "git_head": "96e171345815f6a184113f2df40857c95ffe6e15",
+ "scope": [
+  "src/app/sources/page.tsx",
+  "tests/offline/sources/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "d0e8d2372871b9562c668cb6550a4bc162060917418b22891f6f230ca1cc6b8c",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 6.4s\n  Running TypeScript ...\n  Finished TypeScript in 6.4s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 157ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-93641/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:93877) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q 'DroppedParamsLine' src/app/sources/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'names a source_id it could not use as a parameter it did not apply' tests/offline/sources/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/sources/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-93641\n\n \u2713 |offline| tests/offline/sources/page.test.ts (89 tests) 945ms\n\n Test Files  1 passed (1)\n      Tests  89 passed (89)\n   Start at  10:53:25\n   Duration  1.76s (transform 314ms, setup 0ms, collect 554ms, tests 945ms, environment 0ms, prepare 56ms)\n\n(node:94027) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/sources.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-93641\n\n \u2713 |live| tests/live/sources.live.test.ts (8 tests) 6801ms\n   \u2713 the Sources page's surface hooks against staging > names every surface on the page once, whatever order they are in  838ms\n   \u2713 the source state rows against staging > renders every source the registry holds, with its state verbatim  413ms\n   \u2713 the source state rows against staging > shows each source's last run, matched by NAME, and none where there is none  555ms\n   \u2713 the source state rows against staging > narrows to one source, and that source alone  422ms\n   \u2713 the per-source trends against staging > counts each source's awaiting-row claims as the view holds them  3611ms\n   \u2713 the per-source trends against staging > counts each source's re-rejects as the stamps hold them  321ms\n   \u2713 the per-source trends against staging > names the narrowing each scan carried, and nothing the scan did not  412ms\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  10:53:27\n   Duration  7.47s (transform 217ms, setup 33ms, collect 391ms, tests 6.80s, environment 0ms, prepare 48ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/sources.live.test.ts\n(node:94069) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

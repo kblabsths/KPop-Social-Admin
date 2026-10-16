@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0039",
+ "created": "2026-09-03T22:32:04Z",
+ "green": true,
+ "git_head": "ede3b29a1b0dca4c57046a9f9bd95600bf1d24f8",
+ "scope": [
+  "agenticflow/docs/vision/STACK.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "de3d6572cb3a395f7e752f2b31eb7cf7029cbd456c241de647d179fa9a284366",
+ "commands": [
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && python3 -c \"import sys; s=open('agenticflow/docs/vision/STACK.md').read(); i=s.index('1. Launch the instance'); j=s.index('2. Mint a session cookie'); sys.exit(0 if '.env' in s[i:j] else 1)\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && grep -qF 'AUTH_URL=\"http://localhost:8771\"' agenticflow/docs/vision/STACK.md",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "id": "BUG-0158",
+ "created": "2026-09-10T17:35:17Z",
+ "green": true,
+ "git_head": "0ee743cd5c6a0cc81f82018ca540d4be1d9b830e",
+ "scope": [
+  "src/lib/browse/rows.ts",
+  "src/components/sources/trends.tsx",
+  "src/app/claims/page.tsx",
+  "tests/offline/browse/views.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "04731458b057ed9fb6765f091c826e3a9b8adac0c41433a74fa0d9cb094d6b26",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/browse/views.test.ts -t \"names nothing readable\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-85239\n\n \u2713 |offline| tests/offline/browse/views.test.ts (55 tests | 54 skipped) 3ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 54 skipped (55)\n   Start at  10:35:16\n   Duration  291ms (transform 59ms, setup 0ms, collect 68ms, tests 3ms, environment 0ms, prepare 54ms)\n\n(node:85246) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/browse/views.test.ts tests/offline/sources/names.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-85239\n\n \u2713 |offline| tests/offline/sources/names.test.ts (14 tests) 24ms\n \u2713 |offline| tests/offline/browse/views.test.ts (55 tests) 38ms\n\n Test Files  2 passed (2)\n      Tests  69 passed (69)\n   Start at  10:35:17\n   Duration  350ms (transform 98ms, setup 0ms, collect 150ms, tests 62ms, environment 0ms, prepare 113ms)\n\n(node:85269) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

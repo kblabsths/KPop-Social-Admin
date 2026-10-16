@@ -1,0 +1,57 @@
+{
+ "id": "TASK-0030",
+ "created": "2026-09-02T13:06:09Z",
+ "green": true,
+ "git_head": "0009da0874f48de11d383b11d6b5299d2667c3b6",
+ "scope": [
+  "src/components/ui/error-line.tsx",
+  "src/components/ui/empty.tsx",
+  "src/components/ui/not-provisioned.tsx",
+  "src/components/gauges/state.tsx",
+  "src/components/gauges/gauge-card.tsx",
+  "src/components/gauges/trend-table.tsx",
+  "src/components/gauges/distribution.tsx",
+  "tests/offline/ui",
+  "tests/offline/gauges-ui"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "7073a6b4cd1bab1b373a909a3108e40f305bcbc290a467eeb818002617775620",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "\u25b2 Next.js 16.2.2 (Turbopack)\n- Environments: .env\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.2s\n  Running TypeScript ...\n  Finished TypeScript in 3.0s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/10) ...\n  Generating static pages using 9 workers (2/10) \n  Generating static pages using 9 workers (4/10) \n  Generating static pages using 9 workers (7/10) \n\u2713 Generating static pages using 9 workers (10/10) in 194ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u25cb /claims\n\u251c \u25cb /cycles\n\u251c \u25cb /login\n\u251c \u25cb /queues\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u25cb /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-77464/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:78495) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/ui tests/offline/gauges-ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-77464\n\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 9ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (5 tests) 10ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (10 tests) 15ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 14ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (39 tests) 46ms\n \u2713 |offline| tests/offline/gauges-ui/cards.test.ts (32 tests) 44ms\n\n Test Files  6 passed (6)\n      Tests  146 passed (146)\n   Start at  06:06:08\n   Duration  623ms (transform 291ms, setup 0ms, collect 878ms, tests 138ms, environment 1ms, prepare 452ms)\n\n(node:78701) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"! grep -n 'reading?:' src/components/ui/error-line.tsx src/components/gauges/state.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q eyebrow src/components/ui/empty.tsx && grep -q eyebrow src/components/ui/not-provisioned.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"grep -q filledBy src/components/gauges/trend-table.tsx && grep -q filledBy src/components/gauges/distribution.tsx\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

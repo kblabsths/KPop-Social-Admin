@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0130",
+ "created": "2026-09-09T15:16:48Z",
+ "green": true,
+ "git_head": "288ae530a2721f804641431a45237dcea9d37291",
+ "scope": [
+  "src/components/review/shape-views.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "8c73583aedbe551e485dc6edef9f93ca5ab62c1328c2a16a0c801bab033843b6",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-40407\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (104 tests) 577ms\n\n Test Files  1 passed (1)\n      Tests  104 passed (104)\n   Start at  08:16:46\n   Duration  1.63s (transform 355ms, setup 0ms, collect 639ms, tests 577ms, environment 0ms, prepare 68ms)\n\n(node:40448) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "id": "BUG-0217",
+ "created": "2026-09-12T00:02:04Z",
+ "green": true,
+ "git_head": "0eb45dfa265e1b4da8bb7782b611e99335661f45",
+ "scope": [
+  "agenticflow/docs/vision/LOOK_AND_FEEL.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "567a3c771cb37113ff341df72bdca19e129cfd2dd9ddb96ae266c1c97f0d8e8e",
+ "commands": [
+  {
+   "cmd": "grep -q \"2026-09-11\" agenticflow/docs/vision/LOOK_AND_FEEL.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"State lives in the URL\" agenticflow/docs/vision/LOOK_AND_FEEL.md",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -z \"$(git status --porcelain -- src tests)\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

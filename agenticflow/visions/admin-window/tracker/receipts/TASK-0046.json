@@ -1,0 +1,76 @@
+{
+ "id": "TASK-0046",
+ "created": "2026-09-09T04:10:33Z",
+ "green": true,
+ "git_head": "a830f5eb999683753e7132059a5292d97834a2ae",
+ "scope": [
+  "agenticflow/tracker/for-human/M2-handoff-settle-review-item.md",
+  "tests/offline/handoff/settle-review-item.test.ts",
+  "src/lib/verdict/decision.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "5b7118cfb162cebb1f82bfb24a2ad3802df551d72952d3e164c26d001eddb544",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/handoff/settle-review-item.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-71337\n\n \u2713 |offline| tests/offline/handoff/settle-review-item.test.ts (35 tests) 177ms\n\n Test Files  1 passed (1)\n      Tests  35 passed (35)\n   Start at  21:10:32\n   Duration  706ms (transform 80ms, setup 0ms, collect 116ms, tests 177ms, environment 0ms, prepare 97ms)\n\n(node:71613) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'S=\"/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/supabase/migrations\"; for id in \"function public.apply_resolution(p_decisions jsonb)\" \"function public.ingest_observation(p_source text\" \"public.review_items\" \"public.uuid_generate_v7\" \"public.confirmed_matches\"; do grep -rq \"$id\" \"$S\" || { echo \"UNRESOLVED: $id\"; exit 1; }; done'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -rq \"sources_source_key\" \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/supabase/migrations\"'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qF \"on conflict (source) do nothing\" agenticflow/tracker/for-human/M2-handoff-settle-review-item.md'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qE \"export const ADMIN_SOURCE = .admin.;\" src/lib/verdict/decision.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qF \"ADMIN_SOURCE\" tests/offline/handoff/settle-review-item.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'grep -qF \"SETTLE_ARGUMENT\" tests/offline/handoff/settle-review-item.test.ts'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(git ls-files \"supabase/migrations/*.sql\" | wc -l)\" -eq 2'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(git ls-files \"*.sql\" | grep -v \"^supabase/migrations/\" | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(git -C \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper\" status --porcelain | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c 'test \"$(git -C \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper\" log --all --grep=admin-window --oneline | wc -l)\" -eq 0'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

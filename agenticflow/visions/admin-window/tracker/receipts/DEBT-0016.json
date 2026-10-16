@@ -1,0 +1,31 @@
+{
+ "id": "DEBT-0016",
+ "created": "2026-09-10T23:39:50Z",
+ "green": true,
+ "git_head": "f5c1d161b8ed544594bd70148562c398679a457d",
+ "scope": [
+  "src/lib/db/verdict.ts",
+  "src/lib/db/cycles.ts",
+  "tests/offline/db/layering.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "95853e0290e03895e7ba8942fe95b682f64fa67148c0e7074ff14d8d2c21cd37",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-11861\n\n \u2713 |offline| tests/offline/db/layering.test.ts (29 tests) 780ms\n\n Test Files  1 passed (1)\n      Tests  29 passed (29)\n   Start at  16:39:33\n   Duration  1.15s (transform 57ms, setup 0ms, collect 54ms, tests 780ms, environment 0ms, prepare 83ms)\n\n(node:11897) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/queues/verdict-log.test.ts tests/offline/cycles",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-11861\n\n \u2713 |offline| tests/offline/cycles/read.test.ts (22 tests) 8ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (29 tests) 195ms\n \u2713 |offline| tests/offline/cycles/page.test.ts (168 tests) 3785ms\n\n Test Files  3 passed (3)\n      Tests  219 passed (219)\n   Start at  16:39:34\n   Duration  4.70s (transform 602ms, setup 0ms, collect 1.47s, tests 3.99s, environment 0ms, prepare 228ms)\n\n(node:12002) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

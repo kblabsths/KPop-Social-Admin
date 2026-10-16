@@ -1,0 +1,37 @@
+{
+ "id": "TASK-0055",
+ "created": "2026-09-09T05:23:31Z",
+ "green": true,
+ "git_head": "3b6951a186eb8affd75c5c69b50cdfac3f227e34",
+ "scope": [
+  "src/components/records/entity-picker.tsx",
+  "src/lib/db/records.ts",
+  "tests/offline/records/entity-picker.test.ts",
+  "tests/offline/records/records-read.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "6519fb62b177c5d040d9e70c8bab7e83562340fc74adafe6d6afaa2fe6ac084e",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records/entity-picker.test.ts tests/offline/records/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60687\n\n \u2713 |offline| tests/offline/records/entity-picker.test.ts (24 tests) 93ms\n \u2713 |offline| tests/offline/records/page.test.ts (96 tests) 677ms\n\n Test Files  2 passed (2)\n      Tests  120 passed (120)\n   Start at  22:22:14\n   Duration  1.91s (transform 452ms, setup 0ms, collect 1.12s, tests 770ms, environment 0ms, prepare 404ms)\n\n(node:60989) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": "cision log covers  664ms\n   \u2713 a resolver-owned record page > names the source behind the venue reference, on an event that has one  747ms\n   \u2713 a resolver-owned record page > shows the venue source on EVERY event the log holds a venue decision for, and moves no scalar's line  50483ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1903ms\n   \u2713 the walk sandbox > writes label, and the database keeps it as label's own type  682ms\n   \u2713 the walk sandbox > writes tally, and the database keeps it as tally's own type  656ms\n   \u2713 the walk sandbox > writes is_flagged, and the database keeps it as is_flagged's own type  626ms\n   \u2713 the walk sandbox > writes note, and the database keeps it as note's own type  724ms\n   \u2713 the walk sandbox > writes observed_on, and the database keeps it as observed_on's own type  708ms\n   \u2713 the walk sandbox > clears note to the app's own absence, then fills it in again  978ms\n   \u2713 the walk sandbox > clears observed_on to the app's own absence, then fills it in again  1069ms\n   \u2713 the walk sandbox > reports the database's refusal when label is cleared, and label still stands  704ms\n   \u2713 the walk sandbox > reports the database's refusal when tally is cleared, and tally still stands  756ms\n   \u2713 the walk sandbox > reports the database's refusal when is_flagged is cleared, and is_flagged still stands  690ms\n   \u2713 the walk sandbox > clears a nullable column and meets the database's refusal on a required one  4493ms\n\n Test Files  1 passed (1)\n      Tests  24 passed (24)\n   Start at  22:22:17\n   Duration  71.34s (transform 302ms, setup 51ms, collect 550ms, tests 70.02s, environment 0ms, prepare 274ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:61062) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/shell/shell.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-60687\n\n \u2713 |offline| tests/offline/shell/shell.test.ts (23 tests) 162ms\n\n Test Files  1 passed (1)\n      Tests  23 passed (23)\n   Start at  22:23:29\n   Duration  1.93s (transform 698ms, setup 0ms, collect 1.35s, tests 162ms, environment 0ms, prepare 169ms)\n\n(node:61888) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

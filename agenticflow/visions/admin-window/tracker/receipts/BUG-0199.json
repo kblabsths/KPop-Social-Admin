@@ -1,0 +1,25 @@
+{
+ "id": "BUG-0199",
+ "created": "2026-09-11T16:27:41Z",
+ "green": true,
+ "git_head": "dd694228618b0e1ffc286743ac7e1c29e0749b50",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "f80bc6f894db558f01bb5d7a01dedd9f6de5b9a4345568018ebf5b72745dc6fb",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-70856\n\n \u2713 |offline| tests/offline/db/result.test.ts (133 tests) 79ms\n\n Test Files  1 passed (1)\n      Tests  133 passed (133)\n   Start at  09:27:35\n   Duration  565ms (transform 132ms, setup 0ms, collect 270ms, tests 79ms, environment 0ms, prepare 55ms)\n\n(node:70863) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

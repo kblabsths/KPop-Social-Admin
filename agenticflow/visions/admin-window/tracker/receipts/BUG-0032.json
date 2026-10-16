@@ -1,0 +1,22 @@
+{
+ "id": "BUG-0032",
+ "created": "2026-09-02T19:20:10Z",
+ "green": true,
+ "git_head": "5b445bc2f5ab1424be8cecd92210071287533ff9",
+ "scope": [
+  "tests/offline/claims/read.test.ts",
+  "tests/offline/browse/views.test.ts",
+  "tests/offline/toolchain.test.ts",
+  "tests/offline/db/layering.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "b4d5b7c29a667646871acc648c126bd3889db83e7fe78838475db62df0d752f7",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/toolchain.test.ts tests/offline/claims/read.test.ts tests/offline/browse/views.test.ts tests/offline/edit/config.test.ts tests/offline/review/one-place.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-14490\n\n \u2713 |offline| tests/offline/browse/views.test.ts (52 tests) 40ms\n \u2713 |offline| tests/offline/review/one-place.test.ts (12 tests) 112ms\n \u2713 |offline| tests/offline/claims/read.test.ts (18 tests) 26ms\n \u2713 |offline| tests/offline/edit/config.test.ts (37 tests) 247ms\n \u2713 |offline| tests/offline/toolchain.test.ts (17 tests) 2678ms\n\n Test Files  5 passed (5)\n      Tests  136 passed (136)\n   Start at  12:20:07\n   Duration  3.29s (transform 368ms, setup 0ms, collect 1.30s, tests 3.10s, environment 1ms, prepare 429ms)\n\n(node:14499) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14524) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14535) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:14541) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

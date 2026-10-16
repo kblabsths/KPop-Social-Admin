@@ -1,0 +1,39 @@
+{
+ "id": "DEBT-0019",
+ "created": "2026-09-11T13:43:08Z",
+ "green": true,
+ "git_head": "80941516ae8da8d72764462f13e31dcea3a267a0",
+ "scope": [
+  "tests/http/paging.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "af0a7c71dd76bf5e311b9778756889c72f8c722f7f2b29d6577e9760c95c2cbb",
+ "commands": [
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": "refuses every forged edit, and offers no other method  761ms\n   \u2713 a hostile record id at the wire (QA, admin-window/BUG-0068) > is answered by the gate, never by a 5xx and never in the database's words  704ms\n \u2713 |http| tests/http/walk-cookie.http.test.ts (1 test) 981ms\n   \u2713 the walker's minted cookie against the running app > opens the gated pages, and only under the server's own secret  981ms\n \u2713 |http| tests/http/records.http.test.ts (1 test) 703ms\n   \u2713 the record page over http > renders for every mapped table, past the id gate and through the reads  703ms\n\n Test Files  5 passed (5)\n      Tests  26 passed (26)\n   Start at  06:42:44\n   Duration  12.89s (transform 174ms, setup 0ms, collect 288ms, tests 12.38s, environment 0ms, prepare 58ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-21163/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:21202) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:21252) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"GATE_STATUS\" tests/http/paging.http.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -qF \"a signed-in GET\" tests/http/paging.http.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"is spelled exactly as the built server spells it on a gated page\" tests/http/paging.http.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

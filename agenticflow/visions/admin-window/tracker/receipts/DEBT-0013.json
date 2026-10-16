@@ -1,0 +1,35 @@
+{
+ "id": "DEBT-0013",
+ "created": "2026-09-09T22:58:44Z",
+ "green": true,
+ "git_head": "e90b8528946e80548b8d2a0e1f9a96242a90ef90",
+ "scope": [
+  "src/components/records/entity-picker.tsx",
+  "tests/offline/records/entity-picker.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 1,
+ "tree_hash": "ca34029cc6d71cc4733bf9959779371a5fa1a8f83a468d08fe22f56eae5e9ee2",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/records tests/offline/ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-51467\n\n \u2713 |offline| tests/offline/records/provenance.test.ts (13 tests) 33ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (23 tests) 74ms\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 129ms\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 8ms\n \u2713 |offline| tests/offline/records/routes.test.ts (10 tests) 53ms\n \u2713 |offline| tests/offline/records/entity-picker.test.ts (76 tests) 130ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (100 tests) 129ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (161 tests) 170ms\n \u2713 |offline| tests/offline/records/submit.test.ts (15 tests) 8ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 12ms\n \u2713 |offline| tests/offline/ui/link-spelling.test.ts (32 tests) 280ms\n \u2713 |offline| tests/offline/records/page.test.ts (139 tests) 505ms\n\n Test Files  12 passed (12)\n      Tests  641 passed (641)\n   Start at  15:58:27\n   Duration  1.66s (transform 2.31s, setup 0ms, collect 4.64s, tests 1.53s, environment 2ms, prepare 1.54s)\n\n(node:51474) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "grep -q \"\\.focus()\" src/components/records/entity-picker.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -rq \"outline: none\\|outline-none\" src/components/records/entity-picker.tsx",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

@@ -1,0 +1,2658 @@
+import * as cheerio from "cheerio";
+import { describe, expect, it } from "vitest";
+
+import { Badge, TONE_INK } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { type Column, DataTable } from "@/components/ui/data-table";
+import { Empty } from "@/components/ui/empty";
+import { Eyebrow, microLabelText } from "@/components/ui/micro-label";
+import { ErrorLine } from "@/components/ui/error-line";
+import { Identifier } from "@/components/ui/identifier";
+import { Loading } from "@/components/ui/loading";
+import { NotProvisioned } from "@/components/ui/not-provisioned";
+import { Page, pageTitleText } from "@/components/ui/page";
+import { Section } from "@/components/ui/section";
+import { StatCard } from "@/components/ui/stat-card";
+import { ARRIVES_WITH, RETRY, StateOf } from "@/components/ui/state-of";
+import {
+  NARROWED_BY_FILTERS,
+  WindowLine,
+  narrowedTo,
+  readsAgree,
+  type DrawnSentence,
+  type DrawnWindow,
+  type ReadWindow,
+} from "@/components/ui/window-line";
+import { DroppedParamsLine } from "@/components/ui/dropped-params";
+import type { AccountSegment } from "@/lib/account/authored";
+import { EM_DASH, absoluteUtc, count, counted, relativeAge } from "@/lib/format";
+import { droppedParams } from "@/lib/url/dropped-params";
+import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
+
+import {
+  classesOf,
+  h,
+  render,
+  runTogetherWords,
+  tagsOf,
+  textOf,
+  uppercasedIdentifiers,
+} from "./markup";
+
+/**
+ * The primitives every surface is built from (campaign admin-window,
+ * TASK-0004). These assert the tokens a primitive emits and the structure it
+ * guarantees — never its wording, which pages own and copy edits change.
+ */
+
+type Row = { id: string; source: string; failures: number | null };
+
+const ROWS: Row[] = [
+  { id: "a", source: "ticketmaster", failures: 1234 },
+  { id: "b", source: "bandsintown", failures: null },
+];
+
+const COLUMNS: Column<Row>[] = [
+  { key: "source", label: "source", cell: (row) => row.source },
+  { key: "failures", label: "failures", align: "right", cell: (row) => row.failures },
+];
+
+function table(overrides: Partial<Parameters<typeof DataTable<Row>>[0]> = {}) {
+  return render(
+    h(DataTable<Row>, {
+      columns: COLUMNS,
+      rows: ROWS,
+      rowKey: (row: Row) => row.id,
+      ...overrides,
+    }),
+  );
+}
+
+describe("Page and Section", () => {
+  it("puts the page name in an h1 and the section name in an h2, both in title type", () => {
+    const page = render(h(Page, { title: "Cycles & runs" }, h(Section, { title: "Runs" })));
+    expect(page).toMatch(/<h1[^>]*class="[^"]*type-title/);
+    expect(page).toMatch(/<h2[^>]*class="[^"]*type-title/);
+  });
+
+  /**
+   * A page title may BE a machine identifier — `/records/[table]/[id]` names
+   * its h1 after the table — and `type-title` is uppercase sans, so the whole
+   * of admin-window/BUG-0049's eyebrow problem repeats one type step up:
+   * `walk_sandbox record` reaching the operator as `WALK_SANDBOX RECORD`
+   * (admin-window/BUG-0073, measured in Chromium both schemes 2026-09-03).
+   *
+   * The property asserted is the structural one — the identifier is never
+   * inside the element that uppercases — not the words, which pages own and
+   * which this test supplies itself.
+   */
+  it("keeps an identifier title verbatim, in mono, and out of the uppercasing h1", () => {
+    const html = render(h(Page, { title: { identifier: "walk_sandbox", words: "record" } }));
+    const $ = cheerio.load(html);
+
+    // verbatim: character for character, no prettified spelling anywhere
+    expect(textOf(html)).toContain("walk_sandbox");
+    expect(textOf(html)).not.toContain("WALK_SANDBOX");
+
+    const identifier = $("h1 span")
+      .toArray()
+      .map((element) => ({
+        classes: ($(element).attr("class") ?? "").split(/\s+/),
+        text: $(element).text(),
+      }))
+      .find((span) => span.text === "walk_sandbox");
+    expect(identifier).toBeDefined();
+    // mono at its own case, and both survive any uppercasing ancestor added later
+    expect(identifier?.classes).toContain("type-data");
+    expect(identifier?.classes).toContain("normal-case");
+    expect(identifier?.classes).toContain("tracking-normal");
+    // the structural half: no element that uppercases contains it — not the
+    // span, and not the h1 above it either
+    expect(identifier?.classes).not.toContain("type-title");
+    expect($("h1").attr("class")?.split(/\s+/)).not.toContain("type-title");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+
+    // and the app's own word still gets the title treatment, in the same h1
+    expect($("h1 span.type-title").text()).toBe("record");
+  });
+
+  it("puts a real space between an identifier title and its word, not a flex gap", () => {
+    // The h1's accessible name is read as text by everything that reads text,
+    // and a CSS gap is invisible to all of it (admin-window/BUG-0045).
+    const html = render(h(Page, { title: { identifier: "walk_sandbox", words: "record" } }));
+    expect(cheerio.load(html)("h1").text()).toBe("walk_sandbox record");
+    expect(runTogetherWords(html)).toEqual([]);
+  });
+
+  it("renders a bare identifier title with no trailing word when none is given", () => {
+    const html = render(h(Page, { title: { identifier: "walk_sandbox" } }));
+    expect(cheerio.load(html)("h1").text()).toBe("walk_sandbox");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+    expect(classesOf(html)).toContain("type-data");
+  });
+
+  it("leaves a plain-string title on the h1 itself, as every other page had it", () => {
+    // Twelve of the thirteen `Page` callers pass their own words, and the
+    // identifier form must not move any of them: one element, no wrapper span,
+    // `type-title` on the h1 (admin-window/BUG-0073).
+    const html = render(h(Page, { title: "Queues" }));
+    const $ = cheerio.load(html);
+    expect($("h1").attr("class")?.split(/\s+/)).toContain("type-title");
+    expect($("h1 span").length).toBe(0);
+    expect($("h1").text()).toBe("Queues");
+  });
+
+  it("flattens either title to the string its h1 renders, for an accessible name", () => {
+    for (const title of [
+      "Queues",
+      { identifier: "walk_sandbox" },
+      { identifier: "walk_sandbox", words: "record" },
+    ] as const) {
+      expect(pageTitleText(title)).toBe(cheerio.load(render(h(Page, { title })))("h1").text());
+    }
+  });
+
+  it("pads the page at the 16px step and spaces its sections at the same step", () => {
+    const classes = classesOf(render(h(Page, { title: "Queues" })));
+    expect(classes).toContain("p-4");
+    expect(classes).toContain("gap-4");
+  });
+
+  /**
+   * `surface` is the live parity oracle's ADDRESS for a section
+   * (admin-window/BUG-0056), and it is optional because seven of the eight
+   * pages that use `Section` omit it and must keep the markup they had — four
+   * live files still address their sections by POSITION
+   * (`section:nth-of-type(n)` in dashboard/sources/claims/browse/review-item),
+   * so an attribute this primitive grows unconditionally would move every one
+   * of those pages at once. Measured on the fix: with the prop omitted the
+   * rendered bytes are identical to the pre-`surface` primitive (md5
+   * dbbf6f06bae0bfff49cee4b0ac69ae85 on both, 2026-09-03).
+   *
+   * Both directions are asserted, because "omitted renders nothing" is only
+   * half the contract: a `surface ?? ""` written later would satisfy the first
+   * half and still put `data-surface=""` on all eight pages.
+   */
+  it("carries a data-surface only where a caller named one", () => {
+    const unnamed = render(h(Section, { title: "Runs" }, h("p", null, "body")));
+    expect(unnamed).not.toContain("data-surface");
+
+    const named = render(
+      h(Section, { title: "Runs", surface: "runs_window" }, h("p", null, "body")),
+    );
+    expect(cheerio.load(named)('[data-surface="runs_window"]').length).toBe(1);
+    // The name goes on the section itself — that is the element `stateOf`
+    // reads a state of — not on a wrapper around or inside it.
+    expect(cheerio.load(named)('section[data-surface="runs_window"]').length).toBe(1);
+    // Naming it changes nothing else about the markup.
+    expect(named.replace(' data-surface="runs_window"', "")).toBe(unnamed);
+  });
+});
+
+describe("DataTable", () => {
+  it("labels its header row in micro on a chrome fill and its cells in data", () => {
+    const html = table();
+    expect(html).toMatch(/<th[^>]*class="[^"]*type-micro/);
+    expect(html).toMatch(/<tr[^>]*class="[^"]*bg-chrome/);
+    expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
+  });
+
+  it("sits on a surface fill inside one hairline border, and scrolls inside it", () => {
+    const html = table();
+    const wrapper = html.slice(0, html.indexOf("<table"));
+    expect(wrapper).toContain("border-hairline");
+    expect(wrapper).toContain("bg-surface");
+    // the scroll container is inside the border, so the page never scrolls sideways
+    expect(wrapper.indexOf("border-hairline")).toBeLessThan(wrapper.indexOf("overflow-x-auto"));
+  });
+
+  it("separates rows with hairlines and fills them on hover — no zebra, no vertical rules", () => {
+    const html = table();
+    const rowClasses = [...html.matchAll(/<tr class="([^"]*)"/g)].map((m) => m[1]).slice(1);
+    for (const row of rowClasses) {
+      expect(row).toContain("border-t");
+      expect(row).toContain("hover:bg-chrome");
+    }
+    const classes = classesOf(html);
+    expect(classes.filter((c) => /^(odd|even|nth)[:-]/.test(c))).toEqual([]);
+    const cellClasses = [...html.matchAll(/<t[dh][^>]*class="([^"]*)"/g)].map((m) => m[1]);
+    for (const cell of cellClasses) {
+      expect(cell).not.toMatch(/\bborder-[lr]\b/);
+    }
+  });
+
+  it("renders a null cell as the dash in disabled-gray, never blank", () => {
+    const html = table();
+    expect(html).toContain(EM_DASH);
+    expect(html).toMatch(/text-ink-disabled[^>]*>—/);
+    expect(html).not.toContain("N/A");
+  });
+
+  it("carries the neutral arrow in disabled-gray on a sortable column that is not the sort", () => {
+    const html = table({
+      columns: [{ ...COLUMNS[0], sort: { href: "?sort=source" } }, COLUMNS[1]],
+    });
+    expect(html).toContain('href="?sort=source"');
+    expect(html).toMatch(/text-ink-disabled/);
+    expect(html).not.toMatch(/text-accent/);
+  });
+
+  it("carries the direction arrow in accent on the active sort, and says so to a screen reader", () => {
+    const html = table({
+      columns: [{ ...COLUMNS[0], sort: { href: "?sort=source", active: "desc" } }, COLUMNS[1]],
+    });
+    expect(html).toMatch(/text-accent/);
+    expect(html).toContain('aria-sort="descending"');
+  });
+
+  /* ── the marked row (admin-window/BUG-0054, QA probe) ─────────────────── */
+
+  /** Every body row the markup emitted, each as its own whole element. */
+  function bodyRows(html: string): string[] {
+    const $ = cheerio.load(html);
+    return $("tbody tr").toArray().map((element) => $.html(element));
+  }
+
+  it("leaves a row it was not asked about byte-identical, mark or no mark", () => {
+    // Thirteen other surfaces render this table and not one of them passes
+    // `marked`. The mark is only safe if the rows a caller did NOT name come
+    // out of the renderer unchanged — hover fill included, since that is the
+    // one thing this table already says with a fill.
+    const plain = bodyRows(table());
+    const withMark = bodyRows(table({ marked: (row: Row) => row.id === "a" }));
+    expect(plain).toHaveLength(ROWS.length);
+    expect(withMark).toHaveLength(ROWS.length);
+    expect(withMark[1]).toBe(plain[1]);
+    // ...and the row that WAS named really did change, so the check above is
+    // not passing because nothing happened at all.
+    expect(withMark[0]).not.toBe(plain[0]);
+  });
+
+  it("renders exactly the unmarked table when the predicate names no row", () => {
+    // What `/cycles?cycle=<unknown or malformed>` hands the table: a predicate
+    // that is present and answers false everywhere. Nothing may be marked, and
+    // nothing about the table may move.
+    expect(table({ marked: () => false })).toBe(table());
+    const $ = cheerio.load(table({ marked: () => false }));
+    expect($("[data-row-marked]").length).toBe(0);
+  });
+
+  it("marks the row without moving one cell, so no column and no row height shifts", () => {
+    const cells = (html: string) => {
+      const $ = cheerio.load(html);
+      return $("tbody tr").first().find("td").toArray().map((element) => $.html(element));
+    };
+    const marked = table({ marked: (row: Row) => row.id === "a" });
+    expect(cells(marked)).toEqual(cells(table()));
+    expect(cells(marked).length).toBeGreaterThan(0);
+    // The mark is one row attribute and one class list — never a wrapper, a
+    // glyph, or an extra cell.
+    const $ = cheerio.load(marked);
+    expect($("tbody tr[data-row-marked]").length).toBe(1);
+    expect($("tbody tr").first().find("td").length).toBe(COLUMNS.length);
+  });
+
+  it("keeps its header and spans the state line it is handed when there are no rows", () => {
+    const html = table({ rows: [], placeholder: h(Loading, { what: "runs" }) });
+    expect(html).toContain("runs");
+    expect(html).toMatch(/colspan="2"/i);
+    // the header row survives, so the columns do not jump when rows arrive
+    expect(html).toMatch(/<th/);
+  });
+});
+
+describe("StatCard", () => {
+  it("stacks a micro label, the figure, and at most one data sub-line", () => {
+    const classes = classesOf(render(h(StatCard, { label: "decisions", value: 12, sub: "oldest 3d" })));
+    expect(classes).toContain("type-micro");
+    expect(classes).toContain("type-figure");
+    expect(classes).toContain("type-data");
+  });
+
+  it("separates thousands in the figure", () => {
+    expect(render(h(StatCard, { label: "events", value: 1234 }))).toContain("1,234");
+  });
+
+  it("colours the figure only when it is handed a state", () => {
+    expect(classesOf(render(h(StatCard, { label: "open", value: 3 })))).toContain("text-ink");
+    expect(classesOf(render(h(StatCard, { label: "open", value: 3, tone: "attention" })))).toContain(
+      "text-attention",
+    );
+  });
+
+  it("links the number to the page that explains it when given a target", () => {
+    const html = render(h(StatCard, { label: "decisions", value: 12, href: "/queues" }));
+    expect(tagsOf(html)[0]).toBe("a");
+    expect(html).toContain('href="/queues"');
+  });
+
+  it("renders a null figure as the dash, never as a zero", () => {
+    const html = render(h(StatCard, { label: "decisions", value: null }));
+    expect(html).toContain(EM_DASH);
+    expect(html).not.toContain(">0<");
+  });
+
+  it("qualifies a truncated count in the app's voice, beside the machine's number", () => {
+    const floor = render(h(StatCard, { label: "items", value: 1234, floor: true }));
+    const exact = render(h(StatCard, { label: "items", value: 1234 }));
+    // the figure is untouched: it is still the one mono number on the card
+    expect(floor).toContain("1,234");
+    expect(classesOf(floor)).toContain("type-figure");
+    // and the qualifier is the app's own words, so it is sans and secondary
+    expect(classesOf(floor)).toContain("type-body");
+    expect(classesOf(exact)).not.toContain("type-body");
+    expect(textOf(floor).length).toBeGreaterThan(textOf(exact).length);
+  });
+});
+
+describe("Badge", () => {
+  it("is never interactive: no link, no button, no handler surface", () => {
+    const html = render(h(Badge, { children: "adapter" }));
+    expect(tagsOf(html)).toEqual(["span"]);
+    expect(html).not.toContain("href");
+  });
+
+  it("is chrome fill with primary text by default, so a page of sources is not a rainbow", () => {
+    const classes = classesOf(render(h(Badge, { children: "ticketmaster" })));
+    expect(classes).toContain("bg-chrome");
+    expect(classes).toContain("text-ink");
+    expect(classes.some((c) => /^text-(attention|broken|healthy|accent)$/.test(c))).toBe(false);
+  });
+
+  it("gives severity a colour and not a scale: high is amber, low is gray", () => {
+    expect(classesOf(render(h(Badge, { tone: "high", children: "high" })))).toContain("text-attention");
+    expect(classesOf(render(h(Badge, { tone: "low", children: "low" })))).toContain("text-ink-secondary");
+  });
+
+  it("keeps the chrome fill for every tone — colour lands on the text", () => {
+    for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
+      expect(classesOf(render(h(Badge, { tone, children: "x" })))).toContain("bg-chrome");
+    }
+  });
+
+  /*
+   * `TONE_INK` is exported so a surface that shows one of these words WITHOUT
+   * a chip — the Dashboard's attention cards, where the chip could not stay
+   * inside the card's anchor (admin-window/BUG-0115) — reads the same map
+   * instead of copying it. This asserts the export IS what the badge renders,
+   * which is what makes it one map and not two that agree today.
+   */
+  it("renders the very ink it publishes, so a consumer of the map cannot drift", () => {
+    for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
+      expect(classesOf(render(h(Badge, { tone, children: "x" }))), tone).toContain(
+        TONE_INK[tone],
+      );
+    }
+    // The map is INK and nothing else: a consumer that takes a tone's colour
+    // must not inherit the box — the fill, the radius, the padding — which is
+    // the chip, and which an anchor may not contain (ARCHITECTURE.md §7).
+    for (const ink of Object.values(TONE_INK)) {
+      expect(ink.startsWith("text-"), ink).toBe(true);
+    }
+  });
+});
+
+describe("Chip", () => {
+  it("is a real link, so a filter is bookmarkable and survives the back button", () => {
+    const html = render(h(Chip, { label: "decision", href: "/queues?shape=decision" }));
+    expect(tagsOf(html)).toEqual(["a"]);
+    expect(html).toContain('href="/queues?shape=decision"');
+  });
+
+  it("fills with accent when active and with chrome when not", () => {
+    const active = classesOf(render(h(Chip, { label: "decision", href: "/q", active: true })));
+    expect(active).toContain("bg-accent");
+    expect(active).toContain("text-on-accent");
+    expect(active).not.toContain("bg-chrome");
+
+    const inactive = classesOf(render(h(Chip, { label: "decision", href: "/q" })));
+    expect(inactive).toContain("bg-chrome");
+    expect(inactive).toContain("text-ink-secondary");
+    expect(inactive).not.toContain("bg-accent");
+  });
+});
+
+describe("Button", () => {
+  it("fills with accent only as the primary", () => {
+    expect(classesOf(render(h(Button, { variant: "primary" }, "Save override")))).toContain("bg-accent");
+    expect(classesOf(render(h(Button, {}, "Close")))).not.toContain("bg-accent");
+  });
+
+  it("gives secondary a hairline border and a transparent fill", () => {
+    const classes = classesOf(render(h(Button, { variant: "secondary" }, "Close")));
+    expect(classes).toContain("border-hairline");
+    expect(classes.some((c) => c.startsWith("bg-"))).toBe(false);
+  });
+
+  it("styles destructive as a red border and red text, never a red fill", () => {
+    const classes = classesOf(render(h(Button, { variant: "destructive" }, "Save override")));
+    expect(classes).toContain("border-broken");
+    expect(classes).toContain("text-broken");
+    expect(classes).not.toContain("bg-broken");
+  });
+
+  it("dims to half opacity when disabled and does not change its label", () => {
+    const enabled = render(h(Button, { variant: "primary" }, "Choose this value"));
+    const disabled = render(h(Button, { variant: "primary", disabled: true }, "Choose this value"));
+    expect(classesOf(disabled)).toContain("opacity-50");
+    expect(classesOf(disabled)).toContain("cursor-not-allowed");
+    expect(disabled).toContain("disabled=");
+    expect(textOf(disabled)).toBe(textOf(enabled));
+  });
+
+  it("defaults to type=button so it never submits a form by accident", () => {
+    expect(render(h(Button, {}, "Close"))).toContain('type="button"');
+  });
+});
+
+describe("the four data-surface states", () => {
+  it("are four separate components, each rendering its own shape", () => {
+    const loading = render(h(Loading, { what: "cycles" }));
+    const empty = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
+    const missing = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
+    const failed = render(
+      h(ErrorLine, { reading: "verdicts", failed: "relation does not exist", retry: "reload the page" }),
+    );
+    expect(new Set([loading, empty, missing, failed]).size).toBe(4);
+  });
+
+  it("names what is loading on one data line and never animates", () => {
+    const html = render(h(Loading, { what: "cycles" }));
+    expect(classesOf(html)).toContain("type-data");
+    expect(html).toContain("cycles");
+    expect(classesOf(html).some((c) => /animate|pulse|spin/.test(c))).toBe(false);
+  });
+
+  it("renders empty as a surface card carrying both what it holds and what fills it", () => {
+    const html = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
+    expect(classesOf(html)).toContain("bg-surface");
+    expect(classesOf(html)).toContain("border-hairline");
+    expect(html).toContain("open decisions");
+    expect(html).toContain("the resolver files one here");
+  });
+
+  /**
+   * `holds` and `filledBy` widened from `string` to `ReactNode` so that a
+   * caller whose sentence contains a machine identifier can set that one word
+   * in the app's identifier-in-prose spelling (admin-window/BUG-0120). Both
+   * halves of that are asserted here: the widening changed nothing for the
+   * callers that pass a string, and it really does carry a caller's element.
+   */
+  it("adds no element of its own around a string caller's two lines", () => {
+    const holds = "open decisions";
+    const filledBy = "the resolver files one here";
+    const $ = cheerio.load(render(h(Empty, { holds, filledBy })));
+    const lines = $("p").toArray();
+    expect(lines).toHaveLength(2);
+    expect($(lines[0]).text()).toBe(`No ${holds}`);
+    expect($(lines[1]).text()).toBe(filledBy);
+    // The card wraps nothing: what a string caller renders is text, and the
+    // 16 call sites that pass strings render exactly what they did before.
+    for (const line of lines) expect($(line).children().toArray()).toHaveLength(0);
+  });
+
+  it("renders an element a caller puts inside a line, unchanged and in place", () => {
+    const $ = cheerio.load(
+      render(
+        h(Empty, {
+          holds: h("span", { "data-probe": "held" }, "verdicts"),
+          filledBy: h("em", { "data-probe": "fills" }, "a resolver run"),
+        }),
+      ),
+    );
+    // Each line carries the caller's own element, with its tag and attribute
+    // intact — the card neither drops it nor re-wraps its words.
+    const held = $('p [data-probe="held"]');
+    expect(held).toHaveLength(1);
+    expect(held.text()).toBe("verdicts");
+    expect(held.parent().text()).toBe("No verdicts");
+    const fills = $('p [data-probe="fills"]');
+    expect(fills).toHaveLength(1);
+    expect(fills[0].tagName).toBe("em");
+    expect(fills.text()).toBe("a resolver run");
+  });
+
+  it("names the missing table in mono and stays gray — unavailable is not broken", () => {
+    const html = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
+    expect(html).toMatch(/class="type-data[^"]*"[^>]*>verdicts</);
+    expect(classesOf(html)).toContain("text-ink-secondary");
+    expect(classesOf(html)).not.toContain("text-broken");
+    expect(html).not.toContain(">0<");
+  });
+
+  it("carries an optional eyebrow above the message, and emits none without one", () => {
+    // The eyebrow is the `micro` label of the surface the card stands in for
+    // (LOOK_AND_FEEL: `micro` is "the eyebrow label above a value"), so it must
+    // read before the message, not after it (admin-window/TASK-0030).
+    for (const [bare, labelled] of [
+      [
+        render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" })),
+        render(
+          h(Empty, {
+            holds: "open decisions",
+            filledBy: "the resolver files one here",
+            eyebrow: "cycle health",
+          }),
+        ),
+      ],
+      [
+        render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration" })),
+        render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "a migration", eyebrow: "cycle health" })),
+      ],
+    ]) {
+      expect(classesOf(labelled)).toContain("type-micro");
+      const text = textOf(labelled);
+      // first thing the card reads out: the label sits ABOVE the message
+      expect(text.indexOf("cycle health")).toBe(0);
+
+      // a card given no eyebrow is exactly the card that shipped before it
+      // existed: no stray label, no empty element holding its place
+      expect(classesOf(bare)).not.toContain("type-micro");
+      expect(textOf(bare)).not.toContain("cycle health");
+    }
+  });
+
+  it("takes the read a failed query was making as a REQUIRED prop", () => {
+    // Compile-time half of the assertion: `tsc --noEmit` covers `tests/**`
+    // (tsconfig `include`), so if `reading` ever goes optional again this
+    // directive becomes an unused-directive error and the build reddens.
+    // BUG-0016 shipped precisely because only a reviewer could catch it
+    // (ARCHITECTURE §7, admin-window/TASK-0030).
+    const anonymous = () =>
+      // @ts-expect-error a red line that names no read is unwritable
+      h(ErrorLine, { failed: "relation does not exist", retry: "reload the page" });
+    expect(typeof anonymous).toBe("function");
+
+    const named = render(
+      h(ErrorLine, { reading: "verdicts", failed: "no such relation", retry: "reload the page" }),
+    );
+    expect(textOf(named)).toContain("verdicts");
+  });
+
+  it("falls back to the failure alone when the read it was given names nothing", () => {
+    // The type forces the prop; it cannot force the string to say something,
+    // since `""` is a `string`. A blank read gets the app's one definition of
+    // absence rather than a dangling em dash (`isAbsent` — BUG-0004/BUG-0019).
+    for (const reading of ["", "   "]) {
+      const html = render(h(ErrorLine, { reading, failed: "no such relation", retry: "reload" }));
+      expect(textOf(html), JSON.stringify(reading)).not.toContain(EM_DASH);
+      expect(textOf(html), JSON.stringify(reading)).toContain("no such relation");
+    }
+  });
+
+  it("renders an error as one red line carrying the failure verbatim and the retry", () => {
+    const html = render(
+      h(ErrorLine, {
+        reading: "verdicts",
+        failed: 'relation "verdicts" does not exist',
+        retry: "reload the page",
+      }),
+    );
+    expect(classesOf(html)).toContain("text-broken");
+    expect(html).toContain("does not exist");
+    expect(html).toContain("reload the page");
+    expect(tagsOf(html)[0]).toBe("p");
+  });
+});
+
+/**
+ * The refusal card and the window line — the two helpers every page used to
+ * carry its own copy of (campaign admin-window/DEBT-0003).
+ *
+ * They are primitives for one reason beyond tidiness: both render the hooks a
+ * live oracle reads a page's STATE back by, and four hand-copies is four
+ * chances for that contract to drift where a drift grades a broken page as a
+ * pass (ARCHITECTURE.md §10, common violations 6 and 9). Two copies had
+ * already lost the `StateOf` wrappers and the `/claims` `WindowLine` had lost
+ * every `data-window*` attribute before this fold.
+ */
+describe("StateOf", () => {
+  const MISSING = { kind: "not_provisioned", missing: "pending_claims" } as const;
+  const FAILED = {
+    kind: "error",
+    reading: "observations",
+    message: "relation does not exist",
+  } as const;
+
+  it("wraps each refusal in the hook that NAMES the read it refused", () => {
+    const missing = cheerio.load(render(h(StateOf, { result: MISSING })));
+    const failed = cheerio.load(render(h(StateOf, { result: FAILED })));
+
+    expect(missing("[data-not-provisioned]").attr("data-not-provisioned")).toBe(
+      MISSING.missing,
+    );
+    expect(failed("[data-read-failed]").attr("data-read-failed")).toBe(FAILED.reading);
+
+    // Neither state may answer to the other's hook: a page composing several
+    // reads reports each one separately, and an oracle asking "which read
+    // refused?" must get one answer per refusal.
+    expect(missing("[data-read-failed]").length).toBe(0);
+    expect(failed("[data-not-provisioned]").length).toBe(0);
+  });
+
+  it("draws the two refusals as the two primitives that own them, never as one shape", () => {
+    const missing = cheerio.load(render(h(StateOf, { result: MISSING })));
+    const failed = cheerio.load(render(h(StateOf, { result: FAILED })));
+
+    expect(missing('[data-state="not_provisioned"]').length).toBe(1);
+    expect(missing('[data-state="error"]').length).toBe(0);
+    expect(failed('[data-state="error"]').length).toBe(1);
+    expect(failed('[data-state="not_provisioned"]').length).toBe(0);
+  });
+
+  it("keeps the object name verbatim in both the hook and the card", () => {
+    // A machine identifier is never prettified (LOOK_AND_FEEL Voice bar 5), and
+    // the hook must carry the same spelling the query used, or an oracle
+    // reading the hook and an operator reading the card are looking at two
+    // different objects (admin-window/BUG-0016).
+    const html = render(h(StateOf, { result: MISSING }));
+    expect(html).toContain(`data-not-provisioned="${MISSING.missing}"`);
+    expect(textOf(html)).toContain(MISSING.missing);
+  });
+
+  it("spends the window's one arrival sentence and its one retry sentence", () => {
+    // The point of the fold: these two sentences are spelled ONCE. A page that
+    // re-spelled either could drift from every other page's wording, which is
+    // exactly what eight hand-copies of `ARRIVES_WITH` risked.
+    // Read through cheerio, which decodes: the card's sentence reaches the
+    // screen as text, and React escapes the apostrophe of "repo's" on the way
+    // out — a raw-markup comparison would be asserting the escaping, not the
+    // sentence.
+    const said = (html: string) => cheerio.load(html).text();
+    expect(said(render(h(StateOf, { result: MISSING })))).toContain(ARRIVES_WITH);
+    expect(said(render(h(StateOf, { result: FAILED })))).toContain(RETRY);
+  });
+
+  it("carries an eyebrow where the surface has no heading, and none where it does", () => {
+    for (const result of [MISSING, FAILED] as const) {
+      const labelled = render(h(StateOf, { result, eyebrow: "cycle health" }));
+      const bare = render(h(StateOf, { result }));
+      expect(textOf(bare)).not.toContain("cycle health");
+      // `ErrorLine` is a line inside a surface that already names itself, so
+      // only the card takes the label — asserted per state rather than assumed.
+      if (result.kind === "not_provisioned") {
+        expect(textOf(labelled).indexOf("cycle health")).toBe(0);
+      }
+    }
+  });
+});
+
+/**
+ * A FAILED READ'S ACCOUNT, AND THE TWO FACES IT READS IN — campaign
+ * admin-window/BUG-0196.
+ *
+ * "Mono carries every value the database produced … Sans carries every word
+ * the app wrote. That split *is* the typographic idea: the operator can always
+ * see which words are the machine's" (LOOK_AND_FEEL → Typography). MEASURED
+ * defect: this line drew the WHOLE account in one `type-data` span, so the
+ * app's own clause about a part it refused to quote — "a 4524-character markup
+ * document arrived here instead of the database's own words" — reached the
+ * operator in the database's face, inside the same red mono run as a real
+ * Postgres string.
+ *
+ * Every case is STRUCTURAL: which run a part lands in, read off the delivered
+ * markup. None of them pins a sentence this app wrote, and the two that decide
+ * a face hand the SAME words to both authors, so no string comparison can pass
+ * them.
+ */
+describe("a failed read's account renders each part in its author's face", () => {
+  const MACHINE = 'relation "pending_claims" does not exist';
+  const OURS = "the words this app wrote about the part it refused to quote";
+
+  /** The type step each span of the line carries, with its text. */
+  function runs(html: string): { step: string; words: string; isolated: boolean }[] {
+    const $ = cheerio.load(html);
+    return $('[data-state="error"] span')
+      .toArray()
+      .map((element) => ({
+        step: ($(element).attr("class") ?? "").split(/\s+/).find((c) => c.startsWith("type-")) ?? "",
+        words: $(element).text(),
+        isolated: $(element).attr("dir") === "ltr",
+      }));
+  }
+
+  /** The words of every run in one type step, joined as the line reads them. */
+  const inStep = (html: string, step: string): string =>
+    runs(html)
+      .filter((run) => run.step === step)
+      .map((run) => run.words)
+      .join(" ");
+
+  const line = (authored?: readonly AccountSegment[]) =>
+    render(
+      h(ErrorLine, {
+        reading: "pending_claims",
+        failed: (authored ?? [{ words: MACHINE, author: "the machine" as const }])
+          .map((segment) => segment.words)
+          .join(" "),
+        authored,
+        retry: RETRY,
+      }),
+    );
+
+  it("draws an account carrying no authorship exactly as it always did: one mono run", () => {
+    // The wire's documented default, and every call site that holds only the
+    // string: absence means the whole account is the machine's.
+    const html = line();
+    expect(inStep(html, "type-data")).toBe(`pending_claims ${EM_DASH} ${MACHINE}`);
+    expect(inStep(html, "type-body")).toBe(RETRY);
+  });
+
+  it("puts this app's clause in the sans run and the database's words in the mono one", () => {
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    expect(inStep(html, "type-data")).toContain(MACHINE);
+    expect(inStep(html, "type-data")).not.toContain(OURS);
+    expect(inStep(html, "type-body")).toContain(OURS);
+    expect(inStep(html, "type-body")).not.toContain(MACHINE);
+    // The object stays a machine identifier in mono, and the retry stays sans.
+    expect(inStep(html, "type-data")).toContain("pending_claims");
+    expect(inStep(html, "type-body")).toContain(RETRY);
+  });
+
+  it("derives the face from the carried fact alone: the same words, both ways round", () => {
+    // A renderer matching a sentence against a list of this app's own phrases
+    // fails both halves of this; one reading the carried fact passes both. No
+    // rewording can move a face.
+    const asOurs = line([{ words: MACHINE, author: "this app" }]);
+    expect(inStep(asOurs, "type-body")).toContain(MACHINE);
+    expect(inStep(asOurs, "type-data")).not.toContain(MACHINE);
+
+    const asTheirs = line([{ words: OURS, author: "the machine" }]);
+    expect(inStep(asTheirs, "type-data")).toContain(OURS);
+    expect(inStep(asTheirs, "type-body")).not.toContain(OURS);
+  });
+
+  it("keeps the whole account, in order, with one em dash after the object", () => {
+    // No account is dropped, truncated or reordered to make the split easier,
+    // and the words still read as one sentence to anything that concatenates
+    // the text — a screen reader announcing the alert, a live oracle reading
+    // the card back.
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    const read = cheerio.load(html)('[data-state="error"]').text();
+    expect(read).toContain(`pending_claims ${EM_DASH} ${MACHINE} ${OURS}`);
+    expect(read.split(EM_DASH)).toHaveLength(2);
+    expect(read.indexOf(MACHINE)).toBeLessThan(read.indexOf(OURS));
+    expect(read.indexOf(OURS)).toBeLessThan(read.indexOf(RETRY));
+  });
+
+  it("isolates exactly the runs this app did not write, and never one it did", () => {
+    // `dir="ltr"` boxes foreign text so it cannot reorder the line around it
+    // (ARCHITECTURE §7). A sentence this app wrote needs no isolation from
+    // itself, and the object is foreign in every arm.
+    const html = line([
+      { words: MACHINE, author: "the machine" },
+      { words: OURS, author: "this app" },
+    ]);
+    const isolated = runs(html).filter((run) => run.isolated);
+    expect(isolated.map((run) => run.words)).toEqual([`pending_claims ${EM_DASH} ${MACHINE}`]);
+    for (const run of runs(html)) {
+      if (run.words.includes(OURS)) expect(run.isolated).toBe(false);
+    }
+  });
+
+  it("merges two runs by the same author, so a two-field account keeps its space", () => {
+    // The line lays its runs out as flex items, so the gap between two spans
+    // is the layout's and not a character. Two same-authored parts therefore
+    // have to arrive in ONE span or the account reads run together.
+    const html = line([
+      { words: "first", author: "the machine" },
+      { words: "second", author: "the machine" },
+    ]);
+    expect(runs(html).filter((run) => run.step === "type-data")).toHaveLength(1);
+    expect(inStep(html, "type-data")).toBe(`pending_claims ${EM_DASH} first second`);
+  });
+
+  it("gets the account alone rather than a dangling em dash when the read names nothing", () => {
+    // The app's one definition of absence, asked of the object — unchanged by
+    // the split, and asked once for both faces.
+    for (const reading of ["", "   "]) {
+      const html = render(
+        h(ErrorLine, {
+          reading,
+          failed: OURS,
+          authored: [{ words: OURS, author: "this app" as const }],
+          retry: RETRY,
+        }),
+      );
+      expect(cheerio.load(html)('[data-state="error"]').text(), JSON.stringify(reading)).not.toContain(
+        EM_DASH,
+      );
+      expect(inStep(html, "type-body"), JSON.stringify(reading)).toContain(OURS);
+    }
+  });
+
+  it("carries the account down through StateOf, which is how every page draws it", () => {
+    // The seam a page actually renders: `DbResult`'s error arm satisfies
+    // `UnavailableRead` structurally, so no page translates and the runs are
+    // not re-derived anywhere on the way (admin-window/BUG-0196 criterion 5c).
+    const html = render(
+      h(StateOf, {
+        result: {
+          kind: "error",
+          reading: "pending_claims",
+          message: `${MACHINE} ${OURS}`,
+          authored: [
+            { words: MACHINE, author: "the machine" },
+            { words: OURS, author: "this app" },
+          ],
+        },
+      }),
+    );
+    expect(inStep(html, "type-data")).toContain(MACHINE);
+    expect(inStep(html, "type-body")).toContain(OURS);
+    expect(html).toContain('data-read-failed="pending_claims"');
+  });
+});
+
+describe("WindowLine", () => {
+  const WINDOW: ReadWindow = {
+    since: "2026-06-01T00:00:00.000Z",
+    until: "2026-09-01T00:00:00.000Z",
+    limit: 2000,
+    held: 1200,
+    truncated: false,
+    over: "table",
+  };
+  /**
+   * `over` rides on the WINDOW, not on the component (admin-window/BUG-0077) —
+   * so these cases vary the read, which is the only thing that may vary it.
+   */
+  const line = (over: "table" | "view", window: ReadWindow = WINDOW) =>
+    render(
+      h(WindowLine, {
+        gauge: "cycle_health",
+        window: { ...window, over },
+        measured: "Cycles started",
+      }),
+    );
+
+  it("publishes the window it was handed, attribute by attribute", () => {
+    const $ = cheerio.load(line("table"));
+    const published = $("[data-window]");
+    expect(published.attr("data-window")).toBe("cycle_health");
+    expect(published.attr("data-window-since")).toBe(WINDOW.since);
+    expect(published.attr("data-window-until")).toBe(WINDOW.until);
+    expect(textOf(line("table"))).toContain(count(WINDOW.limit));
+  });
+
+  it("states truncation as a confident boolean, present in both directions", () => {
+    // Never an absent attribute for "not truncated": an oracle reading the
+    // hook back must be able to tell a complete window from a missing claim
+    // (ARCHITECTURE.md §4.3 — a null is a refusal, never a zero).
+    const complete = cheerio.load(line("table"))("[data-window]");
+    const filled = cheerio.load(line("table", { ...WINDOW, truncated: true }))("[data-window]");
+    expect(complete.attr("data-window-truncated")).toBe("false");
+    expect(filled.attr("data-window-truncated")).toBe("true");
+  });
+
+  it("qualifies a filled window by ADDING to the sentence, never by replacing it", () => {
+    const complete = textOf(line("table"));
+    const filled = textOf(line("table", { ...WINDOW, truncated: true }));
+    expect(filled.startsWith(complete)).toBe(true);
+    expect(filled.length).toBeGreaterThan(complete.length);
+  });
+
+  it("names what the window was read OVER, and never the other kind of object", () => {
+    // The three copies said "table" twice and "view" once for the same
+    // sentence; the word follows the object the READ ran over
+    // (admin-window/DEBT-0003, admin-window/BUG-0077). Asserted against the
+    // window's own field, so no copy is pinned here.
+    for (const over of ["table", "view"] as const) {
+      const other = over === "table" ? "view" : "table";
+      const text = textOf(line(over));
+      expect(text, over).toContain(over);
+      expect(text, over).not.toContain(other);
+    }
+  });
+
+  it("gives a caller no way to name a different object than the window did", () => {
+    // The regression admin-window/BUG-0077 is: while the word was a prop, two
+    // call sites rendering ONE window described it as two different objects.
+    // A stray `over` on the element — the shape those call sites had — must
+    // change nothing; only `window.over` may. Cast because the prop is gone
+    // from the type, which is the first half of the same guarantee.
+    const props = {
+      gauge: "cycle_health",
+      window: { ...WINDOW, over: "table" as const },
+      measured: "Cycles started",
+      over: "view",
+    };
+    const text = textOf(render(h(WindowLine, props as unknown as never)));
+    expect(text, "the window was read over a table").toContain("not the whole table.");
+    expect(text).not.toContain("view");
+  });
+
+  it("is one line, and says which gauge's window it is", () => {
+    const html = line("view");
+    expect(tagsOf(html)).toEqual(["p"]);
+    expect(cheerio.load(html)("[data-window]").length).toBe(1);
+  });
+
+  /**
+   * ONE hook set, for every window the app publishes — the reconciliation
+   * admin-window/DEBT-0006 made in this file rather than at whichever call
+   * site was folded last.
+   *
+   * The app had two dialects: the gauge lines published `since`/`until`/
+   * `truncated`, the hand-rolled list lines `limit`/`held`/`truncated` or
+   * nothing at all, so no oracle could ask one question of all of them. The
+   * rule is now: `limit`, `held` and `truncated` are facts of EVERY window and
+   * are always published; `since`/`until` are facts of a window bounded in
+   * TIME, so their absence says that and only that.
+   *
+   * Read structurally — which attributes exist, not what any sentence says.
+   */
+  const HOOKS_EVERY_WINDOW = [
+    "data-window",
+    "data-window-limit",
+    "data-window-held",
+    "data-window-truncated",
+  ] as const;
+
+  const DRAWN: DrawnWindow = {
+    limit: 50,
+    held: 877,
+    truncated: true,
+    over: "view",
+    oldest: "2026-08-31T04:12:00.000Z",
+    // The read covered the whole object. Every case below that does not say
+    // otherwise is the unnarrowed one (admin-window/BUG-0114).
+    scope: null,
+    // The rows this window PUT ON SCREEN — it filled its cap of 50, so that is
+    // what it drew. Stated, because the clauses that name what is below the
+    // line take their number from here and from nowhere else: `limit` is the
+    // size of a window and never a description of a screen
+    // (admin-window/BUG-0183). No `continues`: this is an unpaged window, and
+    // its nine call sites state none.
+    drawn: 50,
+  };
+
+  /**
+   * The PHRASE a window whose read saw one facet of its object says.
+   *
+   * A `scope` is a LIST of these (admin-window/TASK-0072), joined once where
+   * the line renders, so every case below hands it as `[NARROWED]` and the
+   * text assertions go on reading the phrase itself.
+   */
+  const NARROWED = "from bandsintown";
+
+  /**
+   * `DRAWN`'s read, come back SHORT of its cap — with the rows it put on
+   * screen stated, and its count agreeing with them (admin-window/BUG-0186).
+   *
+   * `DRAWN` states 50 rows on screen against a cap of 50, which is a window
+   * that REACHED its cap, so overriding `held` alone produced a window whose
+   * two reads disagreed AND whose rows filled the cap, under a sentence
+   * claiming it had not filled. Three of the four arms have one read and never
+   * noticed; `matched` — the arm `/claims` draws with a separate COUNT read —
+   * now states that state as the two reads it is, which is the whole of this
+   * ticket. The cases below mean "this window did not fill", so they say it
+   * with the rows the read drew and vary only what they are about.
+   */
+  const cameBackShort = (
+    held: number,
+    rest: Partial<DrawnWindow> = {},
+  ): DrawnWindow => ({ ...DRAWN, held, drawn: held, truncated: false, ...rest });
+
+  /** The longest text both renderings share — the window's own sentence. */
+  const sharedPrefix = (a: string, b: string): string => {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+    return a.slice(0, i);
+  };
+
+  /** Every shape of drawn list the app draws, so no arm is graded alone. */
+  const EVERY_KIND: DrawnSentence[] = [
+    { of: "newest", lede: "The newest cycles, newest first", rows: "cycles" },
+    { of: "matched", lede: "Oldest first.", rows: "claims" },
+    { of: "catalog", rows: "events" },
+    { of: "alphabetical", rows: "venues" },
+  ];
+
+  const drawn = (shows: DrawnSentence, window: DrawnWindow = DRAWN) =>
+    render(h(WindowLine, { gauge: "claims", window, shows }));
+
+  it("publishes the same three facts on a scanned window and on a drawn one", () => {
+    for (const [what, html] of [
+      ["scanned", line("table")],
+      ["drawn", drawn({ of: "matched", lede: "Oldest first.", rows: "claims" })],
+    ] as const) {
+      const published = cheerio.load(html)("[data-window]");
+      for (const hook of HOOKS_EVERY_WINDOW) {
+        expect(published.attr(hook), `${what} published no ${hook}`).toBeDefined();
+      }
+    }
+  });
+
+  it("states the row count and the cap the read actually carried", () => {
+    const published = cheerio.load(
+      drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }),
+    )("[data-window]");
+    expect(published.attr("data-window-held")).toBe(String(DRAWN.held));
+    expect(published.attr("data-window-limit")).toBe(String(DRAWN.limit));
+    const scanned = cheerio.load(line("table"))("[data-window]");
+    expect(scanned.attr("data-window-held")).toBe(String(WINDOW.held));
+    expect(scanned.attr("data-window-limit")).toBe(String(WINDOW.limit));
+  });
+
+  it("bounds a drawn window in rows only, and says so by publishing no instant", () => {
+    // A list window has no time bound; a scan has one. The absence of the pair
+    // is the statement, and it is decided by the window rather than by the
+    // caller — which is why there is no prop to set it either way.
+    const drawnHooks = cheerio.load(
+      drawn({ of: "newest", lede: "The newest cycles", rows: "cycles" }),
+    )("[data-window]");
+    expect(drawnHooks.attr("data-window-since")).toBeUndefined();
+    expect(drawnHooks.attr("data-window-until")).toBeUndefined();
+    const scannedHooks = cheerio.load(line("table"))("[data-window]");
+    expect(scannedHooks.attr("data-window-since")).toBe(WINDOW.since);
+  });
+
+  it("qualifies a drawn window by ADDING to its sentence, in every kind and both directions", () => {
+    // The same property the scanned line has: what a window says about its own
+    // bottom is said ON TOP of the window's own sentence, never in place of it
+    // — and now in BOTH directions, because a window that did not fill has
+    // something to say too (admin-window/BUG-0109).
+    for (const shows of EVERY_KIND) {
+      const open = textOf(drawn(shows, { ...DRAWN, truncated: false }));
+      const filled = textOf(drawn(shows, { ...DRAWN, truncated: true }));
+      const base = sharedPrefix(open, filled);
+      // The window's own sentence really is a sentence, and both states keep it.
+      expect(base.length, shows.of).toBeGreaterThan(20);
+      expect(open.startsWith(base), shows.of).toBe(true);
+      expect(filled.startsWith(base), shows.of).toBe(true);
+      // Each state ADDS its own clause: neither is the bare sentence, and the
+      // two do not say the same thing.
+      expect(open.length, shows.of).toBeGreaterThan(base.length);
+      expect(filled.length, shows.of).toBeGreaterThan(base.length);
+      expect(open, shows.of).not.toBe(filled);
+    }
+  });
+
+  it("says a window did not fill by naming the oldest row it holds, in every kind", () => {
+    // Bar 13's other half (admin-window/BUG-0109): five runs against a cap of
+    // 200 are the whole history, so the line states the object's own floor
+    // rather than letting the last row read as the top of a long list. The
+    // stamp is the WINDOW's own fact, rendered the way the app renders an
+    // instant — no copy is pinned here.
+    const held = cameBackShort(5);
+    for (const shows of EVERY_KIND) {
+      const open = textOf(drawn(shows, held));
+      expect(open, shows.of).toContain(absoluteUtc(DRAWN.oldest));
+      expect(open, shows.of).toContain(count(5));
+      // A window that filled its cap has no floor to name: its bottom is the
+      // cap's, and the oldest row it holds is not the oldest that exists.
+      expect(textOf(drawn(shows, { ...held, truncated: true })), shows.of).not.toContain(
+        absoluteUtc(DRAWN.oldest),
+      );
+    }
+  });
+
+  it("names no floor for a window whose bottom row is not its oldest", () => {
+    // `/claims` draws its matches longest-waiting FIRST and the picker draws
+    // its choices by name, so neither window's last row is a floor in time.
+    // The read says so by carrying no oldest instant, and the line states the
+    // rest of the sentence without inventing one — no stamp, and no dash
+    // standing in for one (admin-window/BUG-0004: an absence is rendered, and
+    // an instant that was never read is not an absence in a sentence).
+    for (const shows of EVERY_KIND) {
+      const text = textOf(drawn(shows, cameBackShort(5, { oldest: null })));
+      const dated = textOf(drawn(shows, cameBackShort(5)));
+      expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
+      expect(text.length, shows.of).toBeLessThan(dated.length);
+      expect(dated.startsWith(text.replace(/\.$/, "")), shows.of).toBe(true);
+      expect(text, shows.of).toContain(count(5));
+    }
+  });
+
+  it("says a window that returned nothing looked, and states no floor", () => {
+    // An empty window is still a window (ARCHITECTURE.md §4.3): the read
+    // happened and found nothing, which is not the same claim as "the window
+    // holds everything below".
+    for (const shows of EVERY_KIND) {
+      const text = textOf(
+        drawn(shows, cameBackShort(0, { oldest: null })),
+      );
+      expect(text, shows.of).toContain(shows.rows);
+      expect(text, shows.of).not.toContain(absoluteUtc(DRAWN.oldest));
+    }
+  });
+
+  it("points at the rest of a list only when there IS a rest", () => {
+    // admin-window/BUG-0109: the Dashboard's runs panel promised "Open Cycles
+    // & runs for the rest" over five runs that ARE every run recorded, and
+    // /cycles then showed the same five. The pointer is a fact of the window,
+    // so it rides on truncation and not on the page's optimism.
+    // Free of an ampersand on purpose: `textOf` reads the raw markup, where
+    // React has escaped one, and this case is about the clause and not about
+    // entity decoding.
+    const pointer = "Open the Cycles page for the rest.";
+    const shows: DrawnSentence = {
+      of: "newest",
+      lede: "The adapters’ newest runs, newest first",
+      rows: "runs",
+      more: pointer,
+    };
+    expect(textOf(drawn(shows, { ...DRAWN, held: 50, truncated: true }))).toContain(pointer);
+    expect(textOf(drawn(shows, cameBackShort(5)))).not.toContain(
+      pointer,
+    );
+  });
+
+  it("names the object a drawn window was read over from the window, not the caller", () => {
+    // Same guarantee as the scanned line's (admin-window/BUG-0077): the word
+    // is a fact of the read. Only the arms whose sentence names an object are
+    // asked about it.
+    for (const over of ["table", "view"] as const) {
+      const other = over === "table" ? "view" : "table";
+      for (const shows of [
+        { of: "matched", lede: "Oldest first.", rows: "claims" },
+        { of: "alphabetical", rows: "venues" },
+      ] as DrawnSentence[]) {
+        const text = textOf(drawn(shows, { ...DRAWN, over }));
+        expect(text, `${shows.of} ${over}`).toContain(`not the whole ${over}.`);
+        expect(text, `${shows.of} ${over}`).not.toContain(
+          `not the whole ${other}.`,
+        );
+      }
+    }
+  });
+
+  it("says the page's own noun back, and states no window it was not handed", () => {
+    // The only things a call site may spell are its own words about its own
+    // subject; every figure in the sentence comes from the window.
+    const text = textOf(
+      drawn({ of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" }, {
+        ...DRAWN,
+        limit: 200,
+        truncated: true,
+      }),
+    );
+    expect(text.startsWith("The adapters’ newest runs, newest first")).toBe(true);
+    expect(text).toContain(count(200));
+    expect(text).toContain("runs");
+    expect(text).not.toContain(count(DRAWN.held));
+  });
+
+  /* ── a window whose READ was narrowed (admin-window/BUG-0114) ─────────── */
+
+  it("states a narrowed window's floor over the population it read, never over the object", () => {
+    // The bug: `/cycles?source=<name>` reads one source's runs with
+    // `.eq("source", …)`, comes back below its cap, and the line then named
+    // that source's oldest run as the point before which NOTHING is retained —
+    // of a table that retains older runs from every other source and renders
+    // them on the same page without the facet.
+    const held = cameBackShort(5);
+    for (const shows of EVERY_KIND) {
+      const narrowed = textOf(drawn(shows, { ...held, scope: [NARROWED] }));
+      // The floor is still stated — it is the floor of what the read saw —
+      // and every clause that names it names the narrowing with it.
+      expect(narrowed, shows.of).toContain(absoluteUtc(DRAWN.oldest));
+      expect(narrowed, shows.of).toContain(`${shows.rows} ${NARROWED} recorded since`);
+      // …and the unqualified claim about the object is never made.
+      expect(narrowed, shows.of).not.toContain("nothing earlier is retained");
+      expect(narrowed, shows.of).toContain(`nothing earlier ${NARROWED} is retained`);
+    }
+  });
+
+  it("says a narrowed window that returned nothing found nothing OF ITS FACET", () => {
+    // The same lie in the zero-row arm: "found no runs at all" stood over a
+    // read that had looked at one source, directly above an empty card saying
+    // the window holds "runs from <name>".
+    const empty = cameBackShort(0, { oldest: null });
+    for (const shows of EVERY_KIND) {
+      const narrowed = textOf(drawn(shows, { ...empty, scope: [NARROWED] }));
+      expect(narrowed, shows.of).toContain(`no ${shows.rows} ${NARROWED} at all`);
+      expect(narrowed, shows.of).not.toContain(`no ${shows.rows} at all`);
+    }
+  });
+
+  /**
+   * The `matched` arm names ONE narrowing in its own words — "N claims match
+   * these filters", which is `NARROWED_BY_FILTERS` and nothing else. Every
+   * other narrowing its window carries goes through the same population phrase
+   * as every other clause here; it used to take no scope at all, which is how
+   * `/claims?tab=standing` came to state one bucket's count over filters
+   * nobody had set, naming no bucket (admin-window/BUG-0118). Both halves are
+   * graded below, in the loop and after it.
+   */
+  it("carries the narrowing into a FILLED window's sentence too", () => {
+    // A narrowed window that hit its cap says nothing false, but it must still
+    // say which population it is a window of: the reader who cannot see the
+    // facet cannot check the cap either.
+    for (const shows of EVERY_KIND) {
+      const open = textOf(drawn(shows, cameBackShort(5, { scope: [NARROWED] })));
+      const narrowed = textOf(drawn(shows, { ...DRAWN, truncated: true, scope: [NARROWED] }));
+      expect(narrowed, shows.of).toContain(NARROWED);
+      // Not just in the window's own sentence: the clause truncation ADDS —
+      // everything past the prefix the two directions share — names the
+      // population it is a cap on, or a reader takes it for a cap on the
+      // object.
+      const clause = narrowed.slice(sharedPrefix(open, narrowed).length);
+      expect(clause, shows.of).toContain(NARROWED);
+    }
+    // …and the arm that names a narrowing in its own words says THAT one once,
+    // never twice, when the window carries it too (admin-window/BUG-0118).
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const bare = textOf(drawn(matched, { ...DRAWN, truncated: true }));
+    // An UNNARROWED window mentions no filter at all — not beside the count
+    // (admin-window/BUG-0123), and not at the end of the sentence either,
+    // where this arm used to send the operator to "the filters above" for the
+    // rows it held back (admin-window/BUG-0162). The next lines are the other
+    // direction: a window the filters really narrowed says so, once.
+    expect(bare).not.toContain("filters");
+    for (const scope of [
+      [NARROWED_BY_FILTERS],
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      const text = textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+      expect(text.split(NARROWED_BY_FILTERS).length - 1, String(scope)).toBe(0);
+      expect(text.split("match these filters").length - 1, String(scope)).toBe(1);
+    }
+    // Carrying both, the sentence is the FILTERED one with the OTHER narrowing
+    // added beside the count, and nothing else about it moved. The baseline is
+    // the filters-only rendering rather than the bare one, because a window no
+    // filter narrowed no longer says "match these filters" at all — that is
+    // admin-window/BUG-0123, pinned both ways in its own case below.
+    const filtersOnly = textOf(
+      drawn(matched, { ...DRAWN, truncated: true, scope: [NARROWED_BY_FILTERS] }),
+    );
+    expect(
+      textOf(drawn(matched, {
+        ...DRAWN,
+        truncated: true,
+        scope: narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+      })),
+    ).toBe(
+      filtersOnly.replace(`${matched.rows} match`, `${matched.rows} ${NARROWED} match`),
+    );
+  });
+
+  /**
+   * **A COUNT OF ONE WEARS A SINGULAR NOUN, wherever this file puts a count in
+   * front of the population it counted** (campaign admin-window/DEBT-0022, the
+   * residual admin-window/BUG-0197 left).
+   *
+   * The noun arrives from the caller — one word, in the plural — and the
+   * clauses here put a figure in front of it, so a window holding a single row
+   * read "1 claims in all", "1 claims match these filters" and "1 events are
+   * on screen". That is admin-window/BUG-0046's defect ("1 sources holding
+   * one") reaching the window line through a noun composed outside `counted`,
+   * and the agreement belongs where the phrase is composed rather than with
+   * the six call sites passing a noun.
+   *
+   * Graded against `counted` itself — the app's ONE answer to which form a
+   * quantity takes (`lib/format.ts`) — so no copy is pinned here and a case
+   * cannot pass by agreeing with a spelling this test typed out. Three counts
+   * each way: 0 and 2 must read exactly as they read before, and 1 is the one
+   * that moved.
+   */
+  describe("a count and the population it counted agree", () => {
+    /** A window whose two reads agree and whose set has ENDED — the arm that
+     *  states the count and the rows together, at any size. */
+    const held = (n: number, rest: Partial<DrawnWindow> = {}): DrawnWindow => ({
+      ...DRAWN,
+      held: n,
+      drawn: n,
+      truncated: false,
+      continues: true,
+      ...rest,
+    });
+
+    for (const n of [0, 1, 2]) {
+      it(`says ${counted(n, "claim")} in all, never a plural over one`, () => {
+        const text = textOf(
+          drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, held(n)),
+        );
+        // Non-vacuity: this really is the arm that states the count.
+        expect(text, String(n)).toContain(" in all");
+        expect(text, String(n)).toContain(`${counted(n, "claim")} in all`);
+      });
+
+      it(`says ${counted(n, "claim")} under the filters, with a verb that agrees`, () => {
+        const text = textOf(
+          drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, held(n, {
+            scope: [NARROWED_BY_FILTERS],
+          })),
+        );
+        expect(text, String(n)).toContain(
+          `${counted(n, "claim")} ${n === 1 ? "matches" : "match"} these filters`,
+        );
+      });
+
+      it(`says ${counted(n, "event")} on screen, with a verb that agrees`, () => {
+        const text = textOf(drawn({ of: "catalog", rows: "events" }, held(n)));
+        expect(text, String(n)).toContain(
+          `${counted(n, "event")} ${n === 1 ? "is" : "are"} on screen`,
+        );
+      });
+    }
+
+    it("puts the narrowing OUTSIDE the noun, so the noun still agrees", () => {
+      // The scope words ride after the population everywhere in this file, so
+      // a singular must not be made plural by the phrase that follows it.
+      const text = textOf(
+        drawn(
+          { of: "matched", lede: "Oldest first.", rows: "claims" },
+          held(1, { scope: [NARROWED] }),
+        ),
+      );
+      expect(text).toContain(`${counted(1, "claim")} ${NARROWED} in all`);
+    });
+
+    it("rewrites no noun it cannot singularise regularly", () => {
+      // The inverse of `counted`'s own default (`singular + "s"`) and nothing
+      // more: a plural that is not the regular form is handed back as the
+      // caller wrote it, because inventing "entitie" out of "entities" is the
+      // bug `counted`'s doc refuses to write forwards. Both directions in one
+      // case (LESSONS 8).
+      const irregular = textOf(
+        drawn({ of: "catalog", rows: "entities" }, held(1)),
+      );
+      expect(irregular).toContain("1 entities is on screen");
+      const regular = textOf(drawn({ of: "catalog", rows: "events" }, held(1)));
+      expect(regular).toContain("1 event is on screen");
+    });
+  });
+
+  it("asserts the filters only when the filters are what narrowed the read (admin-window/BUG-0123)", () => {
+    // The clause said "match these filters" unconditionally, so `/claims` over
+    // an empty chip bar read "877 claims match these filters" — byte-identical
+    // to the same page with a chip set, which is the one sentence bar 13
+    // forbids ("no screen claims a mark it did not draw"). The phrase is a
+    // statement about the READ, so it rides on the window's own `scope` like
+    // every other clause in this file.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const filled = (scope: readonly string[] | null) =>
+      textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+
+    // Unnarrowed: the count stands over the population the window itself names,
+    // and no filter is claimed.
+    const unnarrowed = filled(null);
+    expect(unnarrowed).not.toContain("match these filters");
+    expect(unnarrowed).toContain(`${count(DRAWN.held)} ${matched.rows}`);
+
+    // Narrowed by something that is NOT the chips — the tab, on `/claims` — is
+    // the same read with the same empty chip bar: the sentence names the tab's
+    // population and still claims no filter (admin-window/BUG-0118's shape,
+    // with the assertion removed rather than moved).
+    const tabbed = filled([NARROWED]);
+    expect(tabbed).not.toContain("match these filters");
+    expect(tabbed).toContain(`${matched.rows} ${NARROWED}`);
+
+    // …and the other way: the moment the filters really are a narrowing this
+    // read carried, the phrase is back, once, exactly as it always read.
+    for (const scope of [
+      [NARROWED_BY_FILTERS],
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      expect(filled(scope).split("match these filters").length - 1, String(scope)).toBe(1);
+    }
+
+    // Whichever arm renders, the rest of the line is one sentence: the cap, the
+    // rows below and the way to the rest do not move with the narrowing, so the
+    // only thing the filters change is the phrase beside the count.
+    const tail = (text: string) => text.slice(text.indexOf(";"));
+    expect(tail(unnarrowed).length).toBeGreaterThan(20);
+    expect(tail(unnarrowed)).toBe(tail(filled([NARROWED_BY_FILTERS])));
+    expect(tail(tabbed)).toBe(tail(filled([NARROWED_BY_FILTERS])));
+  });
+
+  it("cannot have a segment FORGED into its scope by a facet value (admin-window/TASK-0072)", () => {
+    // The M2 close's ruling 4, structurally: `scope` used to be one
+    // comma-joined STRING that this file split back apart to ask which
+    // narrowings a read carried (`narrows`) and to subtract the one a clause
+    // says itself (`besides`). A facet value carrying the join string was
+    // therefore indistinguishable from two narrowings — and one of the
+    // segments it could forge is the phrase the `matched` arm gates its
+    // "match these filters" claim on, which is the one sentence bar 13
+    // forbids a screen to make about a read no filter touched.
+    //
+    // A scope is a LIST now, so a value is one phrase whatever is inside it.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    // A source name nobody would register, in the shape `/cycles` composes
+    // its scope in (`from <source>`), and exactly what the old round trip
+    // could not survive: the value carries the join string with the gated
+    // phrase straight after it.
+    const FORGED = `from bandsintown${", "}${NARROWED_BY_FILTERS}`;
+
+    // NON-VACUOUS: this really is a value that forges a segment under the old
+    // shape. Joined and split back apart the way the string scope was, it
+    // becomes TWO narrowings, and the second is the phrase the arm gates on.
+    const asTheStringDid = [FORGED].join(", ").split(", ");
+    expect(asTheStringDid).toHaveLength(2);
+    expect(asTheStringDid).toContain(NARROWED_BY_FILTERS);
+
+    // The list keeps it whole: one phrase in, one phrase rendered…
+    const forged = textOf(drawn(matched, { ...DRAWN, truncated: true, scope: [FORGED] }));
+    expect(forged).toContain(`${matched.rows} ${FORGED}`);
+    // …and the claim it tried to forge is not made, because no narrowing of
+    // this read IS that phrase.
+    expect(forged).not.toContain("match these filters");
+    expect(forged).toContain(`${count(DRAWN.held)} ${matched.rows} ${FORGED} in all`);
+
+    // And the subtraction is whole too: with the filters REALLY carried
+    // beside it, the clause says them once and names the other narrowing
+    // entire — never half of it.
+    const both = textOf(
+      drawn(matched, {
+        ...DRAWN,
+        truncated: true,
+        scope: narrowedTo([FORGED, NARROWED_BY_FILTERS]),
+      }),
+    );
+    expect(both.split("match these filters").length - 1).toBe(1);
+    expect(both).toContain(`${matched.rows} ${FORGED} match these filters`);
+  });
+
+  it("ends a filled matched window on what is missing, not on a way to it (admin-window/BUG-0162)", () => {
+    // `/claims` draws a hard `limit` window over a complete matching set, so
+    // the rows past the cap are reachable only by a narrowing that takes the
+    // whole count under it — which no state of that page can do (measured on
+    // staging 2026-09-10: the narrowest state its chips reach still held 108
+    // claims against 50 rows). This arm nonetheless ended every filled window
+    // by naming a remedy, in both of its branches. It now states the read and
+    // stops: the count, the cap, and the fact that the rest is not below.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const filled = (scope: readonly string[] | null) =>
+      textOf(drawn(matched, { ...DRAWN, truncated: true, scope }));
+
+    for (const scope of [
+      null,
+      [NARROWED],
+      [NARROWED_BY_FILTERS],
+      narrowedTo([NARROWED, NARROWED_BY_FILTERS]),
+    ]) {
+      const text = filled(scope);
+      // Non-vacuous: this is the truncated clause, and it still carries the
+      // two figures the window is made of.
+      expect(text, String(scope)).toContain(count(DRAWN.held));
+      expect(text, String(scope)).toContain(`at most ${count(DRAWN.limit)}`);
+      // No instruction to the operator, in any narrowing: the arm cannot see
+      // what controls its caller draws, so it directs them at none.
+      for (const remedy of ["narrow", "Narrow", "reach", "widen", "Widen"]) {
+        expect(text, `${String(scope)} / ${remedy}`).not.toContain(remedy);
+      }
+      // What it says instead — and the whole sentence ends there.
+      expect(text.trimEnd(), String(scope)).toMatch(/not shown\.$/);
+    }
+
+    // The clause is the arm's own, not the window's: it does not move with the
+    // narrowing, which is what lets a page's two states be compared byte for
+    // byte above.
+    const tail = (text: string) => text.slice(text.lastIndexOf("—"));
+    expect(tail(filled(null))).toBe(tail(filled([NARROWED_BY_FILTERS])));
+
+    // And a window that did NOT fill says nothing of the kind: there is no
+    // rest to be missing, so the arm's other branch is untouched by all this.
+    const open = textOf(drawn(matched, cameBackShort(5)));
+    expect(open).not.toContain("not shown");
+  });
+
+  it("renders an unnarrowed window exactly as it did before facets existed", () => {
+    // The complement of the two cases above, and the reason `scope` is a field
+    // rather than a rewrite: with `scope: null` the sentence is the one bar 13
+    // asked for, to the byte, in every arm and both directions.
+    const cases: Array<[string, DrawnWindow]> = [
+      ["filled", { ...DRAWN, truncated: true }],
+      ["not filled", cameBackShort(5)],
+      ["empty", cameBackShort(0, { oldest: null })],
+    ];
+    for (const shows of EVERY_KIND) {
+      for (const [state, drew] of cases) {
+        const text = textOf(drawn(shows, drew));
+        const narrowed = textOf(drawn(shows, { ...drew, scope: [NARROWED] }));
+        // Nothing of the facet leaks into the unnarrowed rendering…
+        expect(text, `${shows.of} ${state}`).not.toContain(NARROWED);
+        // …and the narrowing really did change what this state says, so the
+        // comparison above is not passing over two identical strings. Every
+        // arm, in every direction: the `matched` arm's FILLED clause was the
+        // one pair equal by design until admin-window/BUG-0118, which is
+        // exactly how it came to state one bucket's count over "these
+        // filters".
+        expect(narrowed, `${shows.of} ${state}`).not.toBe(text);
+      }
+    }
+    // The one sentence the bar wrote, spelled out once so a future edit that
+    // drops "nothing earlier is retained" from the unnarrowed arm is caught
+    // where it is decided rather than on five pages.
+    const floor = textOf(
+      drawn(
+        { of: "newest", lede: "The adapters’ newest runs, newest first", rows: "runs" },
+        cameBackShort(5),
+      ),
+    );
+    expect(floor).toContain(
+      `runs recorded since ${absoluteUtc(DRAWN.oldest)}; nothing earlier is retained`,
+    );
+  });
+
+  it("makes an omitted narrowing a compile error, not a default", () => {
+    // The fix is only a fix if the next drawn window cannot skip it: a
+    // defaulted `scope` is a narrowing nobody declared, and the sentence built
+    // on it is a confident claim about rows the read never saw. The window
+    // below omits it, and `tsc --noEmit` — which runs over this file — fails
+    // if that is ever allowed. The runtime assertion keeps the case honest:
+    // it must still be a window this component would render.
+    const omitted = {
+      limit: 50,
+      held: 5,
+      truncated: false,
+      over: "view" as const,
+      oldest: DRAWN.oldest,
+    };
+    // @ts-expect-error `scope` is required on every drawn window (admin-window/BUG-0114).
+    const bare: DrawnWindow = omitted;
+    expect(textOf(drawn({ of: "catalog", rows: "events" }, { ...bare, scope: null }))).toContain(
+      absoluteUtc(DRAWN.oldest),
+    );
+  });
+
+  /**
+   * A window a press CONTINUES — admin-window/BUG-0172.
+   *
+   * `drawn` is the one new fact on this primitive: the rows the operator now
+   * holds from this window, on a surface that may continue it. Two arms read
+   * it, because two surfaces page — `catalog` (`/browse`) and `matched`
+   * (`/claims`) — and its whole contract is graded here rather than through
+   * either page.
+   */
+  const PAGED: DrawnWindow = {
+    limit: 50,
+    held: 50,
+    truncated: true,
+    over: "view",
+    oldest: null,
+    scope: null,
+    // The first screen of a paged surface: it filled its cap, so the rows it
+    // put on screen ARE the cap, and no press has grown them yet.
+    drawn: 50,
+    // …and a press CAN continue it. Stated by the page, never read off
+    // `drawn`'s presence (admin-window/BUG-0183): the window above states the
+    // very same rows and offers no press at all.
+    continues: true,
+  };
+  /**
+   * The same window on a surface NO press can continue — every fact of the
+   * read kept, the affordance unstated (admin-window/BUG-0183).
+   *
+   * `continues` and `drawn` are two facts now, so "no press behind it" is
+   * spelled by dropping the affordance and NOT by dropping the rows on screen:
+   * a window that states no rows on screen is a third thing, graded on its own
+   * below.
+   */
+  const unpaged = (window: DrawnWindow): DrawnWindow => {
+    const facts = { ...window };
+    delete facts.continues;
+    return facts;
+  };
+  const PAGED_ARMS: DrawnSentence[] = [
+    { of: "catalog", rows: "events" },
+    { of: "matched", lede: "Oldest first.", rows: "claims" },
+  ];
+
+  it("renders the first screen's own sentence, to the byte, until a press appends a row", () => {
+    // SPEC F14's "the first screen does not change": a paged surface is drawn
+    // only on a window that FILLED, so before any press the rows it put on
+    // screen ARE the cap, and every arm must render exactly the markup the
+    // SAME window renders on a surface no press can continue — the sentence,
+    // the hooks and the element.
+    //
+    // The comparison is against the unpaged window rather than against a
+    // window with no `drawn`, because those are now two different facts: the
+    // rows on screen are stated by both surfaces, and only the affordance
+    // differs (admin-window/BUG-0183).
+    for (const shows of EVERY_KIND) {
+      expect(drawn(shows, PAGED), shows.of).toBe(drawn(shows, unpaged(PAGED)));
+      expect(drawn(shows, { ...PAGED, drawn: PAGED.limit }), shows.of).toBe(drawn(shows, PAGED));
+    }
+  });
+
+  it("states the rows on screen once the window has been continued", () => {
+    for (const shows of PAGED_ARMS) {
+      const continued = textOf(drawn(shows, { ...PAGED, held: 877, drawn: 120 }));
+      // The figure the operator can count on screen, in the app's own
+      // formatting — never the cap the first read carried.
+      expect(continued, shows.of).toContain(count(120));
+    }
+  });
+
+  it("never says a continued window did not fill, in either direction of its verdict", () => {
+    // The wrapper is only drawn on a window that filled, so "The window did
+    // not fill — 50 of at most 50" is a sentence no state of a paged surface
+    // may reach; the not-truncated case of a continued window is the set being
+    // complete on screen, which is a different sentence (criterion 3).
+    for (const shows of PAGED_ARMS) {
+      for (const truncated of [true, false]) {
+        const text = textOf(drawn(shows, { ...PAGED, truncated, drawn: 120 }));
+        expect(text, `${shows.of} truncated=${truncated}`).not.toContain("did not fill");
+        expect(text, `${shows.of} truncated=${truncated}`).toContain(count(120));
+      }
+      // …and the SAME window on a surface no press can continue still states
+      // its own emptiness the way it always has, so the clause was narrowed
+      // and not deleted.
+      expect(
+        textOf(drawn(shows, { ...unpaged(PAGED), truncated: false, held: 12, drawn: 12 })),
+        shows.of,
+      ).toContain("did not fill");
+    }
+  });
+
+  it("takes the held-back verdict from `truncated` alone, never from the rows beside it", () => {
+    // LESSONS 11. A window continued to 120 rows says rows are held back or
+    // does not, by its own flag — and the same `drawn` renders both, so no arm
+    // is deciding by comparing figures.
+    for (const shows of PAGED_ARMS) {
+      const held = textOf(drawn(shows, { ...PAGED, held: 877, truncated: true, drawn: 120 }));
+      const complete = textOf(drawn(shows, { ...PAGED, held: 877, truncated: false, drawn: 120 }));
+      expect(held, shows.of).not.toBe(complete);
+      const $held = cheerio.load(drawn(shows, { ...PAGED, truncated: true, drawn: 120 }));
+      const $complete = cheerio.load(drawn(shows, { ...PAGED, truncated: false, drawn: 120 }));
+      expect($held("[data-window]").attr("data-window-truncated"), shows.of).toBe("true");
+      expect($complete("[data-window]").attr("data-window-truncated"), shows.of).toBe("false");
+    }
+  });
+
+  /**
+   * The three defects of one sentence — admin-window/BUG-0174.
+   *
+   * The designer walked a production build against staging and measured, at
+   * 877 claim rows with `[data-paging="exhausted"]` below them: "A window of
+   * at most 50 rows, NOT THE WHOLE VIEW. 877 claims in all; THE 877
+   * LONGEST-WAITING are below". A cap that is the size of one press stated as
+   * the size of the screen; a denial of being the whole set three lines above
+   * a control that says it is; and a superlative over a set with nothing
+   * outside it. `/browse` said the same at 120 events.
+   *
+   * These grade what a sentence may not ASSERT and which fact each number
+   * comes from. No word of product copy is pinned: the two clauses below are
+   * read out of the app's own vocabulary ("at most" is how every arm in this
+   * file spells a cap, "not the whole" how it spells the denial), and every
+   * number is checked against the read that established it.
+   */
+
+  /** The cap clause, in the one spelling every arm of this file uses. */
+  const A_CAP = "at most";
+  /** The denial, in the one spelling the two paged arms used. */
+  const NOT_THE_WHOLE = "not the whole";
+
+  /** Every state a press can leave a paged window in, both paged arms. */
+  const continuedStates: [string, Partial<DrawnWindow>][] = [
+    ["continued, still offering more", { held: 877, truncated: true, drawn: 120 }],
+    ["continued to the end of the set", { held: 120, truncated: false, drawn: 120 }],
+    ["ended with nothing appended", { held: 877, truncated: false, drawn: 50 }],
+  ];
+
+  it("a continued window states no cap of its own", () => {
+    // 50 is the size of ONE press, not a description of a screen holding 120:
+    // the same class admin-window/BUG-0172 fixed for the truncated clause and
+    // left standing in the clause beside it (criterion 1).
+    for (const shows of PAGED_ARMS) {
+      for (const [state, facts] of continuedStates) {
+        const text = textOf(drawn(shows, { ...PAGED, ...facts }));
+        expect(text, `${shows.of} / ${state}`).not.toContain(A_CAP);
+      }
+      // Non-vacuity, and SPEC F14: the FIRST screen still states its cap —
+      // there the cap is what the read carried and what it drew.
+      expect(textOf(drawn(shows, { ...PAGED, drawn: PAGED.limit })), shows.of).toContain(A_CAP);
+    }
+  });
+
+  it("a continued window that is complete on screen denies nothing", () => {
+    for (const shows of PAGED_ARMS) {
+      // The read has said the set has ended, so the line may not go on denying
+      // that this is the whole view — the control below says it is, and one
+      // page does not answer one question twice (criterion 2, LESSONS 11).
+      const ended = textOf(drawn(shows, { ...PAGED, held: 120, truncated: false, drawn: 120 }));
+      expect(ended, shows.of).not.toContain(NOT_THE_WHOLE);
+      // …and it does not RANK a set with nothing outside it: where the rows
+      // below are the whole count, the number is stated once and the sentence
+      // says the set is complete rather than selecting from it (criterion 3).
+      expect(ended.split(count(120)).length - 1, shows.of).toBe(1);
+      expect(ended, shows.of).not.toContain("longest-waiting");
+
+      // Non-vacuity: the same arm still denies being the whole set on the
+      // first screen, where that is true.
+      expect(
+        textOf(drawn(shows, { ...PAGED, drawn: PAGED.limit })),
+        shows.of,
+      ).toContain(NOT_THE_WHOLE);
+      // …and a continued window that is NOT at the end still says rows are
+      // held back, ranking included where a count established the rest.
+      const more = textOf(drawn(shows, { ...PAGED, held: 877, truncated: true, drawn: 120 }));
+      expect(more, shows.of).toContain(count(120));
+      expect(more, shows.of).not.toBe(ended);
+    }
+
+    // The narrowed matched arm obeys the same rule, over its own population.
+    const narrowed = textOf(
+      drawn(
+        { of: "matched", lede: "Oldest first.", rows: "claims" },
+        {
+          ...PAGED,
+          held: 108,
+          truncated: false,
+          drawn: 108,
+          scope: [NARROWED_BY_FILTERS],
+        },
+      ),
+    );
+    expect(narrowed).toContain("match these filters");
+    expect(narrowed).not.toContain(NOT_THE_WHOLE);
+    expect(narrowed).not.toContain("longest-waiting");
+    expect(narrowed.split(count(108)).length - 1).toBe(1);
+  });
+
+  it("names the rows DRAWN for what is on screen, and never the cap", () => {
+    // BUG-0172's residual (b), as a criterion: on a paged surface `drawn` is
+    // always a number and it is the only honest source of "what is on screen".
+    // The fixture is the reachable divergence — a count of 877 over a read
+    // that returned 50 and then said no more — where the arm used to render
+    // the CAP's number as the screen's (criterion 5).
+    for (const shows of PAGED_ARMS) {
+      const zeroAppend = { ...PAGED, held: 877, truncated: false, drawn: 50 };
+      // The same facts under a different CAP render the same sentence: no
+      // clause of a continued or ended window takes its number from `limit`.
+      expect(
+        textOf(drawn(shows, zeroAppend)),
+        shows.of,
+      ).toBe(textOf(drawn(shows, { ...zeroAppend, limit: 10 })));
+      // …and the number it names for the screen follows the rows drawn.
+      expect(textOf(drawn(shows, { ...zeroAppend, drawn: 70 })), shows.of).toContain(count(70));
+    }
+
+    // On the arm that HAS a second read, the divergence is stated as two reads
+    // and the set is never called complete on screen while a larger count is
+    // named: the sentence is a DIFFERENT sentence from the one the same arm
+    // renders where one read established completeness, not the same words with
+    // other numbers (LESSONS 2).
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const shape = (window: DrawnWindow): string =>
+      textOf(drawn(matched, window)).replace(/[\d,]+/g, "#");
+    const diverged = shape({ ...PAGED, held: 877, truncated: false, drawn: 50 });
+    const agreed = shape({ ...PAGED, held: 877, truncated: false, drawn: 877 });
+    expect(diverged).not.toBe(agreed);
+    // Both numbers are still on screen — the divergence is stated, not hidden.
+    const text = textOf(drawn(matched, { ...PAGED, held: 877, truncated: false, drawn: 50 }));
+    expect(text).toContain(count(877));
+    expect(text).toContain(count(50));
+  });
+
+  /** Every figure a rendered line prints, in the app's own formatting. */
+  const figuresIn = (text: string): string[] =>
+    text.match(/\d{1,3}(?:,\d{3})*/g) ?? [];
+
+  it("names no rows below a window that states none, and invents no figure in their place", () => {
+    // CRITERION 3, admin-window/BUG-0183. `drawn` is the rows a window PUT ON
+    // SCREEN; a window that states none has no such number, so the two arms
+    // that name what is BELOW the line name nothing at all — and never reach
+    // for the cap, which is the size of a window and not a description of a
+    // screen. Neither page can reach this state now that both state the rows
+    // they drew, so the window is built here directly.
+    const silent: DrawnWindow = {
+      limit: 50,
+      held: 900,
+      truncated: true,
+      over: "view",
+      oldest: null,
+      scope: null,
+    };
+    /** The same read, stating what it drew — the window both pages compose. */
+    const states = (rows: number): DrawnWindow => ({ ...silent, drawn: rows });
+
+    for (const shows of PAGED_ARMS) {
+      // Whether a press could continue it does not conjure a number either:
+      // continuability and the rows on screen are two facts (criterion 2).
+      for (const continues of [undefined, true] as const) {
+        const window: DrawnWindow =
+          continues === undefined ? silent : { ...silent, continues: true };
+        const where = `${shows.of} / continues=${String(continues)}`;
+        const html = drawn(shows, window);
+        // Every figure it prints is one the WINDOW states, and here that is
+        // the cap alone, stated as a cap. Nothing stands in for the rows.
+        expect(figuresIn(textOf(html)), where).toEqual([count(silent.limit)]);
+        // …and it is still a window line, with the hooks an oracle reads.
+        expect(tagsOf(html), where).toEqual(["p"]);
+        expect(cheerio.load(html)("[data-window]").length, where).toBe(1);
+      }
+    }
+
+    // The matched arm, where the clause that vanished lived: the silent line
+    // says only what two windows drawing DIFFERENT numbers of rows both say,
+    // and stops before the clause those two disagree in. No word is pinned —
+    // the renderings are compared against each other.
+    const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
+    const line = textOf(drawn(matched, silent));
+    const many = textOf(drawn(matched, states(37)));
+    const few = textOf(drawn(matched, states(10)));
+    expect(many).not.toBe(few);
+    expect(many.startsWith(line)).toBe(true);
+    expect(few.startsWith(line)).toBe(true);
+    expect(line.length).toBeLessThan(sharedPrefix(many, few).length);
+
+    // `didNotFill` is untouched: it names `held`, a figure a read really
+    // established, so a window that did not fill still renders it.
+    for (const shows of PAGED_ARMS) {
+      expect(
+        textOf(drawn(shows, { ...silent, held: 12, truncated: false })),
+        shows.of,
+      ).toContain(count(12));
+    }
+
+    // A comparison no read supports is not an agreement (criterion 3): one
+    // read happened here, not two, so there is nothing to agree.
+    expect(readsAgree(silent)).toBe(false);
+    expect(readsAgree({ ...silent, held: 0, truncated: false })).toBe(false);
+    // Non-vacuity: the same read STATING its rows answers both verdicts.
+    expect(readsAgree(states(37))).toBe(true);
+    expect(readsAgree({ ...states(37), held: 37, truncated: false })).toBe(true);
+    expect(readsAgree({ ...states(900), held: 900, truncated: true })).toBe(false);
+  });
+
+  it("states nothing of its own from whose number `held` is", () => {
+    // `heldFrom` is read by `PagedWindowLine` alone (admin-window/BUG-0174):
+    // it decides which number `held` publishes, never a word of the sentence,
+    // so a window that states it renders byte-identically to one that does not
+    // — which is what keeps the nine unpaged lines and the first screen where
+    // they are.
+    for (const shows of EVERY_KIND) {
+      for (const heldFrom of ["this window", "a count read"] as const) {
+        expect(drawn(shows, { ...PAGED, heldFrom, drawn: 120 }), `${shows.of} / ${heldFrom}`).toBe(
+          drawn(shows, { ...PAGED, drawn: 120 }),
+        );
+        expect(drawn(shows, { ...DRAWN, heldFrom }), `${shows.of} / ${heldFrom}`).toBe(
+          drawn(shows, DRAWN),
+        );
+      }
+    }
+  });
+
+  it("publishes no new attribute for it", () => {
+    // The first screen is byte-identical (SPEC F14, ARCHITECTURE.md §5) and an
+    // added attribute is not. `drawn` changes the sentence, and the number
+    // `held` already publishes.
+    const $ = cheerio.load(drawn(PAGED_ARMS[0], { ...PAGED, drawn: 120 }));
+    const published = Object.keys($("[data-window]").attr() ?? {}).filter((name) =>
+      name.startsWith("data-window"),
+    );
+    expect(published.sort()).toEqual([...HOOKS_EVERY_WINDOW].sort());
+  });
+
+  /**
+   * THE FOUR STATES TWO READS LEAVE THE `matched` ARM IN — admin-window/BUG-0186.
+   *
+   * `/claims` issues the count and the window as TWO reads of one view, and
+   * the arm's fill verdict was the COUNT's: its gate is `truncated`, which the
+   * page derives from the count alone (`listCount.data > listed.length`). A
+   * claim the resolver applies between the two reads makes the count the
+   * SMALLER number, the gate goes false, and the did-not-fill clause rendered
+   * over a screen holding MORE rows than the number it named — at 50 rows
+   * under a cap of 50, over a window that had demonstrably filled. Measured on
+   * the pre-ticket tree: (50, 30), (49, 30), (37, 30), (30, 30) and (50, 50)
+   * all rendered ONE sentence, so a screen holding 50 and a screen holding 30
+   * were described identically.
+   *
+   * The verdict now comes from the ROW read against its own cap and from
+   * nothing else, and where it may not speak each read is stated as its own
+   * fact. Graded here, at the component, because the arm is a shared primitive
+   * and the state table is its own: the page reaches four of these states and
+   * the fixtures below reach all of them.
+   */
+  /** The page's own words, which the call site hands the line (not a product
+   *  sentence this file may not spell — the fixture IS this file's input). */
+  const MATCHED_LEDE = "Oldest first.";
+  const matchedRows: DrawnSentence = { of: "matched", lede: MATCHED_LEDE, rows: "claims" };
+
+  /**
+   * The window `/claims` composes on its UNPAGED arm, with the two reads set
+   * independently: `drawn` is the rows the page put on screen, `held` is the
+   * count read's number, and `truncated` is the page's own derivation from the
+   * two (`src/app/claims/page.tsx`) rather than a fact this file sets by hand.
+   */
+  const twoReads = (rows: number, countRead: number): DrawnWindow => ({
+    limit: 50,
+    held: countRead,
+    truncated: countRead > rows,
+    over: "view",
+    // `/claims` draws longest-waiting first, so its bottom row is not its
+    // oldest and its window names no floor (admin-window/BUG-0109).
+    oldest: null,
+    scope: null,
+    drawn: rows,
+  });
+
+  /** Every run of digits masked, so no word of any sentence is pinned here. */
+  const digitMasked = (text: string): string => text.replace(/\d[\d,]*/g, "#");
+  const shapeOf = (rows: number, countRead: number): string =>
+    digitMasked(textOf(drawn(matchedRows, twoReads(rows, countRead))));
+
+  it("renders a DISTINCT sentence for each of the four states its two reads leave it in [admin-window/BUG-0186]", () => {
+    // Non-vacuity first, from the window's own hooks: every fixture really is
+    // the unpaged arm of a window the count did not exceed — the one state
+    // where the fill verdict is rendered at all.
+    for (const [rows, countRead] of [
+      [50, 50],
+      [50, 30],
+      [30, 30],
+      [37, 30],
+    ] as const) {
+      const where = `${rows} rows / count ${countRead}`;
+      const published = cheerio.load(drawn(matchedRows, twoReads(rows, countRead)))(
+        "[data-window]",
+      );
+      expect(published.attr("data-window-truncated"), where).toBe("false");
+      expect(published.attr("data-window-limit"), where).toBe(String(50));
+      expect(published.attr("data-window-held"), where).toBe(String(countRead));
+    }
+
+    // {the rows reached the cap, the rows fell short} x {the reads agree, they
+    // disagree}: four states, four sentences. No word of any of them is pinned
+    // — the four renderings are compared with each other, with every figure
+    // masked out, so a copy edit that changes all four together still passes
+    // and a state that says what another state says cannot.
+    const four = [shapeOf(50, 50), shapeOf(50, 30), shapeOf(30, 30), shapeOf(37, 30)];
+    expect(new Set(four).size, four.join("\n")).toBe(4);
+
+    // …and the verdict follows the ROWS against the cap rather than the count:
+    // two screens under ONE count that both fell short say the same thing, and
+    // the screen that reached the cap under that same count says another.
+    expect(shapeOf(49, 30)).toBe(shapeOf(37, 30));
+    expect(shapeOf(49, 30)).not.toBe(shapeOf(50, 30));
+    // An empty read lands in the short arms too, with the sentence that state
+    // has always had — never either of the two the cap was reached in.
+    expect(shapeOf(0, 0)).not.toBe(shapeOf(50, 50));
+    expect(shapeOf(0, 0)).not.toBe(shapeOf(50, 30));
+  });
+
+  it("prints no figure but the cap, the count read's number and the rows it drew [admin-window/BUG-0186]", () => {
+    // Every number in the line is a number one of this screen's reads
+    // established: no difference between the two reads, no percentage, no
+    // rank, and never the cap standing in for a row count. The truncated
+    // fixtures are here too, so the clause beside the changed one is held to
+    // the same rule. Every figure is below 1,000, so `count()` inserts no
+    // separator and a run of digits is a whole figure.
+    for (const [rows, countRead] of [
+      [50, 50],
+      [50, 30],
+      [30, 30],
+      [37, 30],
+      [49, 30],
+      [0, 0],
+      [37, 900],
+      [0, 900],
+    ] as const) {
+      const window = twoReads(rows, countRead);
+      const where = `${rows} rows / count ${countRead}`;
+      const established = [count(window.limit), count(countRead), count(rows)];
+      const printed = figuresIn(textOf(drawn(matchedRows, window)));
+      // Non-vacuous: the line really does print figures.
+      expect(printed.length, where).toBeGreaterThan(0);
+      for (const figure of printed) {
+        expect(established, `${where} printed ${figure}`).toContain(figure);
+      }
+    }
+  });
+
+  /**
+   * BYTE-IDENTITY FOR EVERY STATE THAT IS NOT THE DEFECT —
+   * admin-window/BUG-0186 criterion 4.
+   *
+   * The two arms the ruling changes are the only two that may move, so each
+   * other state is pinned against the sentence the pre-ticket tree rendered,
+   * to the byte (measured through this component on a988b00, which carries
+   * this file's pre-ticket `window-line.tsx` unchanged). These are the one
+   * place in this describe that pins product words, and they are here on
+   * purpose: the words are the designer's, and the ticket's job was to move
+   * two states and nothing else.
+   *
+   * THREE OF THOSE PINS ARE NOW STRUCTURAL — admin-window/BUG-0197. The two
+   * held-back states at (a) and the paged held-back arm at (e) held the
+   * ranking-and-withholding clause verbatim, which was BUG-0186's proof that
+   * it moved two arms and nothing else; QA has since measured that proof
+   * cross-tree, so what is left to hold is what the tickets DECIDED, not the
+   * designer's copy of it. The three are graded below by the figures each
+   * clause carries, by which clause each state renders, and by which arms
+   * render the SAME clause — every figure masked, no word of the sentence
+   * spelled in this file. (b), (c), (d) and the paged arm's other two states
+   * are untouched byte pins.
+   */
+  const FIRST_SCREEN = "Oldest first. A window of at most 50 rows, not the whole view.";
+
+  it("leaves every state but the two the ruling moves byte-identical [admin-window/BUG-0186]", () => {
+    const lineOf = (window: DrawnWindow) => textOf(drawn(matchedRows, window));
+
+    /** A window that states NO rows on screen: one read, not two (d). */
+    const silentWindow = (held: number, truncated: boolean): DrawnWindow => ({
+      limit: 50,
+      held,
+      truncated,
+      over: "view",
+      oldest: null,
+      scope: null,
+    });
+    /** The same arm on a surface a press CONTINUES (e). */
+    const paged = (facts: Partial<DrawnWindow>): DrawnWindow => ({
+      ...PAGED,
+      ...facts,
+    });
+
+    // (a) the held-back states — the count exceeded the rows, which is the
+    // clause admin-window/BUG-0183 fixed. Held STRUCTURALLY since
+    // admin-window/BUG-0197 took the empty one of them out of that clause: no
+    // word of the sentence is spelled here, so the designer's copy may move,
+    // and what is graded is what the two tickets decided.
+    //
+    // The opening both states share — the lede and the cap clause — is taken
+    // from the component itself, as the line of a window that states no rows
+    // at all, so this comparison holds no words either.
+    const drew37 = lineOf(twoReads(37, 900));
+    const drewNone = lineOf(twoReads(0, 900));
+    const opening = lineOf(silentWindow(900, true));
+    expect(drew37.startsWith(opening)).toBe(true);
+    expect(drewNone.startsWith(opening)).toBe(true);
+
+    // What each adds to that opening, every figure masked.
+    const heldBack = digitMasked(drew37).slice(digitMasked(opening).length);
+    const countClause = digitMasked(drewNone).slice(digitMasked(opening).length);
+    // Non-vacuous: each really is a clause, and they are not the same one.
+    expect(heldBack.length).toBeGreaterThan(0);
+    expect(countClause.length).toBeGreaterThan(0);
+    expect(heldBack).not.toBe(countClause);
+
+    // The figures each line prints, in the order it prints them: the cap, the
+    // count read's number, and — where the window DREW rows — the rows it
+    // drew. A window that drew none prints no third figure at all: there is no
+    // `0` rank in the line and no rest to withhold (admin-window/BUG-0197).
+    expect(figuresIn(drew37)).toEqual([count(50), count(900), count(37)]);
+    expect(figuresIn(drewNone)).toEqual([count(50), count(900)]);
+
+    // …and the clause the empty window stops after is the one the drawn window
+    // OPENS its clause with — the count read's fact, stated once, the same way
+    // in both, with the ranking-and-withholding half absent rather than
+    // emptied. Only the terminator stands between them.
+    expect(heldBack.startsWith(countClause.slice(0, -1))).toBe(true);
+
+    // (b) the rows fell short of the cap and the two reads agree — the one
+    // state `didNotFill` may still speak in.
+    expect(lineOf(twoReads(30, 30))).toBe(
+      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
+    );
+
+    // (c) the empty read, which is its own sentence.
+    expect(lineOf(twoReads(0, 0))).toBe(
+      `${FIRST_SCREEN} The window did not fill: the read happened and found no claims at all.`,
+    );
+
+    // (d) a window that states NO rows on screen: one read, not two, so there
+    // is nothing here to diverge and both arms say what they always said
+    // (admin-window/BUG-0183). Its fixture is hoisted to the top of this case,
+    // where (a) reads the opening off it.
+    expect(lineOf(silentWindow(900, true))).toBe(FIRST_SCREEN);
+    expect(lineOf(silentWindow(30, false))).toBe(
+      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
+    );
+
+    // (e) the PAGED arm, in all three of its states — including the
+    // disagreeing one, which is where a window whose reads diverge already
+    // stated each read as its own fact (admin-window/BUG-0174). The ruling
+    // moves the unpaged arm to that same rule and leaves these untouched.
+    //
+    // Its held-back state is the third structural pin (admin-window/BUG-0197):
+    // it is the lede plus the very clause the drawn unpaged window ends with —
+    // ONE clause rendered by two arms, which is the fact worth holding — and
+    // it names the two figures two reads established, with no cap of its own,
+    // because 50 is the size of one press and not a description of a screen.
+    const pagedHeldBack = paged({ held: 877, truncated: true, drawn: 120 });
+    expect(digitMasked(lineOf(pagedHeldBack))).toBe(`${MATCHED_LEDE}${heldBack}`);
+    expect(figuresIn(lineOf(pagedHeldBack))).toEqual([count(877), count(120)]);
+    expect(lineOf(paged({ held: 120, truncated: false, drawn: 120 }))).toBe(
+      "Oldest first. 120 claims in all, and every one of them is below — the read found no more.",
+    );
+    expect(lineOf(paged({ held: 30, truncated: false, drawn: 50 }))).toBe(
+      "Oldest first. A count of claims answered 30; the reads returned the 50 below, and the read found no more.",
+    );
+  });
+
+  it("says what the count read found and stops, where the window drew no rows [admin-window/BUG-0197]", () => {
+    // THE ARM THIS TICKET MOVES. A window whose COUNT read answered a number
+    // and whose ROW read drew nothing rendered the held-back clause anyway: it
+    // ranked a set with nothing in it — a superlative over `0` rows — and then
+    // apologised for withholding a rest, directly above the card whose whole
+    // job is to say the read came back empty. A window that drew none has
+    // nothing to rank and nothing to hold back, so the line states what the
+    // count read found and stops. (The sentence itself is quoted in the
+    // ticket, not here: this file spells no word of it.)
+    //
+    // No word is pinned: the states are rendered and compared with each other
+    // with every figure masked, so a copy edit that moves the clause moves
+    // both and this still grades the decision.
+    const drewNone = twoReads(0, 900);
+    // Non-vacuity, from the window's own facts: the count answered a non-zero
+    // number, the row read drew nothing, and the count exceeds the rows — the
+    // state the held-back clause is rendered in.
+    expect(drewNone.drawn).toBe(0);
+    expect(drewNone.held).toBe(900);
+    expect(drewNone.truncated).toBe(true);
+    // …and it is the HELD-BACK state, not one of the diverged ones: the count
+    // is larger than the rows drawn, which is the reading that used to make
+    // "the rest are not shown" sayable here.
+    expect(readsAgree(drewNone)).toBe(true);
+
+    // A DIFFERENT sentence from the drawn window's, not the same sentence with
+    // a `0` in it — which is the whole of the ticket, with every digit masked.
+    expect(shapeOf(0, 900)).not.toBe(shapeOf(37, 900));
+    // …and the same sentence whatever the count answered, because what dropped
+    // is the clause about the ROWS.
+    expect(shapeOf(0, 900)).toBe(shapeOf(0, 51));
+
+    // The only figures it prints are the cap and the count read's number: no
+    // rank, no rest, and no `0` standing in for a row count.
+    expect(figuresIn(textOf(drawn(matchedRows, drewNone)))).toEqual([count(50), count(900)]);
+
+    // The count clause is a fact its own read established and it stays — an
+    // operator who sees it over an empty card learns the real thing, that the
+    // two reads disagree.
+    expect(textOf(drawn(matchedRows, drewNone))).toContain(count(900));
+
+    // A press being available changes nothing here: the paged arm cannot reach
+    // the held-back clause on a window that drew no rows (it is not continued
+    // and the read has not ended), so both say the same thing.
+    expect(
+      digitMasked(
+        textOf(drawn(matchedRows, { ...PAGED, held: 900, truncated: true, drawn: 0 })),
+      ),
+    ).toBe(shapeOf(0, 900));
+  });
+
+  it("is one paragraph carrying one window, whichever kind it is", () => {
+    for (const shows of [
+      { of: "newest", lede: "The newest cycles", rows: "cycles" },
+      { of: "matched", lede: "Oldest first.", rows: "claims" },
+      { of: "catalog", rows: "events" },
+      { of: "alphabetical", rows: "venues" },
+    ] as DrawnSentence[]) {
+      const html = drawn(shows);
+      expect(tagsOf(html), shows.of).toEqual(["p"]);
+      expect(cheerio.load(html)("[data-window]").length, shows.of).toBe(1);
+    }
+  });
+});
+
+/**
+ * Absence renders identically everywhere, or it does not render at all.
+ *
+ * LOOK_AND_FEEL, Data table: "A null renders as `—` in disabled-gray — never
+ * blank, never `null`, `N/A` or `none`." TASK-0004 seeds `nullDash()` so that
+ * "absence looks identical everywhere" (`src/lib/format.ts`, its own words).
+
+ * admin-window/BUG-0004 fixed the three ways this disagreed with itself: the
+ * primitives no longer carry their own guards, they ask `isAbsent()` in
+ * `src/lib/format.ts`, so a helper-produced dash, a falsy cell body and a
+ * non-finite figure all render the one `nullDash()`.
+ *
+ * These drive the two ways a page reaches a cell without going through a raw
+ * `null` — a formatting helper's string, and a falsy React body.
+ */
+describe("absence, across the format helpers and the primitives", () => {
+  type Missing = { id: string; n: number | null; at: string | null; flagged: boolean };
+  const missing: Missing[] = [{ id: "only", n: null, at: null, flagged: false }];
+  const dashCell = (html: string) =>
+    [...html.matchAll(/<td[^>]*class="([^"]*)"[^>]*>(.*?)<\/td>/g)].map((m) => ({
+      classes: m[1],
+      body: m[2],
+    }));
+
+  it("shows a helper-produced dash in disabled-gray, like every other dash in the row", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [
+          { key: "raw", label: "raw", cell: (row: Missing) => row.n },
+          { key: "count", label: "count", cell: (row: Missing) => count(row.n) },
+          { key: "age", label: "age", cell: (row: Missing) => relativeAge(row.at).text },
+          { key: "when", label: "when", cell: (row: Missing) => absoluteUtc(row.at) },
+        ] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const cells = dashCell(html);
+    expect(cells).toHaveLength(4);
+    // every one of the four is the same absence; every one must read the same
+    for (const cell of cells) {
+      expect(cell.body).toContain(EM_DASH);
+      expect(`${cell.classes} ${cell.body}`).toContain("text-ink-disabled");
+    }
+  });
+
+  it("never leaves a cell blank when its body is a falsy React node", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        // `row.flagged && <something>` is the idiom every page will reach for;
+        // it yields `false`, which React renders as nothing.
+        columns: [{ key: "f", label: "flagged", cell: (row: Missing) => row.flagged && "yes" }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).not.toBe("");
+    expect(cell.body).toContain(EM_DASH);
+  });
+
+  it("shows a figure that is not a number as the same dash a null figure gets", () => {
+    const nan = render(h(StatCard, { label: "runs", value: Number.NaN }));
+    expect(nan).toContain(EM_DASH);
+    expect(nan).toContain("text-ink-disabled");
+  });
+
+  it("dashes a truthy boolean cell body too, since React draws it as nothing either", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [{ key: "f", label: "flagged", cell: () => true }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).toContain(EM_DASH);
+    expect(cell.body).toContain("text-ink-disabled");
+  });
+
+  it("never mistakes a real zero for an absence, in a cell or in a figure", () => {
+    const html = render(
+      h(DataTable<Missing>, {
+        columns: [{ key: "z", label: "zero", cell: () => count(0) }] as Column<Missing>[],
+        rows: missing,
+        rowKey: (row: Missing) => row.id,
+      }),
+    );
+    const [cell] = dashCell(html);
+    expect(cell.body).toBe("0");
+    expect(render(h(StatCard, { label: "runs", value: 0 }))).not.toContain(EM_DASH);
+  });
+});
+
+/* ── the eyebrow, and the identifier it may carry ────────────────────────── */
+
+/**
+ * `Eyebrow` is the one place a machine identifier is allowed inside a `micro`
+ * label (campaign admin-window/BUG-0049).
+ *
+ * What is asserted here is the PROPERTY the fix has to hold — the identifier
+ * keeps its own case, keeps the mono face, and is not inside the element that
+ * uppercases — never the app's words, which pages own. The words are supplied
+ * by the test itself for exactly that reason.
+ */
+describe("Eyebrow", () => {
+  /** The element that actually carries a class, for one rendering. */
+  function spans(html: string) {
+    const $ = cheerio.load(html);
+    return $("span[class]")
+      .toArray()
+      .map((element) => ({
+        classes: ($(element).attr("class") ?? "").split(/\s+/),
+        text: $(element).text().replace(/\s+/g, " ").trim(),
+      }));
+  }
+
+  it("renders the app's own words as a plain micro label, as it always did", () => {
+    const html = render(h(Eyebrow, { label: "open decisions" }));
+    expect(textOf(html)).toBe("open decisions");
+    expect(classesOf(html)).toContain("type-micro");
+    // one element, not a wrapper and a child: a caller with no identifier gets
+    // exactly the markup that shipped before this component existed
+    expect(spans(html)).toHaveLength(1);
+  });
+
+  it("keeps an identifier verbatim, in mono, and out of the uppercasing element", () => {
+    const html = render(
+      h(Eyebrow, { label: { identifier: "data_conflict", words: "open age" } }),
+    );
+
+    // verbatim: the value the machine produced, character for character
+    expect(textOf(html)).toContain("data_conflict");
+    expect(textOf(html)).not.toContain("DATA_CONFLICT");
+
+    const identifier = spans(html).find((span) => span.text === "data_conflict");
+    expect(identifier).toBeDefined();
+    // mono, and its case survives whatever it is nested in: `type-data` is the
+    // step for a value the database produced, `normal-case` and
+    // `tracking-normal` are what an uppercasing ancestor cannot override
+    expect(identifier?.classes).toContain("type-data");
+    expect(identifier?.classes).toContain("normal-case");
+    expect(identifier?.classes).toContain("tracking-normal");
+    // and it is NOT inside the micro element — the browser uppercases whatever
+    // is, so nesting would undo the two classes above at every ancestor added
+    // later. This is the structural half of the guarantee.
+    expect(identifier?.classes).not.toContain("type-micro");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+
+    // our words still get the micro treatment
+    const words = spans(html).find((span) => span.text === "open age");
+    expect(words?.classes).toContain("type-micro");
+  });
+
+  it("puts a real space between the identifier and the words, not a flex gap", () => {
+    // A CSS gap is invisible to every reader of text — the accessible name,
+    // the parity readers, a screen reader — and JSX drops whitespace runs that
+    // contain a newline, so only the delivered markup proves it
+    // (admin-window/BUG-0045's `stuck_patterndial`, from the other side).
+    const html = render(
+      h(Eyebrow, { label: { identifier: "entity_link", words: "folded" } }),
+    );
+    expect(textOf(html)).toBe("entity_link folded");
+    expect(runTogetherWords(html)).toEqual([]);
+  });
+
+  it("renders a bare identifier with no trailing words when none are given", () => {
+    const html = render(h(Eyebrow, { label: { identifier: "source_id" } }));
+    expect(textOf(html)).toBe("source_id");
+    expect(uppercasedIdentifiers(html)).toEqual([]);
+    expect(classesOf(html)).toContain("type-data");
+  });
+
+  it("flattens to the same string it renders, for an accessible name", () => {
+    // `DataTable` names itself with `aria-label`, which takes a string and not
+    // markup, so the two must not drift.
+    for (const label of [
+      "open decisions",
+      { identifier: "source_id" },
+      { identifier: "data_conflict", words: "by week" },
+    ] as const) {
+      expect(microLabelText(label)).toBe(textOf(render(h(Eyebrow, { label }))));
+    }
+  });
+});
+
+/**
+ * The guard itself, proved on two inputs — one it MUST flag and one it must
+ * NOT (LESSONS 3). A grep guard that has never seen a passing spelling passes
+ * vacuously, and this one decides whether two page suites are meaningful.
+ */
+describe("the uppercased-identifier guard", () => {
+  it("flags an identifier concatenated into a micro label", () => {
+    // exactly what `/queues` shipped: `` `${stats.queue} open` `` handed to a
+    // StatCard as one string
+    const bad = render(h(StatCard, { label: "data_conflict open", value: 0 }));
+    expect(uppercasedIdentifiers(bad)).toEqual(["data_conflict open"]);
+  });
+
+  it("clears the same card once the identifier is out of the sans label", () => {
+    const good = render(
+      h(StatCard, { label: { identifier: "data_conflict", words: "open" }, value: 0 }),
+    );
+    expect(uppercasedIdentifiers(good)).toEqual([]);
+    // and the identifier really is still on the card — the guard is not
+    // satisfied by deleting the word
+    expect(textOf(good)).toContain("data_conflict");
+  });
+
+  /**
+   * The same two inputs one type step up, because the guard now reads `title`
+   * as well as `micro` (admin-window/BUG-0073). Without this pair the widening
+   * would be a line of code nothing exercises — a guard that has never flagged
+   * an h1 says nothing about h1s.
+   */
+  it("flags an identifier concatenated into a page title", () => {
+    // exactly what `/records/[table]/[id]` shipped: `` `${config.table} record` ``
+    const bad = render(h(Page, { title: "walk_sandbox record" }));
+    expect(uppercasedIdentifiers(bad)).toEqual(["walk_sandbox record"]);
+  });
+
+  it("clears the same page once the identifier is out of the title element", () => {
+    const good = render(
+      h(Page, { title: { identifier: "walk_sandbox", words: "record" } }),
+    );
+    expect(uppercasedIdentifiers(good)).toEqual([]);
+    expect(textOf(good)).toContain("walk_sandbox");
+  });
+});
+
+/* ── the dropped-parameter line, and its rule (admin-window/BUG-0141) ─────── */
+
+/**
+ * The sentence that says what the URL asked for and a page did not do. It was
+ * `/claims`' alone and is now a primitive, because `/queues` says it too and a
+ * second copy would be born without the four fixes that landed on the first
+ * (BUG-0123, BUG-0127, BUG-0136, BUG-0137 — ARCHITECTURE.md Common violations
+ * rows 9 and 15).
+ *
+ * Every behaviour those four bugs pinned is graded, unchanged, in
+ * `tests/offline/claims/{page,filters}.test.ts` — which did not move when the
+ * code did, and are the proof this was a MOVE. What is graded here is what the
+ * move added: the two page assumptions that became arguments, and the hooks the
+ * component publishes for any page that renders it.
+ */
+describe("droppedParams, the shared rule", () => {
+  it("skips the keys a page says it consumed, and only those", () => {
+    // `tab` is the default because both routes that carry a tab spell it that
+    // way, and every value of it lands on a real tab.
+    expect(droppedParams({ tab: "verdict_log", record_id: "r-1" }, {})).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+    // A route with no tab says so, and then `tab` is a dropped parameter like
+    // any other.
+    expect(droppedParams({ tab: "x" }, {}, [], [])).toEqual({
+      named: ["tab"],
+      withheld: 0,
+    });
+    // …and a route consuming something else names it.
+    expect(droppedParams({ cols: "a", record_id: "r-1" }, {}, [], ["cols"])).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+  });
+
+  it("asks the APPLIED narrowing by its own keys, never by a prototype's", () => {
+    // A URL may spell anything: `?constructor=1` must be answered by what the
+    // page applied, not by `Object.prototype.constructor` being present on
+    // every object in the language.
+    expect(droppedParams({ constructor: "1" }, {})).toEqual({
+      named: ["constructor"],
+      withheld: 0,
+    });
+    expect(droppedParams({ toString: "1" }, { bucket: "escalated" })).toEqual({
+      named: ["toString"],
+      withheld: 0,
+    });
+    // An applied key is still applied, and an explicitly-undefined one is not.
+    expect(droppedParams({ source_id: "s-1" }, { source_id: "s-1" })).toEqual({
+      named: [],
+      withheld: 0,
+    });
+    expect(droppedParams({ source_id: "s-1" }, { source_id: undefined })).toEqual({
+      named: ["source_id"],
+      withheld: 0,
+    });
+  });
+
+  it("reads a repeated key the way a page reads it: the first value", () => {
+    expect(droppedParams({ record_id: ["r-1", "r-2"] }, {})).toEqual({
+      named: ["record_id"],
+      withheld: 0,
+    });
+    expect(droppedParams({ record_id: [] }, {})).toEqual({ named: [], withheld: 0 });
+    expect(droppedParams({ record_id: [""] }, {})).toEqual({ named: [], withheld: 0 });
+  });
+});
+
+describe("DroppedParamsLine", () => {
+  const line = (dropped: Parameters<typeof DroppedParamsLine>[0]["dropped"]) =>
+    render(h(DroppedParamsLine, { dropped }));
+
+  it("renders nothing at all when nothing was dropped", () => {
+    expect(line({ named: [], withheld: 0 })).toBe("");
+  });
+
+  it("publishes the total and each spelled name as its own hook", () => {
+    const $ = cheerio.load(line({ named: ["record_id", "cols"], withheld: 1 }));
+    expect($("[data-dropped-params]").attr("data-dropped-params")).toBe("3");
+    expect(
+      $("[data-dropped-param]")
+        .toArray()
+        .map((element) => $(element).attr("data-dropped-param")),
+    ).toEqual(["record_id", "cols"]);
+    // The names are the app's identifier treatment, isolated left-to-right.
+    expect($('[data-dropped-param="record_id"]').attr("dir")).toBe("ltr");
+    expect(classesOf(line({ named: ["record_id"], withheld: 0 }))).toContain("type-data");
+  });
+
+  it("counts a withheld parameter without spelling it anywhere", () => {
+    const parked = "in_" + "window";
+    const html = line({ named: [], withheld: 1 });
+    expect(html).not.toContain(parked);
+    expect(cheerio.load(html)("[data-dropped-param]")).toHaveLength(0);
+    expect(cheerio.load(html)("[data-dropped-params]").attr("data-dropped-params")).toBe("1");
+  });
+});
+
+/* ── the identifier, and the face it now owns (admin-window/DEBT-0011) ────── */
+
+/**
+ * The machine identifier's one rendering.
+ *
+ * LOOK_AND_FEEL Voice bar 5 — identifiers "render verbatim in mono and are
+ * never prettified" — was two Tailwind classes hand-typed at 48 call sites in
+ * 26 files, which is how the campaign fixed the same breach three times one
+ * surface at a time (BUG-0112, then BUG-0120 "the face BUG-0112 fixed one
+ * paragraph above", then BUG-0121 "the face BUG-0120 fixed one route over"),
+ * and how two pages grew byte-identical private copies of it.
+ *
+ * Nothing here pins a class literal: the face is read off the primitive's own
+ * render, so a restyle moves these assertions with it. What is pinned is the
+ * behaviour — the text reaches the screen unchanged, the call site's hooks
+ * survive, and the box is bidi-isolated.
+ */
+describe("Identifier", () => {
+  const identifier = (props: Record<string, unknown> = {}) =>
+    render(h(Identifier, { children: "data_conflict", ...props }));
+
+  it("renders the identifier verbatim, in the mono step", () => {
+    const $ = cheerio.load(identifier());
+    const span = $("span");
+    expect(span).toHaveLength(1);
+    // Verbatim: same case, same underscore, nothing added and nothing removed.
+    expect(span.text()).toBe("data_conflict");
+    expect(classesOf(identifier())).toContain("type-data");
+    // ...and no ancestor of it uppercases, which is the defect BUG-0049/0073
+    // fixed one label at a time.
+    expect(uppercasedIdentifiers(identifier())).toEqual([]);
+  });
+
+  it("takes secondary ink where the surface has already said it louder", () => {
+    const loud = classesOf(identifier());
+    const quiet = classesOf(identifier({ muted: true }));
+    // The same type step either way — only the ink job differs, and both are
+    // tokens (the palette rules are swept in `tokens.test.ts`).
+    expect(quiet).toContain("type-data");
+    expect(quiet).not.toEqual(loud);
+  });
+
+  it("carries the call site's hooks, which is how oracles address it", () => {
+    const $ = cheerio.load(
+      identifier({ "data-run-failure-class": "adapter_timeout", id: "run-1" }),
+    );
+    expect($("[data-run-failure-class]").attr("data-run-failure-class")).toBe(
+      "adapter_timeout",
+    );
+    expect($("#run-1").text()).toBe("data_conflict");
+  });
+
+  /**
+   * The bidi isolation, on two fixtures (ARCHITECTURE §7, promoted from Common
+   * violations row 15; admin-window/BUG-0137). Foreign text reaches prose
+   * through an allowlist or inside its own isolated box — and an identifier
+   * span is exactly where foreign text lands. Hanging it off the primitive is
+   * the rule applied once instead of at 48 call sites.
+   *
+   * Fixture 1: an identifier carrying an unterminated RIGHT-TO-LEFT OVERRIDE,
+   * which before this could reorder the rest of the app's own sentence.
+   * Fixture 2: the app's own label beside it, which is not foreign text and
+   * must be left exactly as the page wrote it — a component that isolated
+   * everything would pass fixture 1 and say nothing.
+   */
+  it("isolates the identifier, and leaves an ordinary label alone", () => {
+    const RLO = "‮";
+    const $ = cheerio.load(
+      render(
+        h(
+          "p",
+          { className: "type-body" },
+          h(Eyebrow, { label: "failure class" }),
+          h(Identifier, { children: `adapter${RLO}timeout` }),
+          " says whose problem a failure is.",
+        ),
+      ),
+    );
+    const isolated = $("[dir]")
+      .toArray()
+      .map((element) => $(element).text());
+    expect(isolated).toEqual([`adapter${RLO}timeout`]);
+    // The override is still there — isolation reorders nothing and removes
+    // nothing, which is why it is the answer here and a blocklist is not.
+    expect($("[dir]").text()).toBe(`adapter${RLO}timeout`);
+    expect($("[dir]").attr("dir")).toBe("ltr");
+    // ...and the app's own words next to it were not touched.
+    expect($("p").text()).toContain(" says whose problem a failure is.");
+  });
+});
+
+/**
+ * One owner for the face (ARCHITECTURE §11 and Common violations row 16).
+ *
+ * The class pair is derived by RENDERING the primitive rather than typed here,
+ * so restyling the identifier moves this guard with it and no literal is
+ * pinned; what the guard forbids is a SECOND place in `src/` that spells
+ * whatever the primitive spells.
+ */
+describe("the identifier face has one owner", () => {
+  const OWNER = "src/components/ui/identifier.tsx";
+  const FACE = classesOf(render(h(Identifier, { children: "x" }))).join(" ");
+  const MUTED = classesOf(render(h(Identifier, { children: "x", muted: true }))).join(" ");
+
+  /** Every code line of `text` that spells the face itself. */
+  function handSpellingsIn(text: string): string[] {
+    return codeLinesIn(text)
+      .filter((line) => line.includes(FACE) || line.includes(MUTED))
+      .map((line) => line.trim());
+  }
+
+  it("flags a hand-spelled face and clears the primitive's own call", () => {
+    // Must flag: what `TableName` and `ReviewItems` were, and what 48 call
+    // sites spelled.
+    expect(
+      handSpellingsIn('  return <span className="type-data text-ink">{config.table}</span>;'),
+    ).toEqual(['return <span className="type-data text-ink">{config.table}</span>;']);
+    // Must NOT flag — or the sweep below is a formality: the primitive's own
+    // call, and a comment that names the rule while documenting it.
+    for (const clean of [
+      "  return <Identifier>{config.table}</Identifier>;",
+      "  <Identifier muted data-review-item={reviewItemId}>{reviewItemId}</Identifier>",
+      ' * the `type-data text-ink` span this primitive replaced',
+    ]) {
+      expect(handSpellingsIn(clean), clean).toEqual([]);
+    }
+  });
+
+  it("leaves no file under src/ but the primitive spelling the face", () => {
+    const files = sourceFiles();
+    // Non-vacuous on both sides: the walk is plainly the real tree, and the
+    // scanner really does see the spelling where it legitimately lives.
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain(OWNER);
+    expect(handSpellingsIn(sourceText(OWNER)).length).toBeGreaterThan(0);
+    expect(
+      files
+        .filter((file) => file !== OWNER)
+        .flatMap((file) => handSpellingsIn(sourceText(file)).map((line) => `${file}: ${line}`)),
+    ).toEqual([]);
+  });
+});

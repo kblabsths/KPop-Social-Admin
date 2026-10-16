@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0152",
+ "created": "2026-09-09T23:35:31Z",
+ "green": true,
+ "git_head": "c760e3cbcc863a4e8046621d4436156c54926137",
+ "scope": [
+  "src/components/evidence/evidence-pair.tsx",
+  "tests/offline/ui/evidence-pair.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "74e37cc204fb1184de78a031470c40d341d139888f870ea554ca76b0cc114c6a",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/evidence-pair.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-68343\n\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (33 tests) 77ms\n\n Test Files  1 passed (1)\n      Tests  33 passed (33)\n   Start at  16:35:30\n   Duration  600ms (transform 77ms, setup 0ms, collect 207ms, tests 77ms, environment 0ms, prepare 97ms)\n\n(node:68350) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

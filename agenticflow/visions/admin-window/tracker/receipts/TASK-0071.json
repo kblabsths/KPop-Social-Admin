@@ -1,0 +1,54 @@
+{
+ "id": "TASK-0071",
+ "created": "2026-09-11T12:25:41Z",
+ "green": true,
+ "git_head": "5a32d6505fd1219dff9a9d978beee1747c0dd591",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "src/components/claims/bucket-table.tsx",
+  "src/components/claims/tabs.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/gauges-ui",
+  "tests/live/claims.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 6,
+ "tree_hash": "d2a96484fceb34c14caf0f4eb423666bcf57cbd2bd26587eb9bd83c0fc7838dd",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/claims tests/offline/gauges-ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89437\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 12ms\n \u2713 |offline| tests/offline/claims/read.test.ts (45 tests) 72ms\n \u2713 |offline| tests/offline/gauges-ui/cards.test.ts (32 tests) 41ms\n \u2713 |offline| tests/offline/claims/page.test.ts (212 tests) 4869ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  394ms\n\n Test Files  4 passed (4)\n      Tests  337 passed (337)\n   Start at  05:24:13\n   Duration  5.75s (transform 1.13s, setup 0ms, collect 1.91s, tests 4.99s, environment 1ms, prepare 289ms)\n\n(node:89444) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/ui/copy.test.ts tests/offline/shell",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89437\n\n \u2713 |offline| tests/offline/ui/copy.test.ts (12 tests) 115ms\n \u2713 |offline| tests/offline/shell/client-boundary.test.ts (20 tests) 560ms\n   \u2713 the client boundary under src/ > really resolves server imports of client components  364ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (32 tests) 68ms\n\n Test Files  3 passed (3)\n      Tests  64 passed (64)\n   Start at  05:24:19\n   Duration  1.30s (transform 567ms, setup 0ms, collect 1.23s, tests 742ms, environment 0ms, prepare 177ms)\n\n(node:89483) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF 'it(\"says the bucket table answers for every bucket' tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(find src/app -name \"page.tsx\" | wc -l)\" -eq 9",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "iments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 6.7s\n  Running TypeScript ...\n  Finished TypeScript in 11.4s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 160ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-89437/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:89735) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "th edges  1311ms\n   \u2713 the Claims page's surface hooks against staging > names every surface on the page once, on both tabs  2185ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  3121ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  6218ms\n   \u2713 the classification buckets against staging > narrows the same way for every spelling of one source id  12193ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  1895ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  931ms\n   \u2713 which kind of fact a bucket figure is, against staging > labels each place a bucket count stands, on both tabs  1882ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  5149ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  1869ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  1372ms\n   \u2713 paging past the first window, against staging > reaches every claim the walked narrowing holds, once each, and no more  3353ms\n   \u2713 paging past the first window, against staging > answers ONE press past the unnarrowed first screen, from the oldest end  1967ms\n\n Test Files  1 passed (1)\n      Tests  17 passed (17)\n   Start at  05:24:52\n   Duration  48.29s (transform 325ms, setup 34ms, collect 568ms, tests 47.38s, environment 0ms, prepare 51ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:90095) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

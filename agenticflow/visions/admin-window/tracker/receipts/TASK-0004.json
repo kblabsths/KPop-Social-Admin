@@ -1,0 +1,74 @@
+{
+ "id": "TASK-0004",
+ "created": "2026-09-02T07:05:40Z",
+ "green": true,
+ "git_head": "c93d845c9d20620dea1524105048c3eeaeaabf33",
+ "scope": [
+  "src/app/globals.css",
+  "src/components/ui",
+  "src/components/evidence",
+  "src/lib/format.ts",
+  "tests/offline/ui",
+  "tests/offline/format.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "840d378884cd01e859e14112f48090f752f1aafd511e3b1dc0b47c60518d10da",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "\u25b2 Next.js 16.2.2 (Turbopack)\n- Environments: .env\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.5s\n  Running TypeScript ...\n  Finished TypeScript in 2.5s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 112ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u0192 /_not-found\n\u251c \u0192 /analytics\n\u251c \u0192 /api/admin/catalog-search\n\u251c \u0192 /api/admin/events/[id]\n\u251c \u0192 /api/admin/groups/[id]\n\u251c \u0192 /api/admin/idols/[id]\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /data-management\n\u251c \u0192 /data-management/completeness\n\u251c \u0192 /data-management/events\n\u251c \u0192 /data-management/groups\n\u251c \u0192 /data-management/idols\n\u251c \u0192 /database\n\u2514 \u0192 /login\n\n\n\u0192 Proxy (Middleware)\n\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78093/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:78181) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/ui",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78093\n\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (5 tests) 10ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (10 tests) 15ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 11ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (33 tests) 47ms\n\n Test Files  4 passed (4)\n      Tests  57 passed (57)\n   Start at  00:05:39\n   Duration  423ms (transform 197ms, setup 0ms, collect 465ms, tests 83ms, environment 0ms, prepare 255ms)\n\n(node:78230) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/format.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78093\n\n \u2713 |offline| tests/offline/format.test.ts (13 tests) 25ms\n\n Test Files  1 passed (1)\n      Tests  13 passed (13)\n   Start at  00:05:40\n   Duration  291ms (transform 29ms, setup 0ms, collect 43ms, tests 25ms, environment 0ms, prepare 49ms)\n\n(node:78269) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"grep -q @theme src/app/globals.css\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -f src/components/ui/loading.tsx && test -f src/components/ui/empty.tsx && test -f src/components/ui/not-provisioned.tsx && test -f src/components/ui/error-line.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -f src/components/ui/data-table.tsx && test -f src/components/ui/stat-card.tsx && test -f src/components/ui/badge.tsx && test -f src/components/ui/chip.tsx && test -f src/components/ui/button.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -f src/components/evidence/evidence-pair.tsx && test -f src/components/EditableCell.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test -f src/lib/format.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"! grep -rq @/lib/db src/components\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

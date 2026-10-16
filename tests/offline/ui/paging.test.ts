@@ -1,0 +1,2805 @@
+import * as cheerio from "cheerio";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as barrel from "@/components/ui";
+import { EM_DASH, count } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Identifier } from "@/components/ui/identifier";
+import { NotProvisioned } from "@/components/ui/not-provisioned";
+import { ARRIVES_WITH } from "@/components/ui/state-of";
+import {
+  ANSWERED_BY_SOMETHING_ELSE,
+  PageMore,
+  PagedWindowLine,
+  PagingProvider,
+  UNREADABLE_ANSWER,
+  fetchJson,
+  usePageRows,
+  usePaging,
+} from "@/components/ui/paging";
+import type { ReactNode } from "react";
+import { RECENT_EVENTS, configuredKeys } from "@/lib/browse/views";
+import { NARROW_THE_VIEW, PagedClaimList } from "@/components/claims/paged-claim-list";
+import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
+import { WindowLine, type DrawnSentence, type DrawnWindow } from "@/components/ui/window-line";
+import {
+  MAX_PAGE_OFFSET,
+  OFFSET_PARAM,
+  PAGE_ROUTES,
+  pageBound,
+  type PageAnswer,
+} from "@/lib/paging/bounds";
+import {
+  initialPage,
+  pageUrl,
+  requestPage,
+  type PageDeps,
+  type RowIdKey,
+  type PageRefusal,
+  type PageState,
+  type ReasonAuthor,
+} from "@/lib/paging/machine";
+
+import { codeLinesIn, sourceFiles, sourceText } from "../source-tree";
+import {
+  classesOf,
+  disagreeingCounts,
+  factoryTicketIds,
+  h,
+  render,
+  runTogetherWords,
+  textOf,
+  uppercasedIdentifiers,
+} from "./markup";
+
+/**
+ * The paging affordance — campaign admin-window/TASK-0064, SPEC F14.
+ *
+ * `PageMore` is a synchronous component over plain props, so every one of its
+ * five states is a rendered-markup assertion here and none of them needs a
+ * DOM, a browser or a request. `usePageRows` is the one thing in this repo
+ * that reaches the network, and it IS driven here — see the last block for why
+ * that is possible in a tier with no DOM, and for what the arrangement proves
+ * that a composition test could not.
+ */
+
+type Row = { id: string };
+
+/**
+ * WHAT A ROW IS CALLED, for the driver's dedupe — admin-window/BUG-0222.
+ *
+ * Every surface hands its own (`deps.idKey`, a NAME rather than a reader since
+ * admin-window/BUG-0226 — a function prop cannot cross the client boundary);
+ * these fixtures key their rows by `id`, so this is theirs, spelled once
+ * rather than retyped into each deps literal below.
+ */
+const ROW_ID: RowIdKey<Row> = "id";
+
+const HOLDS = "claims";
+const SIZE = 50;
+
+/**
+ * WHAT THE SURFACE OF EVERY FIXTURE BELOW OFFERS THE OPERATOR at the bound
+ * ceiling — `/claims`' own next step, imported from the surface that supplies
+ * it and never retyped here (LESSONS 5, admin-window/BUG-0198).
+ *
+ * The fixture of this whole file is a `/claims` surface: `HOLDS` is its noun
+ * and `PAGE_ROUTES.claims` is its route. Its next step travels with it, so the
+ * widget's arms are graded on a surface that really exists. A surface that
+ * offers nothing hands `null`, which is what `/browse` does and what the
+ * `PagedBrowseTable` block below grades.
+ */
+const NEXT_STEP = NARROW_THE_VIEW;
+
+/** A state a surface would really be in: a first screen, and nothing paged in yet. */
+function state(over: Partial<PageState<Row>> = {}): PageState<Row> {
+  return {
+    after: "",
+    rows: [],
+    held: SIZE,
+    status: "idle",
+    refusal: null,
+    notes: null,
+    // The ids a surface has drawn, and whether the list has moved under it
+    // (admin-window/BUG-0222). A first screen these fixtures do not enumerate
+    // names no id, and nothing has moved until a press says so.
+    drawnIds: new Set<string>(),
+    overlapped: false,
+    ...over,
+  };
+}
+
+/**
+ * The widget, over a state and the WINDOW VERDICT the surface hands it
+ * (admin-window/BUG-0180). It defaults to the agreeing surface — the one every
+ * case below this line is about — and the diverged one is passed explicitly
+ * where it is the subject.
+ */
+const more = (
+  over: Partial<PageState<Row>> = {},
+  readsAgree = true,
+  nextStep: string | null = NEXT_STEP,
+): string =>
+  render(
+    h(PageMore, { state: state(over), holds: HOLDS, size: SIZE, readsAgree, nextStep, onPress: () => {} }),
+  );
+
+/**
+ * The BROKEN arm's facts, with the condition asserted on the way through: the
+ * cases that read `reason`, `account` or `object` are about a press this
+ * app could not complete, and the absent arm carries none of those fields
+ * (admin-window/BUG-0176).
+ */
+type BrokenRefusal = Extract<PageRefusal, { condition: "broken" }>;
+function broken(refusal: PageRefusal | null | undefined): BrokenRefusal {
+  expect(refusal, "there is no refusal to read").toBeTruthy();
+  expect((refusal as PageRefusal).condition).toBe("broken");
+  return refusal as BrokenRefusal;
+}
+
+/**
+ * A broken refusal carrying ONE sentence by one author — the shape every arm
+ * but a failed read's publishes (admin-window/BUG-0196).
+ *
+ * The flat `reason` and the account's one run are the same words BY
+ * CONSTRUCTION here, exactly as `refuse()` builds them, so a case pinning the
+ * sentence and a case pinning the face are pinning the same thing. A case that
+ * needs an account with TWO authors writes the runs itself.
+ */
+function brokenArm(reason: string, author: ReasonAuthor, object: string | null): BrokenRefusal {
+  return { condition: "broken", reason, account: [{ words: reason, author }], object };
+}
+
+/** WHO WROTE a refusal whose account is one run — what `reasonFrom` carried. */
+function authorOf(refusal: BrokenRefusal): ReasonAuthor {
+  expect(refusal.account, "the account is not one run").toHaveLength(1);
+  return refusal.account[0].author;
+}
+
+/** A page of rows, as a stub would serve it. A FULL window is `pageOf(SIZE)`. */
+const pageOf = (count: number): Row[] => Array.from({ length: count }, (_, i) => ({ id: `r${i}` }));
+
+/** How many controls the markup drew. The control is a button; nothing else here is. */
+const controls = (html: string): number => (html.match(/<button/g) ?? []).length;
+
+/** Let every already-resolved promise in the chain run. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("PageMore draws its five states from props", () => {
+  it("idle: one control, naming what the next press gets", () => {
+    const html = more();
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+    // The next window's size in its words — the operator is told what a press
+    // costs, not "load more data".
+    expect(html).toContain(`Show the next ${SIZE} ${HOLDS}`);
+    expect(html).not.toContain('data-paging="exhausted"');
+    expect(html).not.toContain('data-paging="limit"');
+    expect(html).not.toContain("data-paging-refusal");
+  });
+
+  it("loading: the SAME control, inert", () => {
+    const html = more({ status: "loading" });
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="loading"');
+    expect(html).toContain("disabled");
+    // A working button never becomes "…" (the Button primitive's own rule):
+    // the label is what it was, so the control does not resize under the
+    // pointer that is still over it.
+    expect(html).toContain(`Show the next ${SIZE} ${HOLDS}`);
+    expect(html).not.toContain('data-paging="more"');
+  });
+
+  it("exhausted: NO control at all, and one sentence saying the set is complete", () => {
+    const html = more({ status: "exhausted", held: SIZE * 3 });
+    expect(controls(html)).toBe(0);
+    expect(html).toContain('data-paging="exhausted"');
+    expect(html).not.toContain('data-paging="more"');
+    expect(html).not.toContain('data-paging="loading"');
+    // One sentence, and it names what the surface holds.
+    expect((html.match(/<p/g) ?? []).length).toBe(1);
+    expect(html).toContain(HOLDS);
+  });
+
+  it("exhausted on a bound that is off the grid — the legitimate FINAL page — still says the set is complete", () => {
+    // admin-window/BUG-0168, the arm-ordering trap. A final page is allowed to
+    // be short, so an exhausted surface's `held` may sit between two windows:
+    // 80 against a window of 50. `pageBound` refuses that bound — and it
+    // should, there is no next press to serve — but the sentence the operator
+    // reads must be the set's completion, not "this view shows no further
+    // rows", which is the very sentence this ticket exists to remove.
+    const held = SIZE + 30;
+    // Non-vacuity: the fixture really is the collision — a bound `pageBound`
+    // refuses, on a state whose set really is finished.
+    expect(pageBound(String(held), SIZE).kind).toBe("refused");
+
+    const html = more({ status: "exhausted", held });
+    expect(controls(html)).toBe(0);
+    expect(html).toContain('data-paging="exhausted"');
+    expect(html).not.toContain('data-paging="limit"');
+    expect((html.match(/<p/g) ?? []).length).toBe(1);
+  });
+
+  it("exhausted where the surface's two reads DISAGREE: the same arm, a different claim [admin-window/BUG-0180]", () => {
+    // `/claims` counts its matching set and draws its rows in TWO reads, so a
+    // press can end the set with fewer rows on screen than the count the page
+    // publishes. No single read established completeness there, and this
+    // element is the one an operator acts on — it REPLACES the control, so
+    // there is nothing left to press.
+    //
+    // What does NOT move: the arm, the hook, the absence of a control and the
+    // noun. Only the claim does. No word of either sentence is pinned: the two
+    // renders are compared against EACH OTHER, and the words are the
+    // designer's.
+    const held = SIZE * 3;
+    const agreeing = more({ status: "exhausted", held });
+    const diverged = more({ status: "exhausted", held }, false);
+    expect(controls(diverged)).toBe(0);
+    expect(diverged).toContain('data-paging="exhausted"');
+    expect(diverged).not.toContain('data-paging="limit"');
+    expect(diverged).not.toContain('data-paging="more"');
+    expect((diverged.match(/<p/g) ?? []).length).toBe(1);
+    expect(diverged).toContain(HOLDS);
+    expect(diverged).not.toBe(agreeing);
+  });
+
+  it("renders the verdict it is handed, and compares no number of its own [admin-window/BUG-0180]", () => {
+    // Criterion 3, from the outside: the ONLY thing that moves this sentence
+    // is the verdict. One state, two verdicts — two sentences. One verdict,
+    // two states a size heuristic would tell apart (a `held` at the window and
+    // a `held` of 877 over the same rows) — one sentence, byte for byte. A
+    // control that compared anything of its own would fail the second half.
+    const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
+    expect(sentence(more({ status: "exhausted", held: SIZE }, true))).not.toBe(
+      sentence(more({ status: "exhausted", held: SIZE }, false)),
+    );
+    for (const agree of [true, false]) {
+      expect(sentence(more({ status: "exhausted", held: SIZE }, agree)), String(agree)).toBe(
+        sentence(more({ status: "exhausted", held: 877 }, agree)),
+      );
+    }
+  });
+
+  it("a next bound past the ceiling: no control either, and it does NOT say the set is finished", () => {
+    // The state the driver leaves a surface in past MAX_PAGE_OFFSET: a bound
+    // refusal returns to `idle` by design, so without this arm the surface
+    // would draw a control every press is refused for, forever (SPEC F10).
+    const held = MAX_PAGE_OFFSET + SIZE;
+    // Non-vacuity: the fixture really is a bound `pageBound` refuses, and the
+    // status really is the one that would otherwise draw a control.
+    expect(pageBound(String(held), SIZE).kind).toBe("refused");
+
+    const html = more({ held });
+    expect(controls(html)).toBe(0);
+    expect(html).toContain('data-paging="limit"');
+    // The set is NOT finished, and the surface must not say it is.
+    expect(html).not.toContain('data-paging="exhausted"');
+    expect((html.match(/<p/g) ?? []).length).toBe(1);
+  });
+
+  it("one window below the ceiling still draws the control, so the arm above is a rule and not a blanket", () => {
+    // The must-NOT-flag fixture (LESSONS 8). The largest bound this app will
+    // serve is MAX_PAGE_OFFSET itself, and a surface holding it is still one
+    // press away from more rows.
+    expect(pageBound(String(MAX_PAGE_OFFSET), SIZE).kind).toBe("ok");
+    const html = more({ held: MAX_PAGE_OFFSET });
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+    expect(html).not.toContain('data-paging="limit"');
+  });
+
+  it("a refusal: the line names its object and the control STAYS, because a refusal is retryable", () => {
+    const html = more({
+      refusal: brokenArm('no relation "pending_claims" exists', "the machine", "pending_claims"),
+    });
+    expect(html).toContain("data-paging-refusal");
+    // Both halves: the object the answer named, the words it used, and what
+    // the operator can do about it (LESSONS 1, CONTENT).
+    expect(html).toContain("pending_claims");
+    expect(html).toContain("no relation");
+    expect(html).toMatch(/[Pp]ress it again/);
+    // The bound did not move, so the control is still the same press.
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+  });
+
+  it("a bound refusal names no third object, and gets the reason alone rather than a dangling dash", () => {
+    // `PageRefusal.object` is null for a bound refusal: the bound the server
+    // refused is the one this state already holds.
+    const html = more({
+      refusal: brokenArm("that bound is not one this view serves", "this app", null),
+    });
+    expect(html).toContain("data-paging-refusal");
+    expect(html).toContain("that bound is not one this view serves");
+    expect(html).not.toContain("—");
+  });
+
+  it("a refusal on an exhausted set draws the line, and still no control", () => {
+    const html = more({
+      status: "exhausted",
+      refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+    });
+    expect(html).toContain("data-paging-refusal");
+    expect(controls(html)).toBe(0);
+    // And the fix it offers is one the operator can actually take: there is no
+    // control left to press.
+    expect(html).not.toMatch(/[Pp]ress it again/);
+  });
+
+  it("a refusal past the ceiling offers a fix the operator can actually take", () => {
+    // No control is drawn there either, so "press it again" would be an
+    // instruction to press nothing.
+    const html = more({
+      held: MAX_PAGE_OFFSET + SIZE,
+      refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+    });
+    expect(html).toContain("data-paging-refusal");
+    expect(html).toContain('data-paging="limit"');
+    expect(controls(html)).toBe(0);
+    expect(html).not.toMatch(/[Pp]ress it again/);
+  });
+
+  it("leaves the row markup handed to the surface untouched, refusal or not", () => {
+    // A refused page never half-fills the list and never re-draws it (M3 EC5).
+    // The rows are the page's, so the proof is that the same row markup
+    // renders byte-identically beside every state of this widget.
+    const rows = h(
+      "ul",
+      { "data-rows": "" },
+      ["a", "b", "c"].map((id) => h("li", { key: id }, id)),
+    );
+    const surface = (over: Partial<PageState<Row>>) =>
+      render(
+        h(
+          "div",
+          null,
+          rows,
+          h(PageMore, {
+            state: state(over),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: true,
+            nextStep: NEXT_STEP,
+            onPress: () => {},
+          }),
+        ),
+      );
+    const listOf = (html: string) => /<ul[^]*<\/ul>/.exec(html)?.[0] ?? "";
+    const clean = listOf(surface({}));
+    expect(clean).toContain("<li>a</li>");
+    for (const over of [
+      {
+        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+      },
+      { status: "loading" as const },
+      { status: "exhausted" as const },
+      { held: MAX_PAGE_OFFSET + SIZE },
+    ]) {
+      expect(listOf(surface(over)), JSON.stringify(over)).toBe(clean);
+    }
+  });
+});
+
+/**
+ * A PAGE ANSWER FOR AN OBJECT THIS DATABASE DOES NOT HAVE — admin-window/
+ * BUG-0176.
+ *
+ * MEASURED defect, on a production build against staging: forcing the route to
+ * answer `{kind:"not_provisioned", missing:"pending_claims"}` drew, in the
+ * broken red, `pending_claims — pending_claims is not provisioned    Press it
+ * again to ask for the same rows.` Four rules on one line: red for something
+ * unavailable rather than broken, the object said twice, no statement of what
+ * fills it, and a fix that cannot work — pressing a button does not provision
+ * a table. Ten pixels away on the same page, the paged LEG note for the same
+ * condition already drew the app's own gray clause.
+ *
+ * The arm this fires on is rare, deliberate and BUILT: the backing object
+ * disappears between the first screen and a press (the first screen would have
+ * rendered `NotProvisioned` and drawn no control at all).
+ */
+/**
+ * THE LIST MOVED UNDER THE OPERATOR, AND THE SURFACE SAYS SO — campaign
+ * admin-window/BUG-0222.
+ *
+ * The driver refuses to draw one id twice; a SILENT drop would hide the fact
+ * that produced it — that the rows on screen are not the rows the route is
+ * paging. So the fact travels on the state and this element states it once.
+ *
+ * Every case here grades the HOOK and the behaviour, never the wording: the
+ * words are the designer's and are graded at the walk (the ticket's criterion
+ * 3, and this file's standing rule for the terminal sentences).
+ */
+describe("the paging area states an overlap once, in client-land", () => {
+  /** The overlap line the surface drew, if it drew one. */
+  const overlap = (html: string): cheerio.Cheerio<never> =>
+    cheerio.load(html)("[data-paging-overlap]") as unknown as cheerio.Cheerio<never>;
+
+  it("says nothing at all on a state no press has changed", () => {
+    // Criterion 4's half in this file: the fact is false on every state
+    // `initialPage` builds, so a first SERVER render carries no such element —
+    // which is what keeps the first screen byte-identical.
+    expect(overlap(more())).toHaveLength(0);
+    expect(overlap(more({ status: "exhausted" }))).toHaveLength(0);
+    expect(overlap(more({ status: "loading" }))).toHaveLength(0);
+  });
+
+  it("says it ONCE when a press met rows the state already held", () => {
+    const html = more({ overlapped: true });
+    expect(overlap(html)).toHaveLength(1);
+    // It is a sentence, not a control: nothing new to press appears with it.
+    expect(controls(html)).toBe(1);
+    expect(overlap(html).find("button")).toHaveLength(0);
+  });
+
+  it("keeps the control and the rows: an overlap is not a refusal and not an end", () => {
+    // The press that met an overlap still moved the bound, so the next press
+    // is live. The refusal line belongs to a different fact and is not drawn
+    // by this one.
+    const html = more({ overlapped: true });
+    expect(html).toContain('data-paging="more"');
+    expect(html).not.toContain("data-paging-refusal");
+    expect(html).not.toContain('data-paging="exhausted"');
+  });
+
+  it("stands beside every other arm, because a list that moved has moved", () => {
+    for (const over of [
+      { overlapped: true, status: "exhausted" as const },
+      { overlapped: true, status: "loading" as const },
+      {
+        overlapped: true,
+        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+      },
+    ]) {
+      expect(overlap(more(over))).toHaveLength(1);
+    }
+  });
+
+  it("is announced politely and reads as a notice, never as breakage", () => {
+    // LOOK_AND_FEEL, Palette: red means broken. Nothing failed here — the
+    // route answered and the app drew what it could honour — so this line
+    // takes the same secondary ink as the other terminal sentences and is
+    // announced as a status rather than an alert.
+    const line = overlap(more({ overlapped: true }));
+    expect(line.attr("role")).toBe("status");
+    expect(line.attr("class")).not.toContain("broken");
+    expect(line.attr("class")).toBe(
+      cheerio.load(more({ status: "exhausted" }))("[data-paging]").attr("class"),
+    );
+  });
+
+  it("names what the surface holds, in the surface's own noun", () => {
+    // The noun is the SURFACE's, like every other sentence this element says,
+    // so a second surface is not given `/claims`' word (LESSONS 6). The
+    // WORDING is not pinned — only that the surface's noun reaches it.
+    const events = render(
+      h(PageMore, {
+        state: state({ overlapped: true }),
+        holds: "events",
+        size: SIZE,
+        readsAgree: true,
+        nextStep: null,
+        onPress: () => {},
+      }),
+    );
+    expect(overlap(events).text()).toContain("events");
+    expect(overlap(more({ overlapped: true })).text()).toContain(HOLDS);
+  });
+
+  it("claims nothing about the run: no completeness, no contiguity", () => {
+    // The skip is admin-window/BUG-0221's and is NOT fixed here, so no
+    // sentence this ticket added may imply the drawn run is whole. Graded
+    // structurally: the overlap line is not the exhausted arm, carries no
+    // `data-paging` verdict of its own, and does not appear where the app
+    // states completeness.
+    const html = more({ overlapped: true });
+    expect(overlap(html).attr("data-paging")).toBeUndefined();
+    expect(cheerio.load(html)("[data-paging]")).toHaveLength(1);
+    expect(cheerio.load(html)("[data-paging]").attr("data-paging")).toBe("more");
+  });
+
+  it("introduces no window attribute — the first screen's hooks are untouched", () => {
+    // §4.3 kind 3, rule 3 of the window-line amendment: an added
+    // `data-window-*` attribute IS a first-screen change.
+    const html = more({ overlapped: true });
+    expect(cheerio.load(html)("[data-window]")).toHaveLength(0);
+    expect(html).not.toContain("data-window");
+  });
+});
+
+describe("a page answer for an object this database does not have", () => {
+  const MISSING = "pending_claims";
+  const absent = (over: Partial<PageState<Row>> = {}): string =>
+    more({ refusal: { condition: "not provisioned", missing: MISSING }, ...over });
+
+  /** The card the app draws for the SAME condition where a card can stand. */
+  const card = (missing = MISSING): string =>
+    render(h(NotProvisioned, { missing, arrivesWith: ARRIVES_WITH }));
+
+  /** The refusal line itself, and what it reads as. */
+  const line = (html: string): cheerio.Cheerio<never> => {
+    const found = cheerio.load(html)("[data-paging-refusal]");
+    expect(found).toHaveLength(1);
+    return found as unknown as cheerio.Cheerio<never>;
+  };
+
+  it("a missing object is not painted as breakage, and offers no fix a press cannot take", () => {
+    const html = absent();
+    // GRAY, FROM THE CARD'S OWN TOKENS — derived by rendering the card rather
+    // than pinned as literals, so re-inking state 3 moves both together
+    // (LESSONS 5). "Red means broken, never unavailable."
+    for (const token of classesOf(card()).filter((c) => c.startsWith("text-ink"))) {
+      expect(classesOf(html), token).toContain(token);
+    }
+    expect(classesOf(html)).not.toContain("text-broken");
+
+    // NO WISHFUL FIX: a press does not provision a table and neither does a
+    // reload, so this arm draws neither instruction. The half of copy bar 3
+    // that says what to do is the clause naming what creates it.
+    expect(html).not.toMatch(/[Pp]ress it again/);
+    expect(html).not.toMatch(/[Rr]eload/);
+
+    // …while the arms a retry CAN clear keep their red and keep their fix, so
+    // neither half of this passes by painting everything one way (LESSONS 8).
+    const retryable = more({
+      refusal: brokenArm("canceling statement due to statement timeout", "the machine", "pending_claims"),
+    });
+    expect(classesOf(retryable)).toContain("text-broken");
+    expect(retryable).toMatch(/[Pp]ress it again/);
+  });
+
+  it("says what fills it, in the app's ONE spelling of that fact", () => {
+    // The clause is not retyped here either: what the CARD renders for this
+    // object is what the line must read, to the character (copy bar 4,
+    // LESSONS 5, admin-window/DEBT-0003's ARRIVES_WITH ×8). Both sides are
+    // read AS THE OPERATOR READS THEM — cheerio decodes the entities React
+    // writes, so an apostrophe does not hide a difference.
+    expect(line(absent()).text()).toBe(cheerio.load(card())("p").text());
+    expect(line(absent()).text()).toContain(ARRIVES_WITH);
+  });
+
+  it("the missing object stands in its own isolated box and in no sentence", () => {
+    // `missing` is text this app did not author — for a column-absent code it
+    // is mined out of the database's own message — so it reaches the line
+    // through the app's one identifier spelling and nowhere else
+    // (ARCHITECTURE §7, common violations row 15). A helper returning a
+    // formatted string could not carry the box, which is why the shared clause
+    // returns nodes.
+    for (const missing of [
+      MISSING,
+      "review_items.example for reference 8f3c1",
+      "review_items.<!DOCTYPE html><html>x</html>",
+      "review_items.\u202ecolumn",
+    ]) {
+      const html = more({ refusal: { condition: "not provisioned", missing } });
+      const drawn = line(html);
+      // EXACTLY ONE isolated box, holding the object verbatim and nothing else.
+      const boxes = drawn.find("[dir='ltr']");
+      expect(boxes, missing).toHaveLength(1);
+      expect(boxes.text(), missing).toBe(missing);
+      // …and it is the app's own `<Identifier>`, derived from the primitive so
+      // a hand-rolled span with the same face cannot pass.
+      expect(html, missing).toContain(render(h(Identifier, null, missing)));
+      // ONCE on the line: the object appears in the box and in no sentence.
+      expect(drawn.text().split(missing), missing).toHaveLength(2);
+      // The app's own words are not isolated — they are not foreign.
+      expect(drawn.text(), missing).toContain(ARRIVES_WITH);
+    }
+  });
+
+  it("changes nothing else about the line: the marker, the role, and not the card", () => {
+    const html = absent();
+    // Same marker and same role as every other refusal this line draws. What
+    // is NO LONGER asserted here is the control under it: this arm withdraws
+    // it (admin-window/BUG-0211, the block below), and the two arms that keep
+    // it are pinned there as this one's must-NOT-flag twin.
+    expect(html).toContain("data-paging-refusal");
+    expect(html).toContain('role="alert"');
+    // It is not the card: a refusal about ONE further window is not a surface
+    // whose read failed, and a live oracle grades those two by their hooks
+    // (admin-window/TASK-0032).
+    expect(html).not.toContain('data-state="not_provisioned"');
+    // And no zero that reads like data.
+    expect(html).not.toContain(">0<");
+  });
+
+  /**
+   * A PAGING AFFORDANCE IS DRAWN ONLY WHERE A PRESS COULD BE HONOURED —
+   * admin-window/BUG-0211, the property stated positively (LESSONS 13, M3 EC5,
+   * SPEC F14: "a control that cannot be honoured is never drawn").
+   *
+   * MEASURED on a production build against staging (2026-09-11, /claims at
+   * 1440x900, walk cookie): the rows route was made to answer
+   * `{"kind":"not_provisioned","missing":"pending_claims"}` and the press drew
+   * the gray clause with `[data-paging="more"]` still under it, `disabled`
+   * false, its label unchanged. The clause deliberately offers no fix — no
+   * press provisions a table — so the sentence and the widget disagreed about
+   * whether there was anything left to ask for.
+   *
+   * The scope of the withdrawal is exactly this ONE condition. A refused bound
+   * and a failed read are retryable at the same bound, so they keep their
+   * control and their "Press it again" sentence; every case below carries that
+   * must-NOT-flag twin, so the fix cannot spread to them (LESSONS 8).
+   */
+  describe("the control is withdrawn, because no press provisions a table", () => {
+    /** The arm that IS retryable, at the same bound, for every case below. */
+    const retryable = (): string =>
+      more({ refusal: brokenArm("canceling statement due to statement timeout", "the machine", MISSING) });
+
+    it("draws no control at all — absent from the markup, not merely disabled", () => {
+      const html = absent();
+      expect(controls(html)).toBe(0);
+      expect(html).not.toContain('data-paging="more"');
+      expect(html).not.toContain('data-paging="loading"');
+      // Not a disabled control either: there is no button in the markup for an
+      // attribute to sit on.
+      expect(html).not.toContain("disabled");
+      // MUST-NOT-FLAG: a read that failed is retryable at the same bound, so
+      // its control and its fix are exactly what they were.
+      expect(controls(retryable())).toBe(1);
+      expect(retryable()).toContain('data-paging="more"');
+      expect(retryable()).toMatch(/[Pp]ress it again/);
+    });
+
+    it("puts no other sentence in its place: the clause is the whole of the area", () => {
+      const html = absent();
+      // No terminal sentence takes the control's slot — neither the one that
+      // claims the set is complete nor the one that says this app stopped at
+      // its own ceiling. The clause above already says what happened.
+      expect(cheerio.load(html)("[data-paging]")).toHaveLength(0);
+      // …and the clause still names its object exactly once, in its own box.
+      const drawn = line(html);
+      expect(drawn.text().split(MISSING)).toHaveLength(2);
+      expect(drawn.text()).toContain(ARRIVES_WITH);
+      // MUST-NOT-FLAG: the retryable arm still draws its arm and its control.
+      expect(cheerio.load(retryable())("[data-paging]")).toHaveLength(1);
+    });
+
+    it("stays withdrawn wherever the absence is standing: at the ceiling, and beside an overlap", () => {
+      // The absence outranks both of the other no-control arms: a surface that
+      // has just learned the backing object is gone may not be told this app
+      // stopped at its own bound ceiling instead.
+      const ceiling = absent({ held: MAX_PAGE_OFFSET + SIZE });
+      expect(controls(ceiling)).toBe(0);
+      expect(ceiling).not.toContain('data-paging="limit"');
+      expect(line(ceiling).text()).toContain(ARRIVES_WITH);
+      // A list that moved under the operator still says so — that fact is
+      // orthogonal and this ticket does not touch it (admin-window/BUG-0222).
+      const moved = absent({ overlapped: true });
+      expect(cheerio.load(moved)("[data-paging-overlap]")).toHaveLength(1);
+      expect(controls(moved)).toBe(0);
+    });
+
+    it("is what a PRESS ends in, driven through the real driver, and it moves no row and no bound", async () => {
+      // The arm as a surface really reaches it: the object disappears between
+      // the first screen and a press. The rows on screen, the bound the next
+      // press would carry and the drawn set all stand (M3 EC5).
+      const held = state({ rows: [{ id: "a" }, { id: "b" }], held: SIZE * 2 });
+      const next = await requestPage<Row>(held, {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        idKey: ROW_ID,
+        fetchJson: async () => ({ kind: "not_provisioned", missing: MISSING }),
+      });
+      expect(next.rows).toEqual(held.rows);
+      expect(next.held).toBe(held.held);
+      expect(next.refusal).toEqual({ condition: "not provisioned", missing: MISSING });
+
+      const html = render(
+        h(PageMore, {
+          state: next,
+          holds: HOLDS,
+          size: SIZE,
+          readsAgree: true,
+          nextStep: NEXT_STEP,
+          onPress: () => {},
+        }),
+      );
+      expect(controls(html)).toBe(0);
+      expect(cheerio.load(html)("[data-paging]")).toHaveLength(0);
+      expect(line(html).text()).toContain(MISSING);
+    });
+  });
+
+  it("an alert that names no failure never reaches the operator", async () => {
+    // admin-window/BUG-0176 criterion 14, at the surface: `{kind:"refused",
+    // reason:""}` used to render an empty `type-body` span followed by "Press
+    // it again to ask for the same rows." — copy bar 3 inverted, inside a
+    // `role="alert"` that announces it.
+    const next = await requestPage<Row>(
+      state(),
+      {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        idKey: ROW_ID,
+        fetchJson: async () => ({ kind: "refused", reason: "", bound: "75" }),
+      },
+    );
+    const html = render(
+      h(PageMore, { state: next, holds: HOLDS, size: SIZE, readsAgree: true, nextStep: NEXT_STEP, onPress: () => {} }),
+    );
+    const drawn = line(html);
+    const words = drawn.text().trim().split(/\s+/);
+    expect(words.length).toBeGreaterThan(8);
+    // What failed comes BEFORE what to do about it (copy bar 3).
+    expect(drawn.text().indexOf("Press it again")).toBeGreaterThan(0);
+    expect(drawn.text()).toMatch(/refus/i);
+  });
+});
+
+describe("the affordance's look", () => {
+  const SAMPLES: { name: string; html: string }[] = [
+    { name: "idle", html: more() },
+    { name: "loading", html: more({ status: "loading" }) },
+    { name: "exhausted", html: more({ status: "exhausted" }) },
+    { name: "limit", html: more({ held: MAX_PAGE_OFFSET + SIZE }) },
+    {
+      name: "refused",
+      html: more({
+        refusal: brokenArm("no relation exists", "the machine", "pending_claims"),
+      }),
+    },
+    {
+      name: "refused/exhausted",
+      html: more({
+        status: "exhausted",
+        refusal: brokenArm("no relation exists", "the machine", null),
+      }),
+    },
+    {
+      // Both faces are sampled, so the guards below scan the branch this app's
+      // own prose renders through too (admin-window/BUG-0175).
+      name: "refused/app-authored",
+      html: more({
+        refusal: brokenArm(ANSWERED_BY_SOMETHING_ELSE, "this app", PAGE_ROUTES.claims),
+      }),
+    },
+    {
+      // The one arm that is not breakage: its ink, its words and its lack of
+      // an instruction are scanned by the same guards (admin-window/BUG-0176).
+      name: "not provisioned",
+      html: more({ refusal: { condition: "not provisioned", missing: "pending_claims" } }),
+    },
+    {
+      name: "refused/app-authored, nothing to name",
+      html: more({
+        refusal: brokenArm("a bound of 61 is not a multiple of the 50-row window", "this app", null),
+      }),
+    },
+  ];
+
+  const everyClass = () =>
+    SAMPLES.flatMap((sample) =>
+      classesOf(sample.html).map((className) => ({ sample: sample.name, className })),
+    );
+  const offenders = (predicate: (className: string) => boolean) =>
+    everyClass()
+      .filter(({ className }) => predicate(className))
+      .map(({ sample, className }) => `${sample}: ${className}`);
+
+  it("is the shared Button primitive, not a button this module drew", () => {
+    // Derived by rendering the primitive rather than pinned as a literal, so
+    // restyling Button moves this assertion with it and nothing here can drift
+    // out of step with the rest of the app (LESSONS 5).
+    const primitive = (disabled: boolean) =>
+      classesOf(render(h(Button, { disabled }, "x"))).join(" ");
+    expect(classesOf(more()).join(" ")).toContain(primitive(false));
+    expect(classesOf(more({ status: "loading" })).join(" ")).toContain(primitive(true));
+  });
+
+  it("introduces no raw colour, spacing or type value", () => {
+    expect(everyClass().length).toBeGreaterThan(5);
+    expect(offenders((c) => c.includes("["))).toEqual([]);
+    expect(offenders((c) => /#[0-9a-f]{3,8}/i.test(c))).toEqual([]);
+    for (const sample of SAMPLES) expect(sample.html, sample.name).not.toMatch(/style="/);
+    const RAMP =
+      /-(gray|slate|zinc|neutral|stone|purple|violet|green|emerald|amber|orange|yellow|red|rose|blue|sky|indigo|pink|fuchsia)-\d{2,3}$/;
+    expect(offenders((c) => RAMP.test(c))).toEqual([]);
+    expect(offenders((c) => /(^|:)(bg|text|border)-(white|black)$/.test(c))).toEqual([]);
+    expect(offenders((c) => c.startsWith("dark:"))).toEqual([]);
+    expect(offenders((c) => c.startsWith("shadow"))).toEqual([]);
+    // Text sized only through the five type steps.
+    expect(offenders((c) => /^(text-(xs|sm|base|lg|xl|\d?xl)|text-\[)/.test(c))).toEqual([]);
+    const steps = everyClass().filter(({ className }) => className.startsWith("type-"));
+    expect(steps.length).toBeGreaterThan(0);
+    for (const { className } of steps) {
+      expect(["type-figure", "type-title", "type-body", "type-data", "type-micro"]).toContain(
+        className,
+      );
+    }
+    // Spacing on the 2/4/6/8/12/16/24 scale, and rounding only at the control radius.
+    const SPACING = /^-?(p|px|py|pt|pr|pb|pl|m|mx|my|mt|mr|mb|ml|gap|gap-x|gap-y)-([0-9.]+)$/;
+    const IN_SCALE = new Set(["0", "0.5", "1", "1.5", "2", "3", "4", "6"]);
+    expect(
+      everyClass().filter(({ className }) => {
+        const match = SPACING.exec(className);
+        return match !== null && !IN_SCALE.has(match[2]);
+      }),
+    ).toEqual([]);
+    for (const { className } of everyClass().filter((c) => c.className.startsWith("rounded"))) {
+      expect(["rounded-control", "rounded-full"]).toContain(className);
+    }
+  });
+
+  /** A refusal a press can be retried after — so the control is drawn beside it. */
+  const BROKEN_PAGE = brokenArm("no relation exists", "the machine", "pending_claims");
+
+  /**
+   * Classes that make an element fill the line it is on, whatever its content
+   * measures; classes that make an element size ITSELF; and the container
+   * settings that stop a flex column stretching its children. Three sets, so
+   * the question below is asked as CSS asks it rather than by pinning the one
+   * spelling this component happens to use — swap `self-start` for `w-fit` and
+   * these assertions still grade the same property.
+   */
+  const FILLS_ITS_LINE = /^(w-full|w-screen|min-w-full|basis-full|flex-1|grow)$/;
+  const SIZES_ITSELF = /^(self-(start|end|center|baseline)|w-(fit|max|min|auto))$/;
+  const STRETCHES_NOTHING = /^items-(start|end|center|baseline)$/;
+  /** What fills its container's width in normal flow, absent any flex. */
+  const BLOCK_LEVEL = new Set(["p", "div", "ul", "ol", "table"]);
+
+  const classList = (attribute: string | undefined): string[] =>
+    (attribute ?? "").split(/\s+/).filter(Boolean);
+
+  /**
+   * Is this element's BOX stretched to its container's width — the structural
+   * half of admin-window/BUG-0177, asked of the rendered markup?
+   *
+   * A pixel width needs a browser and is the walk's half of that bar
+   * (criterion 6). What an offline tier CAN decide is the layout question the
+   * measurement came out of: a flex column stretches a child across the cross
+   * axis unless the container says otherwise or the child sizes itself, and a
+   * child carrying a fill-the-line class is stretched however it is contained.
+   * That is the rule applied here, to the DELIVERED element and its real
+   * parent — never to the source, and never to one class name.
+   */
+  function stretchedToItsContainer(html: string, selector: string): boolean {
+    const $ = cheerio.load(html);
+    const element = $(selector);
+    expect(element.length, `${selector} is not in this markup`).toBe(1);
+    const own = classList(element.attr("class"));
+    if (own.some((className) => FILLS_ITS_LINE.test(className))) return true;
+    if (own.some((className) => SIZES_ITSELF.test(className))) return false;
+    const container = classList(element.parent().attr("class"));
+    const flexColumn = container.includes("flex") && container.includes("flex-col");
+    if (!flexColumn) return BLOCK_LEVEL.has(element.prop("tagName")?.toLowerCase() ?? "");
+    return !container.some((className) => STRETCHES_NOTHING.test(className));
+  }
+
+  it("the control is sized by its label, not by its column [admin-window/BUG-0177]", () => {
+    // Both arms that DRAW a control, because the inert one is the same button
+    // and a slab that only stops being a slab while idle is not a fix.
+    for (const [arm, html] of [
+      ["idle", more()],
+      ["loading", more({ status: "loading" })],
+      ["refused, still retryable", more({ refusal: BROKEN_PAGE })],
+    ] as const) {
+      const $ = cheerio.load(html);
+      const control = $("[data-paging]");
+      expect(control.prop("tagName")?.toLowerCase(), arm).toBe("button");
+      expect(stretchedToItsContainer(html, "[data-paging]"), arm).toBe(false);
+      // The fix is ADDED to the shared primitive, not a restyle of it: every
+      // class a bare secondary Button renders is still on this control, so its
+      // ink, border, radius, padding and type step are the app's and only its
+      // width moved (criterion 3).
+      const primitive = classesOf(render(h(Button, {}, "x")));
+      expect(classList(control.attr("class")), arm).toEqual(
+        expect.arrayContaining(primitive),
+      );
+    }
+  });
+
+  it("the wrapper stretches the sentences and not the button [admin-window/BUG-0177]", () => {
+    // One state holding the control, the refusal line and the sentences'
+    // container all at once, so the wrapper under test is the real one.
+    const withRefusal = more({ refusal: BROKEN_PAGE });
+    const $ = cheerio.load(withRefusal);
+    expect($("[data-paging]").parent().is($("[data-paging-refusal]").parent())).toBe(true);
+    expect(stretchedToItsContainer(withRefusal, "[data-paging]")).toBe(false);
+    // …and the paragraphs beside it still fill the column and wrap in it —
+    // the refusal line here, and each terminal sentence in the arm that draws
+    // it (criteria 2 and 4: still text, still one element per arm).
+    expect(stretchedToItsContainer(withRefusal, "[data-paging-refusal]")).toBe(true);
+    for (const [arm, html] of [
+      ["exhausted", more({ status: "exhausted" })],
+      ["exhausted, reads disagree", more({ status: "exhausted" }, false)],
+      ["limit", more({ held: MAX_PAGE_OFFSET + SIZE })],
+    ] as const) {
+      const sentence = cheerio.load(html)("[data-paging]");
+      expect(sentence.length, arm).toBe(1);
+      expect(sentence.prop("tagName")?.toLowerCase(), arm).toBe("p");
+      expect(stretchedToItsContainer(html, "[data-paging]"), arm).toBe(true);
+    }
+  });
+
+  it("moves no other button's width: the width lives at this call site [admin-window/BUG-0177]", () => {
+    // The primitive is where every other control in the app gets its box, so
+    // the only proof criterion 5 needs offline is that the primitive renders
+    // no width or alignment of its own — a Button called anywhere else is
+    // byte-identical to what it was.
+    for (const variant of ["primary", "secondary", "destructive"] as const) {
+      const classes = classesOf(render(h(Button, { variant }, "x")));
+      expect(classes.filter((c) => SIZES_ITSELF.test(c)), variant).toEqual([]);
+      expect(classes.filter((c) => FILLS_ITS_LINE.test(c)), variant).toEqual([]);
+    }
+  });
+
+  it("says the app's words, with no build id and no count that disagrees with its noun", () => {
+    for (const sample of SAMPLES) {
+      expect(runTogetherWords(sample.html), sample.name).toEqual([]);
+      expect(factoryTicketIds(sample.html), sample.name).toEqual([]);
+      expect(disagreeingCounts(sample.html), sample.name).toEqual([]);
+      expect(uppercasedIdentifiers(sample.html), sample.name).toEqual([]);
+    }
+  });
+});
+
+describe("fetchJson — the one request, and what it may reject with", () => {
+  const URL_ASKED = pageUrl(
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+    SIZE,
+  );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A stubbed global that records what it was asked and answers `reply`. */
+  function stub(reply: () => Response | Promise<never>) {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return reply();
+    });
+    return calls;
+  }
+
+  it("asks the URL it was given, carrying this origin's own credentials", async () => {
+    // `Response.json` is what both paging routes answer with (their `answer()`
+    // helper), so it is what a fixture for "this app's route answered" uses:
+    // `new Response(JSON.stringify(...))` declares `text/plain`, which is a
+    // body from something ELSE (admin-window/TASK-0076).
+    const calls = stub(() => Response.json({ kind: "refused", reason: "x", bound: "1" }));
+    await fetchJson(URL_ASKED);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe(URL_ASKED);
+    expect(calls[0].init?.credentials).toBe("same-origin");
+  });
+
+  it("does NOT reject on a non-ok status: a 400 carrying a refused answer reaches the driver", async () => {
+    // The route answers a refused page as JSON with a status to match. Throwing
+    // that body away for its status code would replace the reason the server
+    // gave with one this app made up.
+    const answer: PageAnswer<Row> = {
+      kind: "refused",
+      reason: "the `offset` must be a multiple of 50",
+      bound: "51",
+    };
+    stub(() => Response.json(answer, { status: 400 }));
+    expect(await fetchJson(URL_ASKED)).toEqual(answer);
+
+    // …and end to end: the driver reads it and refuses in the answer's words,
+    // with the row list untouched.
+    stub(() => Response.json(answer, { status: 400 }));
+    const next = await requestPage<Row>(
+      state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+    );
+    expect(broken(next.refusal).reason).toBe(answer.reason);
+    expect(next.rows.map((row) => row.id)).toEqual(["a"]);
+  });
+
+  it("rejects with an Error carrying words, for every body and every rejection", async () => {
+    // `requestPage`'s reasonOf renders a non-Error rejection with
+    // String(thrown), so a rejection carrying undefined reaches the operator as
+    // the word "undefined" in a refusal line. Nothing here may be a bare
+    // string, null or undefined.
+    const hostile: { name: string; reply: () => Response | Promise<never> }[] = [
+      { name: "an HTML error page", reply: () => new Response("<html>502</html>", { status: 502 }) },
+      { name: "an empty body", reply: () => new Response("", { status: 200 }) },
+      { name: "a body that is only whitespace", reply: () => new Response("   ") },
+      { name: "a rejection carrying undefined", reply: () => Promise.reject(undefined) },
+      { name: "a rejection carrying null", reply: () => Promise.reject(null) },
+      { name: "a rejection carrying a bare string", reply: () => Promise.reject("offline") },
+      { name: "an Error with nothing to say", reply: () => Promise.reject(new Error("")) },
+    ];
+    for (const { name, reply } of hostile) {
+      stub(reply);
+      const thrown = await fetchJson(URL_ASKED).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(thrown, name).toBeInstanceOf(Error);
+      const said = (thrown as Error).message;
+      expect(said.length, name).toBeGreaterThan(0);
+      // And words reach the operator, not the word "undefined".
+      expect(said, name).not.toBe("undefined");
+      expect(said, name).not.toBe("null");
+      // The driver renders whatever this rejects with; it must be readable.
+      const next = await requestPage<Row>(
+        state(),
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+      );
+      expect(broken(next.refusal).reason, name).toBe(said);
+    }
+  });
+
+  it("passes a rejection's own words through when it has some", async () => {
+    stub(() => Promise.reject(new TypeError("Failed to fetch")));
+    await expect(fetchJson(URL_ASKED)).rejects.toThrow("Failed to fetch");
+  });
+});
+
+/**
+ * WHAT ANSWERED, BEFORE WHAT THE BODY SAYS — campaign admin-window/TASK-0076.
+ *
+ * MEASURED: a session that expires mid-walk is answered with the login
+ * redirect, FOLLOWED to an HTML page at status **200**. `response.json()`
+ * rejected with the JSON parser's own `SyntaxError`, `asError` passed its words
+ * through, and `requestPage`'s `reasonOf` put them in the refusal slot — so the
+ * operator read the parser's vocabulary as this app's account of why the press
+ * added no rows. Same class as admin-window/BUG-0170 (text this app did not
+ * author inside a sentence it wrote), and not covered by it: that fix is inside
+ * `errorMessage` in `lib/db/result.ts`, which this path never touches.
+ *
+ * `response.ok` is deliberately not the discriminator — the measured defect
+ * arrives at 200, and a 400 carrying a refused page is the operator's own
+ * refusal (pinned above, unchanged).
+ */
+describe("fetchJson asks what ANSWERED before it reads the body", () => {
+  const URL_ASKED = pageUrl(
+    { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+    SIZE,
+  );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function answeredWith(body: BodyInit | null, init?: ResponseInit): void {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(body, init)));
+  }
+
+  /** Whatever `fetchJson` rejected with, or a failure naming what it resolved. */
+  async function rejection(): Promise<Error> {
+    const thrown = await fetchJson(URL_ASKED).then(
+      (value) => ({ resolved: value }),
+      (error: unknown) => error,
+    );
+    expect(thrown, JSON.stringify(thrown)).toBeInstanceOf(Error);
+    return thrown as Error;
+  }
+
+  /**
+   * The refusal AS READ, not as escaped: React writes `'` as `&#x27;` and `<`
+   * as `&lt;`, so a body fragment that leaked would hide from a raw substring
+   * check behind its own escape.
+   */
+  const readable = (html: string): string =>
+    textOf(html)
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+
+  /** The measured fixture: the login page, followed, at status 200. */
+  const LOGIN_PAGE =
+    '<!doctype html><html><head><title>Sign in</title></head><body>' +
+    '<form action="/api/auth/callback"><input name="csrfToken" value="7f3a"></form>' +
+    "</body></html>";
+
+  const NOT_THIS_APP: ReadonlyArray<readonly [string, BodyInit | null, ResponseInit]> = [
+    [
+      "the measured one: an HTML login page at status 200",
+      LOGIN_PAGE,
+      { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+    ],
+    [
+      "a text/plain proxy page",
+      "502 Bad Gateway (proxy)",
+      { status: 502, headers: { "content-type": "text/plain" } },
+    ],
+    ["no content-type header at all", "{}", { status: 200, headers: {} }],
+    ["an empty body", null, { status: 200 }],
+  ];
+
+  it("refuses in the app's own words when something else answered, on four fixtures", async () => {
+    for (const [name, body, init] of NOT_THIS_APP) {
+      answeredWith(body, init);
+      const thrown = await rejection();
+      expect(thrown.message, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    }
+  });
+
+  it("the operator's refusal is EXACTLY that sentence, with this app's own route as its object", async () => {
+    // End to end: through the driver, which names `deps.route` on this arm.
+    for (const [name, body, init] of NOT_THIS_APP) {
+      answeredWith(body, init);
+      const next = await requestPage<Row>(
+        state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+        { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+      );
+      expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
+      expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
+      // A refusal never half-fills the list, whatever it was refused for.
+      expect(next.rows.map((row) => row.id), name).toEqual(["a"]);
+      expect(next.held, name).toBe(SIZE);
+      expect(next.status, name).toBe("idle");
+    }
+  });
+
+  it("the RENDERED refusal quotes nothing this app did not author", async () => {
+    // The login-page fixture, all the way to the markup an operator reads: no
+    // fragment of the body, no content type, no status code, and none of the
+    // JSON parser's vocabulary.
+    const [, body, init] = NOT_THIS_APP[0];
+    answeredWith(body, init);
+    const next = await requestPage<Row>(
+      state(),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+    );
+    const shown = readable(
+      render(h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      })),
+    );
+    // Non-vacuity: the refusal really is on screen.
+    expect(shown).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    for (const forbidden of [/JSON/i, /token/, /</, /SyntaxError/]) {
+      expect(shown, String(forbidden)).not.toMatch(forbidden);
+    }
+    // Nor the body, the declared type, or the status.
+    for (const fragment of ["doctype", "csrfToken", "7f3a", "Sign in", "text/html", "200", "502"]) {
+      expect(shown, fragment).not.toContain(fragment);
+    }
+  });
+
+  it("a body that DECLARES json and does not parse refuses on the same terms", async () => {
+    // A truncated document, sent as `application/json`.
+    for (const truncated of ['{"kind":"ok","rows":[{"id":', "", "   "]) {
+      answeredWith(truncated, { status: 200, headers: { "content-type": "application/json" } });
+      const thrown = await rejection();
+      expect(thrown.message, JSON.stringify(truncated)).toBe(UNREADABLE_ANSWER);
+    }
+
+    answeredWith('{"kind":"ok","rows":[{"id":', {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const next = await requestPage<Row>(
+      state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
+      { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
+    );
+    expect(broken(next.refusal).reason).toBe(UNREADABLE_ANSWER);
+    expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
+    expect(next.rows.map((row) => row.id)).toEqual(["a"]);
+  });
+
+  it("both sentences are the app's voice, and neither is one of its generic apologies", async () => {
+    const sentences = [ANSWERED_BY_SOMETHING_ELSE, UNREADABLE_ANSWER];
+    // Two DIFFERENT accounts: "something else answered" and "the answer broke
+    // off" are not the same fact, and one sentence for both would be an
+    // apology rather than a report.
+    expect(new Set(sentences).size).toBe(2);
+    for (const sentence of sentences) {
+      expect(sentence.length, sentence).toBeGreaterThan(20);
+      // Quotes nothing: no parser vocabulary, no media type, no figure.
+      for (const forbidden of [/JSON/i, /SyntaxError/, /content-type/i, /status/i, /\d/]) {
+        expect(sentence, String(forbidden)).not.toMatch(forbidden);
+      }
+      // Distinct from the app's existing generic lines, so a refusal says
+      // which of them happened (LESSONS 11 — one row, one verdict).
+      expect(sentence).not.toBe("the page request failed before it answered");
+      expect(sentence).not.toBe("the page request answered something this app cannot read");
+    }
+  });
+
+  it("must NOT flag: every spelling of a declared json answer still reaches the driver", async () => {
+    // The passing half (LESSONS 8). The media type is compared on a canonical
+    // form, not against a list of spellings someone thought of (LESSONS 4).
+    const answer: PageAnswer<Row> = { kind: "ok", rows: pageOf(SIZE), offset: SIZE, exhausted: false };
+    for (const declared of [
+      "application/json",
+      "application/json; charset=utf-8",
+      "application/json;charset=UTF-8",
+      "APPLICATION/JSON",
+      "Application/Json; charset=utf-8",
+      "  application/json  ",
+    ]) {
+      answeredWith(JSON.stringify(answer), { status: 200, headers: { "content-type": declared } });
+      expect(await fetchJson(URL_ASKED), declared).toEqual(answer);
+    }
+  });
+
+  it("a media type that merely LOOKS like json is something else answering", async () => {
+    // `application/json` with parameters, and nothing else: a suffix type or a
+    // different tree is not this app's route, which answers `Response.json`.
+    for (const declared of ["application/jsonl", "text/json", "application/ld+json", "json"]) {
+      answeredWith("{}", { status: 200, headers: { "content-type": declared } });
+      expect((await rejection()).message, declared).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    }
+  });
+
+  it("reads the body ONCE and only after the declaration, still one request per press", async () => {
+    // The body is never read at all when something else answered: an HTML page
+    // reaches no parser, which is the whole point of the discriminator.
+    const calls: string[] = [];
+    const response = new Response(LOGIN_PAGE, {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+    // Own properties shadow the prototype's readers; `headers` is untouched.
+    for (const reader of ["json", "text"] as const) {
+      Object.defineProperty(response, reader, {
+        configurable: true,
+        value: () => {
+          calls.push(reader);
+          return Promise.reject(new Error("the body was read"));
+        },
+      });
+    }
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return Promise.resolve(response);
+    });
+    expect((await rejection()).message).toBe(ANSWERED_BY_SOMETHING_ELSE);
+    expect(calls).toEqual([]);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("a PLATFORM rejection still passes its own words through", async () => {
+    // Unchanged: `Failed to fetch` is the transport's account of a request
+    // that never happened, not a foreign body quoted back as ours.
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    expect((await rejection()).message).toBe("Failed to fetch");
+  });
+});
+
+describe("usePageRows binds the driver to a press", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * The hook, driven with no DOM.
+   *
+   * `renderToStaticMarkup` runs hooks for the initial render, so a probe
+   * component can hand its `press` back out; calling it afterwards is what a
+   * click would do. **`setState` is a no-op in this renderer** — the `state`
+   * this hook returns can never change here — which is exactly what makes the
+   * assertions below discriminating: every one of them turns on the press
+   * guard reading the CURRENT state through a ref. A guard reading the
+   * `useState` value would see the initial state forever, ask for the same
+   * bound twice, and never reach the `loading` arm at all.
+   */
+  function probe(initial: PageState<Row>, params = "") {
+    // The press is captured on a box rather than a `let`: the assignment
+    // happens inside a callback, which is exactly the shape control-flow
+    // analysis cannot see.
+    const captured: { press: (() => void) | null } = { press: null };
+    const html = render(
+      h(function Probe() {
+        const bound = usePageRows<Row>(initial, {
+          route: PAGE_ROUTES.claims,
+          params,
+          size: SIZE,
+          idKey: ROW_ID,
+        });
+        captured.press = bound.press;
+        return h(PageMore, {
+          state: bound.state,
+          holds: HOLDS,
+          size: SIZE,
+          readsAgree: true,
+          nextStep: NEXT_STEP,
+          onPress: bound.press,
+        });
+      }),
+    );
+    const { press } = captured;
+    if (press === null) throw new Error("the hook returned no press");
+    return { html, press };
+  }
+
+  /** A stub that answers every request with `answer`, recording the URLs. */
+  function answering(answer: PageAnswer<Row> | (() => Promise<never>)) {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return typeof answer === "function"
+        ? answer()
+        // `Response.json`, because that is what this app's routes answer with
+        // and `fetchJson` now reads the declared type (admin-window/TASK-0076).
+        : Promise.resolve(Response.json(answer));
+    });
+    return urls;
+  }
+
+  const boundOf = (url: string): string | null =>
+    new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM);
+
+  it("renders the first screen's own affordance before any press", () => {
+    const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
+    const { html } = probe(initialPage<Row>(SIZE, true, ""));
+    expect(html).toContain('data-paging="more"');
+    // No press, no request.
+    expect(urls).toEqual([]);
+  });
+
+  it("draws no control at all when the first screen said there is no more", () => {
+    answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
+    const { html } = probe(initialPage<Row>(SIZE, false, ""));
+    expect(html).toContain('data-paging="exhausted"');
+    expect(controls(html)).toBe(0);
+  });
+
+  it("one press, one request, at the bound the PRE-press state held", async () => {
+    const urls = answering({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false });
+    const { press } = probe(initialPage<Row>(SIZE, true, ""), "tab=standing");
+    press();
+    await settle();
+    expect(urls).toHaveLength(1);
+    expect(boundOf(urls[0])).toBe(String(SIZE));
+    // The surface's own facets ride along, and the route is this app's own.
+    expect(new URLSearchParams(urls[0].split("?")[1]).get("tab")).toBe("standing");
+    expect(urls[0].startsWith(PAGE_ROUTES.claims)).toBe(true);
+  });
+
+  it("a second press while one is in flight issues NO second request", async () => {
+    // The whole reason the interim `loading` state is published before the
+    // await. All three presses happen in the same tick, so the only thing that
+    // can stop the last two is a state the first one already published.
+    const answer = Promise.withResolvers<Response>();
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return answer.promise;
+    });
+
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
+    press();
+    press();
+    press();
+    expect(urls).toHaveLength(1);
+    answer.resolve(
+      Response.json({ kind: "ok", rows: [{ id: "c" }], offset: SIZE, exhausted: false }),
+    );
+    await settle();
+    expect(urls).toHaveLength(1);
+  });
+
+  it("a press after the answer lands asks for the NEXT bound, never the same one twice", async () => {
+    // A FULL window, and the bound grows by the window (admin-window/BUG-0168,
+    // ruled full-or-exhausted): the answer used to carry one row and the bound
+    // used to grow by one, which is the very step that walked `held` off the
+    // grid `pageBound` enforces. What this case grades is unchanged — the
+    // second press asks for a bound the first press produced, never the same
+    // one twice.
+    //
+    // The stub ECHOES the bound it was asked for, as both of this app's routes
+    // do (`pageBound`'s own answer): since admin-window/BUG-0176 the driver
+    // grades an answer's declared `offset` against the bound the press
+    // carried, so a fixture declaring a constant `999` would be measuring the
+    // refusal rather than the second press. What the answer's `offset` still
+    // never does is reach the state — `held` grows by the rows that arrived.
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      urls.push(url);
+      return Promise.resolve(
+        Response.json({
+          kind: "ok",
+          rows: pageOf(SIZE),
+          offset: Number(boundOf(url)),
+          exhausted: false,
+        }),
+      );
+    });
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
+    press();
+    await settle();
+    press();
+    await settle();
+    expect(urls.map(boundOf)).toEqual([String(SIZE), String(SIZE * 2)]);
+  });
+
+  it("presses no further once the answer says the set is exhausted", async () => {
+    const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
+    press();
+    await settle();
+    press();
+    press();
+    await settle();
+    expect(urls).toHaveLength(1);
+  });
+
+  it("never throws out of the press, and a refusal leaves the press repeatable", async () => {
+    const urls = answering(() => Promise.reject(new TypeError("Failed to fetch")));
+    const { press } = probe(initialPage<Row>(SIZE, true, ""));
+    expect(() => press()).not.toThrow();
+    await settle();
+    expect(urls).toHaveLength(1);
+    // The driver turned the rejection into a refusal and returned to idle, so
+    // the same bound can be asked for again.
+    press();
+    await settle();
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toBe(urls[0]);
+  });
+
+  /** The control's own words, without pinning the sentence around them. */
+  const controlText = (html: string): string =>
+    /<button[^>]*>([^]*?)<\/button>/.exec(html)?.[1]?.replace(/<[^>]*>/g, "") ?? "";
+
+  it("a surface spells the window ONCE: the driver grades against the number the control renders", async () => {
+    // QA residual 4, folded into admin-window/BUG-0168: `PageDeps.size` was
+    // never read, so the window was supplied twice — once to the driver, once
+    // to `PageMore` — and reconciled nowhere. The surface below spells it in
+    // ONE place and feeds the widget from the hook's own return, and the two
+    // halves are then read off ONE fixture: the same 7-row answer LANDS
+    // against a window of 7 (the next press moves on to 14) and is REFUSED
+    // against a window of 8 (the next press asks for 8 again) — so the number
+    // the driver graded the page against is the number the control names.
+    const SERVED = 7;
+    const consumer = async (
+      windowSize: number,
+    ): Promise<{ bounds: (string | null)[]; label: string }> => {
+      const urls = answering({
+        kind: "ok",
+        rows: pageOf(SERVED),
+        offset: windowSize,
+        exhausted: false,
+      });
+      const captured: { press: (() => void) | null } = { press: null };
+      const html = render(
+        h(function Surface() {
+          // The ONE spelling of this surface's window.
+          const bound = usePageRows<Row>(initialPage<Row>(windowSize, true, ""), {
+            route: PAGE_ROUTES.claims,
+            params: "",
+            size: windowSize,
+            idKey: ROW_ID,
+          });
+          captured.press = bound.press;
+          // …and the widget is fed from the hook, never retyped beside it.
+          return h(PageMore, {
+            state: bound.state,
+            holds: HOLDS,
+            size: bound.size,
+            readsAgree: true,
+            nextStep: NEXT_STEP,
+            onPress: bound.press,
+          });
+        }),
+      );
+      const { press } = captured;
+      if (press === null) throw new Error("the hook returned no press");
+      press();
+      await settle();
+      press();
+      await settle();
+      return { bounds: urls.map(boundOf), label: controlText(html) };
+    };
+
+    const landed = await consumer(SERVED);
+    const refused = await consumer(SERVED + 1);
+
+    expect(landed.bounds).toEqual([String(SERVED), String(SERVED * 2)]);
+    expect(refused.bounds).toEqual([String(SERVED + 1), String(SERVED + 1)]);
+    // The control names the same window the driver just graded against — the
+    // number, not the sentence around it.
+    expect(landed.label).toContain(String(SERVED));
+    expect(landed.label).not.toContain(String(SERVED + 1));
+    expect(refused.label).toContain(String(SERVED + 1));
+    expect(refused.label).not.toContain(String(SERVED));
+  });
+
+  it("fires its request from a ref, never from inside a setState updater", () => {
+    // React 19 invokes a setState updater TWICE under StrictMode in
+    // development, so a request fired from inside one is two requests from a
+    // single press — the exact defect the loading arm exists to prevent, and
+    // one no offline render can reproduce. The behavioural half is the
+    // in-flight double press above; this is the structural half, and it is
+    // cheap: the state setter is only ever handed a value.
+    const source = sourceText("src/components/ui/paging.tsx");
+    expect(source).toContain("useRef");
+    expect(source.match(/setState\(/g) ?? []).toHaveLength(1);
+    expect(source).not.toMatch(/setState\(\s*(?:\(|function|async)/);
+  });
+
+  it("reads its state through the first screen it is now drawing, at both points", () => {
+    // admin-window/BUG-0216, the structural half. `useState` seeds ONCE, so a
+    // first screen re-rendered underneath a kept state is invisible to the
+    // hook unless every read of that state is reconciled against the `initial`
+    // of the CURRENT render — the one the press works from, and the one the
+    // surface draws. Neither can be reproduced by a single static render,
+    // which is why this is graded as the composition and not as a re-render:
+    // the rule itself is driven in tests/offline/paging/machine.test.ts.
+    const source = sourceText("src/components/ui/paging.tsx");
+    expect(source).toMatch(/continuing\(latest\.current, initial\)/);
+    expect(source).toMatch(/state: continuing\(state, initial\)/);
+  });
+});
+
+/**
+ * ONE surface, ONE state — the provider, and the window line that reads it
+ * (campaign admin-window/BUG-0172).
+ *
+ * The defect: a paged surface's window line was the PAGE's, server-rendered
+ * above a wrapper that changes the rows underneath it, so after a press the
+ * page published two answers to one question. The mechanism here is the fix —
+ * a zero-markup provider that publishes the one state, and a line that renders
+ * the shared primitive from it.
+ */
+describe("PagingProvider publishes one surface's state, and draws nothing", () => {
+  const WINDOW: DrawnWindow = {
+    limit: SIZE,
+    held: SIZE,
+    truncated: true,
+    over: "view",
+    oldest: null,
+    scope: null,
+  };
+  const CATALOG: DrawnSentence = { of: "catalog", rows: "events" };
+
+  /**
+   * The line, rendered inside a surface whose state is `state`.
+   *
+   * The WINDOW is handed to the PROVIDER (admin-window/BUG-0180): the page
+   * composes its first-screen facts once, the provider combines them with the
+   * press state once, and every part of the surface — this line and the
+   * control alike — reads that one object.
+   */
+  const paged = (state: PageState<Row>, window: DrawnWindow = WINDOW): string =>
+    render(
+      h(
+        PagingProvider<Row>,
+        {
+          initial: state,
+          window,
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, idKey: ROW_ID },
+          children: null,
+        },
+        h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
+      ),
+    );
+
+  const hooks = (html: string) => {
+    const line = cheerio.load(html)("[data-window]");
+    return {
+      lines: line.length,
+      held: line.attr("data-window-held"),
+      truncated: line.attr("data-window-truncated"),
+    };
+  };
+
+  const MATCHED: DrawnSentence = { of: "matched", lede: "Longest-waiting first.", rows: HOLDS };
+
+  /** A whole paged surface — the line, then the control, from one provider. */
+  const surface = (state: PageState<Row>, window: DrawnWindow): string =>
+    render(
+      h(
+        PagingProvider<Row>,
+        {
+          initial: state,
+          window,
+          deps: { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID },
+          children: null,
+        },
+        h(function Body() {
+          const published = usePaging<Row>();
+          return h(
+            "div",
+            null,
+            h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
+            h(PageMore, {
+              state: published.state,
+              holds: HOLDS,
+              size: published.size,
+              readsAgree: published.readsAgree,
+              nextStep: NEXT_STEP,
+              onPress: published.press,
+            }),
+          );
+        }),
+      ),
+    );
+  const ended = (held: number): PageState<Row> => ({
+    rows: [],
+    held,
+    status: "exhausted",
+    refusal: null,
+    notes: null,
+    after: "",
+    drawnIds: new Set<string>(),
+    overlapped: false,
+  });
+  const counted = (total: number): DrawnWindow => ({
+    ...WINDOW,
+    held: total,
+    heldFrom: "a count read",
+  });
+  const hook = (html: string, name: string): string | undefined =>
+    cheerio.load(html)("[data-window]").attr(name);
+  const sentence = (html: string): string => cheerio.load(html)("[data-paging]").toString();
+
+  /**
+   * The state the driver leaves a surface in PAST the ceiling: `idle`, at a
+   * bound `pageBound` refuses (a bound refusal returns the state to `idle` by
+   * design, the driver's rule 4). Reached here through the real driver rather
+   * than by the 2,000 presses and 100,000 DOM rows a browser would need
+   * (admin-window/BUG-0178, criterion 5).
+   */
+  const pastTheCeiling = (): PageState<Row> => ({
+    rows: [],
+    held: MAX_PAGE_OFFSET + SIZE,
+    status: "idle",
+    refusal: null,
+    drawnIds: new Set<string>(),
+    overlapped: false,
+    notes: null,
+    after: "",
+  });
+
+  /** What one element of a rendered surface SAYS — its text, whitespace collapsed. */
+  const saidBy = (html: string, selector: string): string =>
+    cheerio.load(html)(selector).text().replace(/\s+/g, " ").trim();
+
+  /**
+   * Two strings compared the way a reader meets them: case and a trailing stop
+   * are not the difference between two sentences (LESSONS 4 — compare on a
+   * normalized form, never on the spellings someone thought of).
+   */
+  const asRead = (text: string): string =>
+    text.replace(/\s+/g, " ").trim().toLowerCase().replace(/[.;]+$/, "");
+
+  /**
+   * THE CLAUSE THE WINDOW LINE ENDS ON, taken from the RENDERED line and from
+   * no constant — the window's own verdict, in whatever words it is written
+   * today (admin-window/BUG-0178, criterion 9). The last CLAUSE, not the last
+   * sentence: the line's verdict is regularly the tail of a longer sentence
+   * ("… are below — the rest are not shown"), and grading the tail is the
+   * stricter of the two.
+   */
+  const closingClause = (html: string): string => {
+    const clauses = asRead(saidBy(html, "[data-window]"))
+      .split(/[.;]\s+|\s+—\s+/)
+      .filter((clause) => clause.trim().length > 0);
+    return clauses[clauses.length - 1] ?? "";
+  };
+
+  /** THE CONTROL'S TERMINAL SENTENCE — whatever its `[data-paging]` arm renders. */
+  const terminalSentence = (html: string): string => asRead(saidBy(html, "[data-paging]"));
+
+  /** Does either of these answer the other's question a second time? */
+  const restates = (line: string, control: string): boolean =>
+    line.includes(control) || control.includes(line);
+
+  it("renders no markup of its own: the children are the whole output", () => {
+    const child = h("span", { "data-probe": "" }, "rows");
+    const wrapped = render(
+      h(
+        PagingProvider<Row>,
+        {
+          initial: initialPage<Row>(SIZE, true, ""),
+          window: WINDOW,
+          deps: { route: PAGE_ROUTES.browse, params: "", size: SIZE, idKey: ROW_ID },
+          children: null,
+        },
+        child,
+      ),
+    );
+    expect(wrapped).toBe(render(child));
+  });
+
+  it("renders the page's own window line, to the byte, before any press", () => {
+    // SPEC F14: the first screen does not change. The page composes the facts
+    // once and hands the same object to either component, so the paged arm and
+    // the unpaged one are the same element with the same hooks and the same
+    // words until a press changes what the operator holds.
+    expect(paged(initialPage<Row>(SIZE, true, ""))).toBe(
+      render(h(WindowLine, { gauge: "events", window: WINDOW, shows: CATALOG })),
+    );
+  });
+
+  it("takes truncation from the paging state's status and from nothing else", () => {
+    // Offered, in flight and refused all still hold rows back; only the read's
+    // own answer that the set has ended says otherwise (LESSONS 11).
+    const states: [string, PageState<Row>][] = [
+      ["idle", initialPage<Row>(SIZE, true, "")],
+      ["loading", { ...initialPage<Row>(SIZE, true, ""), status: "loading" }],
+      [
+        "refused",
+        {
+          ...initialPage<Row>(SIZE, true, ""),
+          refusal: brokenArm("the view is not provisioned", "this app", "pending_claims"),
+        },
+      ],
+    ];
+    for (const [name, state] of states) {
+      expect(hooks(paged(state)).truncated, name).toBe("true");
+    }
+    expect(hooks(paged(initialPage<Row>(SIZE, false, ""))).truncated).toBe("false");
+  });
+
+  it("whose number held is, is a fact the window states, never a size it compares", () => {
+    // admin-window/BUG-0174, BUG-0172's residual (a). Two shapes of `held`, two
+    // behaviours: a window whose `held` counts ITS OWN rows grows with the rows
+    // a press appends (`/browse`, whose line was stuck at 50 under 100 rows),
+    // and one whose `held` came from a separate COUNT read stands unmoved while
+    // rows are appended under it (`/claims`, whose hook the live paged-walk
+    // oracle grades the walk against).
+    //
+    // This component used to guess between them by asking which number was
+    // bigger than the cap — one field with two meanings, told apart by size.
+    // The cases below are the two the heuristic gets WRONG, so nothing here
+    // can pass by comparing anything to `limit`.
+    const continued: PageState<Row> = {
+      rows: pageOf(SIZE),
+      held: SIZE * 2,
+      status: "idle",
+      refusal: null,
+      notes: null,
+      drawnIds: new Set<string>(),
+      overlapped: false,
+      after: "",
+    };
+
+    // Stated "this window": it grows with the rows, whatever its number is —
+    // including a number ABOVE the cap, which the heuristic froze.
+    expect(hooks(paged(continued, { ...WINDOW, heldFrom: "this window" })).held).toBe(
+      String(SIZE * 2),
+    );
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 877, heldFrom: "this window" })).held,
+    ).toBe(String(SIZE * 2));
+
+    // Stated "a count read": it stands, whatever its number is — including a
+    // count UNDER the cap, which the heuristic overwrote with the row count.
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 877, heldFrom: "a count read" })).held,
+    ).toBe("877");
+    expect(
+      hooks(paged(continued, { ...WINDOW, held: 12, heldFrom: "a count read" })).held,
+    ).toBe("12");
+
+    // Absent is "this window": the nine unpaged lines mean exactly that, and no
+    // call site of them changes.
+    expect(hooks(paged(continued)).held).toBe(String(SIZE * 2));
+
+    // …and the fact reaches the markup only through `held`: no attribute is
+    // added for it, in either statement (SPEC F14, §5).
+    for (const heldFrom of ["this window", "a count read"] as const) {
+      const attrs = Object.keys(
+        cheerio.load(paged(continued, { ...WINDOW, heldFrom }))("[data-window]").attr() ?? {},
+      ).filter((name) => name.startsWith("data-window"));
+      expect(attrs.sort(), heldFrom).toEqual(
+        Object.keys(cheerio.load(paged(continued))("[data-window]").attr() ?? {})
+          .filter((name) => name.startsWith("data-window"))
+          .sort(),
+      );
+    }
+  });
+
+  it("renders the line without comparing any number to the cap", () => {
+    // The other half of the criterion: the component READS the window's
+    // statement and derives nothing from the cap's size. Read off the code, so
+    // the next hand at this file cannot quietly reintroduce the heuristic.
+    const code = codeLinesIn(sourceText("src/components/ui/paging.tsx")).join("\n");
+    expect(code).toContain("heldFrom");
+    expect(code).not.toContain("first.limit");
+    expect(code).not.toMatch(/held\s*[<>]=?\s*/);
+  });
+
+  it("is ONE element in every state a press can end in", () => {
+    for (const state of [
+      initialPage<Row>(SIZE, true, ""),
+      { ...initialPage<Row>(SIZE, true, ""), status: "loading" as const },
+      initialPage<Row>(SIZE, false, ""),
+    ]) {
+      expect(hooks(paged(state)).lines).toBe(1);
+    }
+  });
+
+  it("derives the two-reads verdict ONCE, over the one window, for the line and the control alike [admin-window/BUG-0180]", () => {
+    // The seam this ticket names. The page composes its first-screen facts
+    // once and hands them here; the provider combines them with the press
+    // state once and asks `readsAgree` of that one object; the line above the
+    // rows and the sentence below them each read what they are handed. The
+    // control holds no count, no row count and no `held` to compare, which is
+    // why the two elements cannot answer one question two ways (LESSONS 11).
+    // (a) The two reads AGREE: every claim the count found is drawn.
+    const agreeing = surface(ended(130), counted(130));
+    // (b) They DIVERGE: the press ended the set with SIZE rows on screen under
+    //     a count of 877 — the state a claim resolved between the two reads
+    //     produces.
+    const diverged = surface(ended(SIZE), counted(877));
+
+    // Non-vacuity, off the page's own hooks: the line publishes the COUNT's
+    // number in both, and both reads have ended.
+    expect(hook(agreeing, "data-window-held")).toBe("130");
+    expect(hook(diverged, "data-window-held")).toBe("877");
+    expect(hook(agreeing, "data-window-truncated")).toBe("false");
+    expect(hook(diverged, "data-window-truncated")).toBe("false");
+
+    // The sentence under the rows is not the same one in both states…
+    expect(sentence(diverged)).not.toBe(sentence(agreeing));
+    // …and where they agree it is exactly what the widget draws when it is
+    // handed the agreeing verdict — so the fact really did travel from the
+    // window, through one derivation, to the control.
+    expect(sentence(agreeing)).toBe(
+      sentence(
+        render(
+          h(PageMore, {
+            state: ended(130),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: true,
+            nextStep: NEXT_STEP,
+            onPress: () => {},
+          }),
+        ),
+      ),
+    );
+    expect(sentence(diverged)).toBe(
+      sentence(
+        render(
+          h(PageMore, {
+            state: ended(SIZE),
+            holds: HOLDS,
+            size: SIZE,
+            readsAgree: false,
+            nextStep: NEXT_STEP,
+            onPress: () => {},
+          }),
+        ),
+      ),
+    );
+
+    // A surface with NO second read cannot reach the diverged sentence: its
+    // `held` counts its own rows, so an ended window holds what it counted
+    // (`/browse`, which is why its markup does not move in any state).
+    const single = surface(ended(SIZE * 3), { ...WINDOW, held: 1, heldFrom: "this window" });
+    // Its `held` is its own rows' — the stated `1` is overwritten by the press
+    // state, which is `heldFrom` doing its job (admin-window/BUG-0174) — and
+    // the sentence it draws is the completeness one, byte for byte.
+    expect(hook(single, "data-window-held")).toBe(String(SIZE * 3));
+    expect(sentence(single)).toBe(sentence(agreeing));
+  });
+
+  it("a press that answers not_provisioned withdraws the control and leaves the window line to the byte [admin-window/BUG-0211]", async () => {
+    // The whole surface, before and after the one press: the line above the
+    // rows and the control below them, from one provider. A not-provisioned
+    // answer moves no bound and ends no set, so the LINE is byte-identical —
+    // and the control, which nothing could honour now, is gone from under it.
+    const start = initialPage<Row>(SIZE, true, "");
+    const before = surface(start, WINDOW);
+    const next = await requestPage<Row>(start, {
+      route: PAGE_ROUTES.claims,
+      params: "",
+      size: SIZE,
+      idKey: ROW_ID,
+      fetchJson: async () => ({ kind: "not_provisioned", missing: "pending_claims" }),
+    });
+    const after = surface(next, WINDOW);
+
+    const drawnLine = (html: string): string => cheerio.load(html)("[data-window]").toString();
+    expect(drawnLine(after)).toBe(drawnLine(before));
+    // Non-vacuity: the surface really did draw a control before the press.
+    expect(controls(before)).toBe(1);
+    expect(controls(after)).toBe(0);
+    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
+    // MUST-NOT-FLAG (LESSONS 8): the same press answered with a REFUSED BOUND
+    // keeps its control, and its line is byte-identical too.
+    const bounced = await requestPage<Row>(start, {
+      route: PAGE_ROUTES.claims,
+      params: "",
+      size: SIZE,
+      idKey: ROW_ID,
+      fetchJson: async () => ({ kind: "refused", reason: "that bound is not one this view serves", bound: "50" }),
+    });
+    const retried = surface(bounced, WINDOW);
+    expect(drawnLine(retried)).toBe(drawnLine(before));
+    expect(controls(retried)).toBe(1);
+  });
+
+  it("the bound ceiling does not claim the data ran out: it names this app as what stopped, and one thing to do next [admin-window/BUG-0178]", () => {
+    // The arm QA graded offline, for the reason this does: MAX_PAGE_OFFSET is
+    // 100,000 against a window of 50, so a browser reaches it in 2,000 presses
+    // and 100,000 DOM rows. The driver reaches it here, and every assertion
+    // below is on the markup one rendered surface really emits.
+    const state = pastTheCeiling();
+    // Non-vacuity: the next press really is one this app refuses, and the
+    // status really is the one that would otherwise draw a control.
+    expect(pageBound(String(state.held), SIZE).kind).toBe("refused");
+    expect(state.status).toBe("idle");
+
+    const ceiling = surface(state, counted(MAX_PAGE_OFFSET * 2));
+    const $ = cheerio.load(ceiling);
+    // Criterion 3's invariants: the arm still draws no control, still carries
+    // its hook, and is still ONE paragraph in the same position.
+    expect($("[data-paging]").attr("data-paging")).toBe("limit");
+    expect($("[data-paging]").prop("tagName")?.toLowerCase()).toBe("p");
+    expect($("[data-paging]").length).toBe(1);
+    expect(controls(ceiling)).toBe(0);
+    // Criterion 4: the window line beside it is untouched — it still says rows
+    // are not shown, because they are (admin-window/BUG-0172 criterion 6).
+    expect(hook(ceiling, "data-window-truncated")).toBe("true");
+
+    const said = saidBy(ceiling, '[data-paging="limit"]');
+    // WHAT STOPPED THE PAGING is this app, named with this app's own ceiling —
+    // read off the constant and through the app's own thousands-separated
+    // formatter, so a ceiling that moves moves the sentence and this assertion
+    // together rather than reddening it (criterion 2, first half).
+    expect(said).toContain(count(MAX_PAGE_OFFSET));
+    // THEN WHAT TO DO: a second sentence, and no apology (copy bar 3). The
+    // SHAPE is graded, never the words — the words are the designer's.
+    expect(
+      said.split(/(?<=\.)\s+/).filter((half) => half.trim().length > 0).length,
+      said,
+    ).toBeGreaterThanOrEqual(2);
+    expect(said).not.toMatch(/sorry|oops|unfortunately|went wrong|apolog/i);
+    // …and what it offers is not a press: no control is drawn here.
+    expect(said).not.toMatch(/press it again/i);
+
+    // CRITERION 1, at the SAME bound: an exhausted read draws a sentence that
+    // asserts something else, and neither is a spelling of the other. BOTH of
+    // the exhausted arm's sentences are graded, because either may be what the
+    // operator reads beside it (admin-window/BUG-0180).
+    for (const [reads, window] of [
+      ["the two reads agree", counted(state.held)],
+      ["the two reads diverge", counted(877)],
+    ] as const) {
+      const ranOut = surface({ ...state, status: "exhausted" }, window);
+      expect(cheerio.load(ranOut)("[data-paging]").attr("data-paging"), reads).toBe("exhausted");
+      const exhausted = saidBy(ranOut, '[data-paging="exhausted"]');
+      expect(asRead(exhausted), reads).not.toBe(asRead(said));
+      expect(restates(asRead(exhausted), asRead(said)), reads).toBe(false);
+    }
+  });
+
+  it("does not restate the window line's closing clause, in any state of a paged surface [admin-window/BUG-0178]", () => {
+    // ONE surface, one provider, the line and the control rendered together —
+    // and two strings read off that markup: the clause the LINE ends on (the
+    // window's verdict, what the read came back with) and the sentence the
+    // CONTROL renders (its own verdict — what a press would now do, or that
+    // this app has stopped asking). Neither may contain the other, in any
+    // state (admin-window/BUG-0178 criterion 9, LESSONS 11). Nothing here pins
+    // a word: both strings come off the rendered surface, so a rewording moves
+    // this test with it rather than reddening it, and whether the wording is
+    // GOOD is the designer's walk.
+    //
+    // MUST FLAG, or the states below pass vacuously (LESSONS 8): the stutter
+    // this exists for is a control ending on the line's own clause.
+    expect(restates("the read found no more", "the read found no more")).toBe(true);
+    expect(restates("the rest are not shown", "press on — the rest are not shown")).toBe(true);
+    expect(restates("the read found no more", "all claims in this view are shown")).toBe(false);
+
+    const states: [string, string, PageState<Row>, DrawnWindow][] = [
+      // BUG-0180's two exhausted states: the reads agree, and the reads diverge.
+      ["exhausted, the two reads agree", "exhausted", ended(130), counted(130)],
+      ["exhausted, the two reads diverge", "exhausted", ended(130), counted(877)],
+      // Still offering: the control is the button, and what it says is what a
+      // press would do.
+      ["still offering", "more", initialPage<Row>(SIZE, true, ""), counted(877)],
+      // This ticket's own arm, in both verdicts the window can carry there.
+      ["the bound ceiling", "limit", pastTheCeiling(), counted(MAX_PAGE_OFFSET * 2)],
+      ["the bound ceiling, the two reads diverge", "limit", pastTheCeiling(), counted(877)],
+    ];
+
+    for (const [name, arm, state, window] of states) {
+      const html = surface(state, window);
+      // Non-vacuity: the state really is the arm it claims to be, and both
+      // elements really are on the one surface.
+      expect(cheerio.load(html)("[data-paging]").attr("data-paging"), name).toBe(arm);
+      expect(cheerio.load(html)("[data-window]").length, name).toBe(1);
+
+      const line = closingClause(html);
+      const control = terminalSentence(html);
+      expect(line.length, name).toBeGreaterThan(0);
+      expect(control.length, name).toBeGreaterThan(0);
+      expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
+    }
+  });
+
+  /**
+   * WHAT THE OPERATOR CAN DO NEXT IS THE SURFACE'S TO SAY — campaign
+   * admin-window/BUG-0198.
+   *
+   * The ceiling arm's NOUN was per-surface from the start; its next step was
+   * not, and the one surface whose noun reads "events" was told to narrow a
+   * view it offers no way to narrow: `/browse`'s single parameter is
+   * `columns`, which "chooses which COLUMNS render and never which rows are
+   * read" (`src/app/browse/page.tsx`), and the page draws no facet at all. So
+   * the step is SUPPLIED by the surface now — `/claims` carries its own
+   * sentence, `/browse` carries none — and no default lives in the widget for
+   * a surface added later to inherit unchecked (the architect's ruling of
+   * 2026-09-11).
+   *
+   * Both readings below are the REAL wrappers the two pages render, inside
+   * this module's own provider, at the `held` the driver leaves a surface at
+   * past `MAX_PAGE_OFFSET`. Nothing here types a sentence: `/claims`' step is
+   * imported from the surface that supplies it, and `/browse`'s absence of one
+   * is graded against what the widget itself renders when it is handed none.
+   */
+  describe("the bound ceiling's next step comes from the surface", () => {
+    /** The `held` a surface sits at past the ceiling — one window beyond it. */
+    const CEILING = MAX_PAGE_OFFSET + SIZE;
+
+    /** One whole surface at the ceiling: this provider, and the page's own body. */
+    const drawn = (route: string, window: DrawnWindow, body: ReactNode): string =>
+      render(
+        h(
+          PagingProvider<Row>,
+          {
+            initial: initialPage<Row>(CEILING, true, ""),
+            window,
+            deps: { route, params: "", size: SIZE, idKey: ROW_ID },
+            children: null,
+          },
+          body,
+        ),
+      );
+
+    /** `/browse`'s own reading: its window line and its own table wrapper. */
+    const browse = (): string =>
+      drawn(
+        PAGE_ROUTES.browse,
+        { ...WINDOW, held: CEILING, heldFrom: "this window" },
+        h(
+          "div",
+          null,
+          h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
+          h(PagedBrowseTable, {
+            surface: "events",
+            view: RECENT_EVENTS,
+            shown: configuredKeys(RECENT_EVENTS),
+            initial: [],
+            reported: [],
+          }),
+        ),
+      );
+
+    /** `/claims`' own reading, of the same arm, on the same state. */
+    const claims = (): string =>
+      drawn(
+        PAGE_ROUTES.claims,
+        counted(MAX_PAGE_OFFSET * 2),
+        h(
+          "div",
+          null,
+          h(PagedWindowLine, { gauge: "claims", shows: MATCHED }),
+          h(PagedClaimList, { label: "All claims", initial: [] }),
+        ),
+      );
+
+    /** The sentences an arm renders, in the order it renders them. */
+    const sentencesOf = (said: string): string[] =>
+      said
+        .split(/(?<=\.)\s+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+
+    /** The widget alone, at the same state, for a surface supplying `nextStep`. */
+    const widget = (holds: string, nextStep: string | null): string =>
+      render(
+        h(PageMore, {
+          state: {
+            rows: [],
+            held: CEILING,
+            status: "idle",
+            refusal: null,
+            notes: null,
+            after: "",
+            drawnIds: new Set<string>(),
+            overlapped: false,
+          },
+          holds,
+          size: SIZE,
+          readsAgree: true,
+          nextStep,
+          onPress: () => {},
+        }),
+      );
+
+    /** What one arm of a rendered surface says. */
+    const ceilingArm = (html: string): string => saidBy(html, '[data-paging="limit"]');
+
+    it("`/browse` is told what stopped the paging, and nothing its URL cannot do", () => {
+      const html = browse();
+      const $ = cheerio.load(html);
+      // Non-vacuity: this really is the ceiling arm, at a bound this app
+      // refuses, with no control under it (criterion 3).
+      expect(pageBound(String(CEILING), SIZE).kind).toBe("refused");
+      expect($("[data-paging]").attr("data-paging")).toBe("limit");
+      expect($("[data-paging]").length).toBe(1);
+      expect(controls(html)).toBe(0);
+
+      const said = ceilingArm(html);
+      // CRITERION 2: what stopped the paging is still named, with this app's
+      // own bound read off `MAX_PAGE_OFFSET` and through the app's one
+      // thousands-separated count — so a ceiling that moves moves this
+      // assertion with it rather than reddening it.
+      expect(said).toContain(count(MAX_PAGE_OFFSET));
+      // CRITERION 1: and the arm ENDS there. One sentence, and in particular
+      // not the instruction `/claims` supplies, which this surface offers no
+      // way to carry out.
+      expect(sentencesOf(said)).toHaveLength(1);
+      expect(said).not.toContain(NARROW_THE_VIEW);
+      // MUST FLAG, or the two assertions above pass on a widget that can no
+      // longer say anything at all (LESSONS 8): the same widget, at the same
+      // state, DOES draw a second sentence when a surface supplies one.
+      expect(sentencesOf(ceilingArm(widget("events", NARROW_THE_VIEW)))).toHaveLength(2);
+      // …and what this wrapper draws is exactly the widget handed NO next
+      // step, which is the wrapper's own answer to the question.
+      expect(said).toBe(ceilingArm(widget("events", null)));
+    });
+
+    it("`/claims` still gets a next step, and it is that surface's own", () => {
+      const html = claims();
+      expect(cheerio.load(html)("[data-paging]").attr("data-paging")).toBe("limit");
+      expect(controls(html)).toBe(0);
+
+      const said = ceilingArm(html);
+      // CRITERION 4: two sentences, and the second is the one the SURFACE
+      // exports — imported here, never retyped (LESSONS 5). `/claims` draws
+      // its bucket tabs and its source filter above this list and every one of
+      // them reads fewer claims, which is what makes the instruction one an
+      // operator on this surface can carry out.
+      expect(sentencesOf(said)).toHaveLength(2);
+      expect(sentencesOf(said)[1]).toBe(NARROW_THE_VIEW);
+      // CRITERIA 2 AND 6: the half before it is the SAME half, to the byte,
+      // that the widget renders with no next step at all — the surface's
+      // sentence is appended verbatim and nothing else in the arm moved.
+      expect(said).toBe(`${ceilingArm(widget(HOLDS, null))} ${NARROW_THE_VIEW}`);
+    });
+
+    it("every other arm is byte-identical whether a surface supplies a next step or not", () => {
+      // CRITERION 6: this ticket moves one arm's second sentence and nothing
+      // else, so every other arm renders the same markup under either answer.
+      const arms: [string, Partial<PageState<Row>>, boolean][] = [
+        ["idle", {}, true],
+        ["loading", { status: "loading" }, true],
+        ["exhausted, the two reads agree", { status: "exhausted" }, true],
+        ["exhausted, the two reads diverge", { status: "exhausted" }, false],
+        [
+          "refused",
+          {
+            refusal: brokenArm("the read failed", "the machine", "pending_claims"),
+          },
+          true,
+        ],
+      ];
+      for (const [name, over, agree] of arms) {
+        expect(more(over, agree, NARROW_THE_VIEW), name).toBe(more(over, agree, null));
+      }
+      // Non-vacuity: the ONE arm this ticket moves does differ between them.
+      expect(more({ held: CEILING }, true, NARROW_THE_VIEW)).not.toBe(
+        more({ held: CEILING }, true, null),
+      );
+    });
+
+    it("keeps no next step of its own, for any surface, and says whatever it is handed", () => {
+      // CRITERION 8 (architect, 2026-09-11). A next step kept in the widget as
+      // a DEFAULT and opted out of by the surfaces that cannot honour it is
+      // the road this ticket rules out: the surface added next would inherit
+      // advice nobody checked it can take. So the instruction is not in this
+      // module at all — asked through the constant the surface exports rather
+      // than retyped here, which is this ticket's own check as a test.
+      expect(sourceText("src/components/ui/paging.tsx")).not.toContain(NARROW_THE_VIEW);
+      // Presence of the fix beside absence of the defect (LESSONS 12): what a
+      // surface hands over is what the arm says, verbatim and unexamined.
+      const supplied = "Ask the resolver for a narrower view.";
+      expect(ceilingArm(widget("events", supplied)).endsWith(supplied)).toBe(true);
+    });
+
+    it("neither surface's ceiling arm restates its own window line", () => {
+      // CRITERION 3, on both real readings: the line states the WINDOW's
+      // verdict and the arm states the CONTROL's, so one screen never answers
+      // one question twice (LESSONS 11, admin-window/BUG-0178 criterion 9).
+      // Both strings come off the rendered surface; nothing here pins a word.
+      for (const [name, html] of [
+        ["/browse", browse()],
+        ["/claims", claims()],
+      ] as const) {
+        const line = closingClause(html);
+        const control = terminalSentence(html);
+        expect(line.length, name).toBeGreaterThan(0);
+        expect(control.length, name).toBeGreaterThan(0);
+        expect(restates(line, control), `${name}: "${line}" / "${control}"`).toBe(false);
+      }
+    });
+
+    it("cannot be drawn by a surface that has not answered the question", () => {
+      // CRITERION 8, at the one place the ruling actually BINDS a surface
+      // added later (QA, admin-window/BUG-0198). The ruled-out road is a next
+      // step kept here as a default and opted out of; the assertion above
+      // catches the one default we know the wording of, and this catches every
+      // other one, because a DEFAULTED prop is an OPTIONAL prop. A surface
+      // that says nothing about its own URL therefore does not compile, which
+      // is what makes `null` an answer rather than a thing forgotten.
+      //
+      // The pin holds in BOTH directions by construction: `tsc --noEmit` runs
+      // over this file (`ci_command`) and fails if the omission below is ever
+      // allowed, AND fails on the unused `@ts-expect-error` if the prop is
+      // ever made optional. The runtime half keeps the case honest — it must
+      // still be a set of props this component really draws from.
+      const unanswered = {
+        state: state({ held: CEILING }),
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        onPress: () => {},
+      };
+      // @ts-expect-error `nextStep` is required of every surface that draws this control.
+      const bare: Parameters<typeof PageMore>[0] = unanswered;
+      expect(ceilingArm(render(h(PageMore, { ...bare, nextStep: null })))).toBe(
+        ceilingArm(widget(HOLDS, null)),
+      );
+    });
+  });
+
+  it("refuses to draw a paged surface outside its provider", () => {
+    // A default would be a paging state no read produced, drawn under rows
+    // some read did.
+    expect(() =>
+      render(h(PagedWindowLine, { gauge: "events", shows: CATALOG })),
+    ).toThrow();
+    expect(() => render(h(function Probe() {
+      usePaging();
+      return null;
+    }))).toThrow();
+  });
+});
+
+describe("the module's place in the tree", () => {
+  it("is a client module, and the barrel re-exports only its component", () => {
+    // A server module importing a VALUE out of a "use client" module compiles,
+    // lints and renders green offline, then answers 500 in a production build
+    // (admin-window/BUG-0094). A re-export is an import for that rule, so the
+    // server barrel may carry the component and nothing else.
+    expect(sourceText("src/components/ui/paging.tsx").startsWith('"use client"')).toBe(true);
+    expect(barrel.PageMore).toBe(PageMore);
+    expect("usePageRows" in barrel).toBe(false);
+    expect("fetchJson" in barrel).toBe(false);
+    // The two refusal sentences are VALUES too (admin-window/TASK-0076): the
+    // rule is about what crosses, not about what kind of value it is.
+    expect("ANSWERED_BY_SOMETHING_ELSE" in barrel).toBe(false);
+    expect("UNREADABLE_ANSWER" in barrel).toBe(false);
+    // The two components a PAGE renders out of this module are imported
+    // straight from it, the way the wrappers import `usePageRows`: the barrel
+    // is a server module and every server module that imports it takes on
+    // whatever it re-exports, so it is not widened by one export
+    // (admin-window/BUG-0172).
+    expect("PagingProvider" in barrel).toBe(false);
+    expect("PagedWindowLine" in barrel).toBe(false);
+    expect("usePaging" in barrel).toBe(false);
+    expect(Object.keys(barrel).filter((name) => name.startsWith("Page"))).toContain("PageMore");
+  });
+
+  it("holds the only network call under src/components, and it reaches nothing else", () => {
+    // ARCHITECTURE §4 rule 1's framed exception: one call, one origin, by a
+    // relative path. Asserted over the tree so the next paged surface cannot
+    // quietly grow a second one (LESSONS 5).
+    const CALL = /(?<![\w$.])fetch\s*\(/g;
+    const sites = sourceFiles()
+      .filter((file) => file.startsWith("src/components/"))
+      .flatMap((file) => (sourceText(file).match(CALL) ?? []).map(() => file));
+    expect(sites).toEqual(["src/components/ui/paging.tsx"]);
+
+    // Read off the CODE, not the prose: the module's docstring names the very
+    // things it may not import, which is documentation and not an edge.
+    const code = codeLinesIn(sourceText("src/components/ui/paging.tsx")).join("\n");
+    expect(code).not.toContain("@supabase/supabase-js");
+    expect(code).not.toContain("lib/db/");
+    expect(code).not.toContain("process.env");
+    // No absolute origin: the one call takes the relative route the leaf spells.
+    expect(code).not.toMatch(/fetch\s*\(\s*["'`]\w+:/);
+  });
+});
+
+describe("a page that arrives short of the window", () => {
+  /**
+   * QA attack, admin-window/TASK-0064: the affordance and the driver disagree
+   * about what a SHORT page means, and the disagreement ends paging for good.
+   *
+   * `requestPage`'s `ok` arm grows `held` by the rows that actually arrived and
+   * ends in `exhausted` only when the answer SAID so or carried zero rows — so
+   * an answer of 30 rows for a 50-row window with `exhausted: false` leaves
+   * `held` at 80, one bound `pageBound` refuses for not being a multiple of the
+   * window. `PageMore` then draws its `limit` arm: no control, and a sentence
+   * saying this view shows no further rows — while the answer the operator just
+   * received said the set continues. The rest of the set is unreachable without
+   * a reload, which is the exact complaint FEAT-0015 exists to answer.
+   *
+   * The assertion is fix-agnostic on purpose. Either end is honest — the driver
+   * may call a short page the end of the set (which its own `ok`-arm comment
+   * already claims: "A short or empty page is the end of the set"), or the
+   * route's contract may guarantee full-or-exhausted pages and the driver
+   * refuse a short one out loud. What may NOT stand is the third outcome:
+   * silently dropping the affordance while claiming nothing is wrong.
+   *
+   * Filed as admin-window/BUG-0168.
+   */
+  /** The answer the stub serves, and the state the driver reached from it. */
+  type ServedPage = Extract<PageAnswer<Row>, { kind: "ok" }>;
+  const short = async (
+    count: number,
+    exhausted: boolean,
+  ): Promise<{ answer: ServedPage; next: PageState<Row> }> => {
+    const answer: ServedPage = {
+      kind: "ok",
+      rows: pageOf(count),
+      offset: SIZE,
+      exhausted,
+    };
+    const next = await requestPage<Row>(
+      state(),
+      {
+        route: PAGE_ROUTES.claims,
+        params: "",
+        size: SIZE,
+        idKey: ROW_ID,
+        fetchJson: async () => answer,
+      },
+    );
+    return { answer, next };
+  };
+
+  // The pin, flipped back to a plain `it` by the fix — admin-window/BUG-0168,
+  // RULED (b): the route contract is full-or-exhausted and the driver refuses
+  // anything else out loud.
+  it("still offers a way to the rest of the set, or says the set is complete", async () => {
+    const { answer, next } = await short(30, false);
+    // Non-vacuity, re-expressed against the ANSWER the stub served rather than
+    // the resulting state, because the ruled ending appends nothing: under (b)
+    // a short continuing page is REFUSED, so `next.rows` is empty by design and
+    // the original `expect(next.rows).toHaveLength(30)` would now assert the
+    // fix away. What the fixture has to be is unchanged — a page short of the
+    // window that says the set continues — and that is what is checked here.
+    expect(answer.rows).toHaveLength(30);
+    expect(answer.exhausted).toBe(false);
+
+    const html = render(
+      h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      }),
+    );
+    // One of the two honest endings, never the silent one. (Unchanged.)
+    expect(controls(html) === 1 || html.includes('data-paging="exhausted"')).toBe(true);
+    expect(html).not.toContain('data-paging="limit"');
+  });
+
+  it("a full window still pages on, so the case above is about the short page alone", async () => {
+    // The must-NOT-flag fixture (LESSONS 8): the same path, one window wide.
+    const { next } = await short(SIZE, false);
+    expect(next.held).toBe(SIZE * 2);
+    const html = render(
+      h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      }),
+    );
+    expect(controls(html)).toBe(1);
+    expect(html).toContain('data-paging="more"');
+  });
+});
+
+
+/**
+ * WHICH WORDS ARE THE MACHINE'S — admin-window/BUG-0175.
+ *
+ * Mono carries every value the database produced; sans carries every word the
+ * app wrote, and that split IS the typographic idea (LOOK_AND_FEEL → The Look
+ * → Typography; ARCHITECTURE.md §7). This line put both authors in the one
+ * mono span, so an operator reading `canceling statement due to statement
+ * timeout` and `the page request answered something this app cannot read` saw
+ * the same 11px mono red run and could not tell who was talking.
+ *
+ * Every arm below is driven END TO END — a stubbed `fetch`, the real
+ * `fetchJson`, the real driver, the rendered markup — so what is graded is
+ * what an operator reads, not what a fixture asserts about itself.
+ */
+describe("the refusal line says who wrote the words", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const AS_JSON = { status: 200, headers: { "content-type": "application/json" } };
+  const DEPS: PageDeps<Row> = {
+    route: PAGE_ROUTES.claims,
+    params: "",
+    size: SIZE,
+    idKey: ROW_ID,
+    fetchJson,
+  };
+  const BEFORE: PageState<Row> = {
+    rows: [{ id: "a" }],
+    held: SIZE,
+    status: "idle",
+    refusal: null,
+    notes: null,
+    after: "",
+    drawnIds: new Set<string>(["a"]),
+    overlapped: false,
+  };
+
+  /** One press against a stubbed wire, rendered. */
+  async function pressed(body: BodyInit | null, init: ResponseInit): Promise<string> {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(body, init)));
+    const next = await requestPage<Row>(BEFORE, DEPS);
+    expect(next.refusal, String(body)).not.toBeNull();
+    // A refusal never half-fills the list, moves the bound or ends the set.
+    expect(next.rows.map((row) => row.id)).toEqual(["a"]);
+    expect(next.held).toBe(SIZE);
+    expect(next.status).toBe("idle");
+    return render(h(PageMore, {
+        state: next,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      }));
+  }
+
+  /**
+   * The refusal line, read by type step: what is mono, what is sans, what the
+   * bidi isolation wraps, and the whole line AS READ — cheerio decodes the
+   * entities React writes, so an apostrophe in one of the app's own sentences
+   * does not hide the sentence from a substring check.
+   */
+  function faces(html: string): {
+    mono: string;
+    sans: string;
+    isolated: string[];
+    read: string;
+  } {
+    const $ = cheerio.load(html);
+    const line = $("[data-paging-refusal]");
+    expect(line).toHaveLength(1);
+    const step = (name: string): string =>
+      line
+        .find(`span.${name}`)
+        .toArray()
+        .map((element) => $(element).text())
+        .join(" ");
+    return {
+      mono: step("type-data"),
+      sans: step("type-body"),
+      isolated: line
+        .find("[dir='ltr']")
+        .toArray()
+        .map((element) => $(element).text()),
+      read: line.text(),
+    };
+  }
+
+  /** The five arms the designer measured, as the wire delivers each one. */
+  const ARMS: ReadonlyArray<{
+    name: string;
+    body: BodyInit | null;
+    init: ResponseInit;
+    /** The words on the line beside the identifier, and who wrote them. */
+    reason: string;
+    author: "this app" | "the machine";
+    /** The machine identifier that must stay mono on every arm. */
+    identifier: string | null;
+  }> = [
+    {
+      name: "(a) something other than this app's route answered",
+      body: "<!doctype html><html><body>Sign in</body></html>",
+      init: { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+      reason: ANSWERED_BY_SOMETHING_ELSE,
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(b) a truncated body declared application/json",
+      body: '{"kind":"ok","rows":[{"id":',
+      init: AS_JSON,
+      reason: UNREADABLE_ANSWER,
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(c) a body that is not a page answer",
+      body: '{"rows":[{"id":"c"}]}',
+      init: AS_JSON,
+      reason: "the page request answered something this app cannot read",
+      author: "this app",
+      identifier: PAGE_ROUTES.claims,
+    },
+    {
+      name: "(d) the route's own bound refusal",
+      body: JSON.stringify({
+        kind: "refused",
+        reason: "a bound of 61 is not a multiple of the 50-row window",
+        bound: "61",
+      }),
+      init: { status: 400, headers: { "content-type": "application/json" } },
+      reason: "a bound of 61 is not a multiple of the 50-row window",
+      author: "this app",
+      // A bound refusal is about the bound this state already holds, so there
+      // is no third thing to name.
+      identifier: null,
+    },
+    {
+      name: "(e) the database's own error string",
+      body: JSON.stringify({
+        kind: "error",
+        reading: "pending_claims",
+        message: "canceling statement due to statement timeout",
+      }),
+      init: { status: 500, headers: { "content-type": "application/json" } },
+      reason: "canceling statement due to statement timeout",
+      author: "the machine",
+      identifier: "pending_claims",
+    },
+  ];
+
+  it("a reason this app wrote reads in sans, a reason the answer carried reads in mono", async () => {
+    // The two faces pinned SIDE BY SIDE, on the two arms the designer measured
+    // one press apart: the app's 22-word sentence about a page it could not
+    // read, and Postgres' own timeout string.
+    const [answeredByElse] = ARMS;
+    const app = faces(await pressed(answeredByElse.body, answeredByElse.init));
+    expect(app.sans).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    expect(app.mono).not.toContain(ANSWERED_BY_SOMETHING_ELSE);
+
+    const failed = ARMS[4];
+    const machine = faces(await pressed(failed.body, failed.init));
+    expect(machine.mono).toContain("canceling statement due to statement timeout");
+    expect(machine.sans).not.toContain("canceling statement due to statement timeout");
+  });
+
+  it("grades every arm a press can reach: four sentences this app wrote, and one it did not", async () => {
+    const authors = new Set<string>();
+    for (const arm of ARMS) {
+      const face = faces(await pressed(arm.body, arm.init));
+      const wrote = arm.author === "this app" ? face.sans : face.mono;
+      const other = arm.author === "this app" ? face.mono : face.sans;
+      expect(wrote, arm.name).toContain(arm.reason);
+      expect(other, arm.name).not.toContain(arm.reason);
+      authors.add(arm.author);
+    }
+    expect([...authors].sort()).toEqual(["the machine", "this app"]);
+    // Four of the five are the app's own prose, which is what the ticket says.
+    expect(ARMS.filter((arm) => arm.author === "this app")).toHaveLength(4);
+  });
+
+  it("the identifier stays mono on every arm, and dir=ltr isolates exactly the run this app did not write", async () => {
+    for (const arm of ARMS) {
+      const html = await pressed(arm.body, arm.init);
+      const face = faces(html);
+      if (arm.identifier === null) {
+        // Nothing to name, so no dangling em dash either.
+        expect(face.read, arm.name).not.toContain(EM_DASH);
+        continue;
+      }
+      // The route path and the object the answer named are machine
+      // identifiers: mono in every arm, never in the app's sans run.
+      expect(face.mono, arm.name).toContain(arm.identifier);
+      expect(face.sans, arm.name).not.toContain(arm.identifier);
+      // One em dash, separating the identifier from the reason.
+      expect(face.read.split(EM_DASH), arm.name).toHaveLength(2);
+      // The isolated run is the foreign one — the identifier alone where the
+      // reason is ours, the identifier and the reason where it is not.
+      expect(face.isolated, arm.name).toHaveLength(1);
+      expect(face.isolated[0], arm.name).toContain(arm.identifier);
+      if (arm.author === "this app") {
+        expect(face.isolated[0].trim(), arm.name).toBe(arm.identifier);
+      } else {
+        expect(face.isolated[0], arm.name).toContain(arm.reason);
+      }
+    }
+  });
+
+  it("the order, the markers, the red and the control are what they were", async () => {
+    for (const arm of ARMS) {
+      const html = await pressed(arm.body, arm.init);
+      // Identifier, then reason, then the fix in the app's voice.
+      const { read } = faces(html);
+      const at = (needle: string): number => read.indexOf(needle);
+      if (arm.identifier !== null) {
+        expect(at(arm.identifier), arm.name).toBeLessThan(at(arm.reason));
+      }
+      expect(at(arm.reason), arm.name).toBeLessThan(at("Press it again"));
+      // The line itself: same marker, same role, same red, still above the
+      // control, and the control is still there because a refusal is
+      // retryable at the same bound.
+      expect(html, arm.name).toContain("data-paging-refusal");
+      expect(html, arm.name).toContain('role="alert"');
+      expect(classesOf(html), arm.name).toContain("text-broken");
+      expect(html.indexOf("data-paging-refusal"), arm.name).toBeLessThan(html.indexOf("<button"));
+      expect(controls(html), arm.name).toBe(1);
+      expect(html, arm.name).toContain('data-paging="more"');
+      // Only the five type steps, on the line and around it.
+      for (const className of classesOf(html).filter((c) => c.startsWith("type-"))) {
+        expect(["type-figure", "type-title", "type-body", "type-data", "type-micro"]).toContain(
+          className,
+        );
+      }
+    }
+  });
+
+  it("derives the face from the fact alone: the words never decide it here", () => {
+    // The component is handed a refusal whose words say one thing and whose
+    // its carried authorship says the other, BOTH ways round. A component comparing the
+    // reason to one of this module's constants fails both halves; one reading
+    // the carried fact passes both. No string comparison can survive this.
+    const asMachine = faces(
+      more({
+        refusal: brokenArm(ANSWERED_BY_SOMETHING_ELSE, "the machine", "pending_claims"),
+      }),
+    );
+    expect(asMachine.mono).toContain(ANSWERED_BY_SOMETHING_ELSE);
+    expect(asMachine.sans).not.toContain(ANSWERED_BY_SOMETHING_ELSE);
+
+    const asApp = faces(
+      more({
+        refusal: brokenArm("canceling statement due to statement timeout", "this app", "pending_claims"),
+      }),
+    );
+    expect(asApp.sans).toContain("canceling statement due to statement timeout");
+    expect(asApp.mono).not.toContain("canceling statement due to statement timeout");
+    // And the identifier did not move either way.
+    expect(asMachine.mono).toContain("pending_claims");
+    expect(asApp.mono).toContain("pending_claims");
+  });
+
+  /**
+   * The two arms only a REJECTED fetch can reach, driven end to end through
+   * the real `fetchJson` — the face, not just the words.
+   *
+   * `asError`'s last-resort sentence is the app's own prose for a rejection
+   * that carried no words of its own, and criterion 1 is unconditional: a
+   * sentence this app wrote reads in sans on every arm, including the one no
+   * constant in the offline arm table reaches. Its neighbour is the control:
+   * a transport rejection that DID bring words keeps them AND keeps the
+   * machine's face, so neither assertion passes by rendering everything one
+   * way.
+   */
+  /**
+   * A FAILED READ'S ACCOUNT, PAGED — campaign admin-window/BUG-0196.
+   *
+   * The refusal's `error` arm is the ONE arm that can carry both authors:
+   * BUG-0175 gave every arm one author because every arm this driver writes is
+   * one sentence, and then a read's account turned out to be several. The
+   * press is driven end to end over the wire, so the fact is graded where it
+   * actually arrives — decided in `lib/db/result.ts`, carried by the answer,
+   * read by the line, re-derived nowhere.
+   */
+  describe("an answer whose account carries BOTH authors", () => {
+    const SAID = "canceling statement due to statement timeout";
+    const CLAUSE = "and the words this app wrote about what it would not quote";
+
+    const answering = (authored?: unknown): Promise<string> =>
+      pressed(
+        JSON.stringify({
+          kind: "error",
+          reading: "pending_claims",
+          message: `${SAID} ${CLAUSE}`,
+          ...(authored === undefined ? {} : { authored }),
+        }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+
+    const BOTH = [
+      { words: SAID, author: "the machine" },
+      { words: CLAUSE, author: "this app" },
+    ];
+
+    it("draws each run in its author's face, on one line, in the answer's order", async () => {
+      const face = faces(await answering(BOTH));
+      expect(face.mono).toContain(SAID);
+      expect(face.mono).not.toContain(CLAUSE);
+      expect(face.sans).toContain(CLAUSE);
+      expect(face.sans).not.toContain(SAID);
+      // The object stays a machine identifier in mono, one em dash after it,
+      // and the fix still comes last in the app's voice.
+      expect(face.mono).toContain("pending_claims");
+      expect(face.read.split(EM_DASH)).toHaveLength(2);
+      expect(face.read.indexOf(SAID)).toBeLessThan(face.read.indexOf(CLAUSE));
+      expect(face.read.indexOf(CLAUSE)).toBeLessThan(face.read.indexOf("Press it again"));
+    });
+
+    it("isolates the machine's run and never the app's", async () => {
+      // BUG-0175's isolation, unregressed and no wider: `dir="ltr"` wraps the
+      // identifier and the words this app did not write, and nothing else.
+      const face = faces(await answering(BOTH));
+      expect(face.isolated).toHaveLength(1);
+      expect(face.isolated[0]).toContain("pending_claims");
+      expect(face.isolated[0]).toContain(SAID);
+      expect(face.isolated[0]).not.toContain(CLAUSE);
+    });
+
+    it("reads an answer carrying NO authorship exactly as it did before the fact existed", async () => {
+      // The forced-answer shape of the ticket's human check, and every live
+      // probe: the whole account is the machine's and the line is one mono run.
+      const face = faces(await answering());
+      expect(face.mono).toContain(`pending_claims ${EM_DASH} ${SAID} ${CLAUSE}`);
+      expect(face.sans).not.toContain(SAID);
+      expect(face.isolated).toHaveLength(1);
+    });
+
+    it("refuses an answer whose authorship is unreadable, rather than rendering it", async () => {
+      // Not a face question: an `authored` field this app cannot read makes
+      // the whole body foreign, and the line says so in the app's own voice.
+      const face = faces(await answering([{ words: SAID, author: "somebody else" }]));
+      expect(face.sans).toContain("the page request answered something this app cannot read");
+      expect(face.read).not.toContain(SAID);
+      expect(face.mono).toContain(PAGE_ROUTES.claims);
+    });
+  });
+
+  it("a rejection with no words of its own reads in the app's voice; one with words stays the machine's", async () => {
+    const LAST_RESORT = "the page request failed before it answered";
+
+    // Nothing to say: fetch rejects carrying a value with no message at all.
+    vi.stubGlobal("fetch", () => Promise.reject(undefined));
+    const wordless = await requestPage<Row>(BEFORE, DEPS);
+    expect(broken(wordless.refusal).reason).toBe(LAST_RESORT);
+    const ours = faces(
+      render(h(PageMore, {
+        state: wordless,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      })),
+    );
+    expect(ours.sans).toContain(LAST_RESORT);
+    expect(ours.mono).not.toContain(LAST_RESORT);
+    // The route is still the machine identifier beside it, isolated alone.
+    expect(ours.mono).toContain(PAGE_ROUTES.claims);
+    expect(ours.isolated.map((run) => run.trim())).toEqual([PAGE_ROUTES.claims]);
+
+    // A non-Error rejection with no message reaches the same sentence: the
+    // words are the app's either way, so the face is too.
+    vi.stubGlobal("fetch", () => Promise.reject({ code: "ECONNRESET" }));
+    const objectThrown = await requestPage<Row>(BEFORE, DEPS);
+    expect(broken(objectThrown.refusal).reason).toBe(LAST_RESORT);
+    expect(authorOf(broken(objectThrown.refusal))).toBe("this app");
+
+    // The discriminator: the transport's OWN words, which this app did not
+    // write, still read as the machine on the very same line.
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    const transport = await requestPage<Row>(BEFORE, DEPS);
+    expect(broken(transport.refusal).reason).toBe("Failed to fetch");
+    const theirs = faces(
+      render(h(PageMore, {
+        state: transport,
+        holds: HOLDS,
+        size: SIZE,
+        readsAgree: true,
+        nextStep: NEXT_STEP,
+        onPress: () => {},
+      })),
+    );
+    expect(theirs.mono).toContain("Failed to fetch");
+    expect(theirs.sans).not.toContain("Failed to fetch");
+    // One isolated run carrying both, exactly as the answer-carried arm draws.
+    expect(theirs.isolated).toHaveLength(1);
+    expect(theirs.isolated[0]).toContain(PAGE_ROUTES.claims);
+    expect(theirs.isolated[0]).toContain("Failed to fetch");
+  });
+});

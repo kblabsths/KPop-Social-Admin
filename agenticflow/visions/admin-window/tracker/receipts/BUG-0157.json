@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0157",
+ "created": "2026-09-10T01:48:33Z",
+ "green": true,
+ "git_head": "8f9024734a618f1e35c5d3b1afe2b6d0e863287d",
+ "scope": [
+  "src/components/review/evidence-cells.tsx",
+  "tests/offline/review-item/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "535dbf3a3e2479323886771076fce611c6539f4636024a59335f3ce06653780b",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts -t \"folded-records table\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22010\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (122 tests | 121 skipped) 33ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 121 skipped (122)\n   Start at  18:48:28\n   Duration  1.03s (transform 361ms, setup 0ms, collect 579ms, tests 33ms, environment 0ms, prepare 69ms)\n\n(node:22017) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts -t \"only identity has no ink\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22010\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (122 tests | 121 skipped) 36ms\n\n Test Files  1 passed (1)\n      Tests  1 passed | 121 skipped (122)\n   Start at  18:48:29\n   Duration  944ms (transform 351ms, setup 0ms, collect 578ms, tests 36ms, environment 0ms, prepare 71ms)\n\n(node:22040) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-22010\n\n \u2713 |offline| tests/offline/review-item/page.test.ts (122 tests) 681ms\n\n Test Files  1 passed (1)\n      Tests  122 passed (122)\n   Start at  18:48:31\n   Duration  1.60s (transform 353ms, setup 0ms, collect 580ms, tests 681ms, environment 0ms, prepare 123ms)\n\n(node:22063) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

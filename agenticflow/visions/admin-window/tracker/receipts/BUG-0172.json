@@ -1,0 +1,80 @@
+{
+ "id": "BUG-0172",
+ "created": "2026-09-11T06:42:31Z",
+ "green": true,
+ "git_head": "cee5d65aaa3bee676f186d2266c0c2b002406f12",
+ "scope": [
+  "src/app/browse/page.tsx",
+  "src/app/claims/page.tsx",
+  "src/components/browse/paged-browse-table.tsx",
+  "src/components/claims/paged-claim-list.tsx",
+  "src/components/ui/paging.tsx",
+  "src/components/ui/window-line.tsx",
+  "tests/offline/browse/page.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/ui/primitives.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/offline/shell/client-boundary.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "58bd55d7fc455386d1ed33f200c7038e9a4bf77143de1bf6350d9b26dc77f5ce",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/browse tests/offline/claims tests/offline/ui tests/offline/paging tests/offline/absence/pages.test.ts tests/offline/shell",
+   "exit": 0,
+   "output_tail": "the client boundary under src/ > really resolves server imports of client components  393ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (161 tests) 178ms\n \u2713 |offline| tests/offline/paging/claims-route.test.ts (39 tests) 224ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (46 tests) 167ms\n \u2713 |offline| tests/offline/browse/views.test.ts (59 tests) 49ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (106 tests) 203ms\n \u2713 |offline| tests/offline/ui/link-spelling.test.ts (32 tests) 525ms\n \u2713 |offline| tests/offline/claims/read.test.ts (33 tests) 53ms\n \u2713 |offline| tests/offline/paging/browse-route.test.ts (39 tests) 49ms\n \u2713 |offline| tests/offline/browse/browse-read.test.ts (35 tests) 17ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 25ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (32 tests) 92ms\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 25ms\n \u2713 |offline| tests/offline/ui/contrast.test.ts (51 tests) 12ms\n \u2713 |offline| tests/offline/paging/machine.test.ts (52 tests) 21ms\n \u2713 |offline| tests/offline/paging/bounds.test.ts (11 tests) 9ms\n \u2713 |offline| tests/offline/paging/answer.test.ts (7 tests) 5ms\n \u2713 |offline| tests/offline/browse/page.test.ts (59 tests) 1398ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (286 tests) 2751ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  577ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  914ms\n \u2713 |offline| tests/offline/claims/page.test.ts (198 tests) 4525ms\n\n Test Files  22 passed (22)\n      Tests  1369 passed (1369)\n   Start at  23:42:05\n   Duration  5.83s (transform 3.11s, setup 0ms, collect 9.16s, tests 11.21s, environment 3ms, prepare 1.49s)\n\n(node:6629) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -q \"it.fails\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"export function PagingProvider\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"export function PagedWindowLine\" src/components/ui/paging.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"publishes the read.s own facts, and says the window did not fill\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"says the window filled its cap, and names no floor of its own\" tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"states the cap and the number of claims it holds back\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q \"does not claim to be truncated when every matching claim is drawn\" tests/offline/claims/page.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -q \"PageState\" src/app/browse/page.tsx src/app/claims/page.tsx",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "periments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.1s\n  Running TypeScript ...\n  Finished TypeScript in 5.8s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 152ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-6621/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:6764) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

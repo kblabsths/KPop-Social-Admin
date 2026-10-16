@@ -1,0 +1,30 @@
+{
+ "id": "TASK-0056",
+ "created": "2026-09-09T06:05:02Z",
+ "green": true,
+ "git_head": "f10f23748edc62cd24a7655fd69dcbe0a84a0b5e",
+ "scope": [
+  "src/components/review/close/link-actions.tsx",
+  "tests/offline/review-item/link-actions.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "603fd8fdf93db40a1f7bf19736d42244a34eb7f12c85ee551c8ee83ca81cda02",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/link-actions.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-4781\n\n \u2713 |offline| tests/offline/review-item/link-actions.test.ts (31 tests) 69ms\n\n Test Files  1 passed (1)\n      Tests  31 passed (31)\n   Start at  23:04:35\n   Duration  1.40s (transform 434ms, setup 0ms, collect 858ms, tests 69ms, environment 0ms, prepare 90ms)\n\n(node:5507) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/review-item.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-4781\n\n \u2713 |live| tests/live/review-item.live.test.ts (12 tests) 23314ms\n   \u2713 the review item's surface hooks against staging > names each graded surface once on an item that rendered  2653ms\n   \u2713 a real review item, rendered > resolves exactly the evidence ids the row carries, in its fold order  2439ms\n   \u2713 a real review item, rendered > renders each claim's own instant, source tier and its shape's own column  2455ms\n   \u2713 a real review item, rendered > puts the fact's current canonical value beside them, from the latest decision  2274ms\n   \u2713 a real review item, rendered > carries the header the anatomy requires, and no control at all  2417ms\n   \u2713 the close against staging > offers no control while the verdict log is absent, and names it  2120ms\n   \u2713 the close against staging > grades the signal item's page: not_provisioned in the close, the rest of it not  2587ms\n   \u2713 the close against staging > never settles anything by rendering the page  2181ms\n   \u2713 the header names its source, against staging > says the name the registry holds, in both links and in the cells below  1980ms\n   \u2713 a settled item's verdict, against staging > renders no verdict block on an item this database has not settled  2051ms\n\n Test Files  1 passed (1)\n      Tests  12 passed (12)\n   Start at  23:04:37\n   Duration  24.96s (transform 505ms, setup 49ms, collect 903ms, tests 23.31s, environment 0ms, prepare 246ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/review-item.live.test.ts\n(node:5568) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

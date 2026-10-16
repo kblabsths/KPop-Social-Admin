@@ -1,0 +1,51 @@
+{
+ "id": "TASK-0003",
+ "created": "2026-09-02T07:55:06Z",
+ "green": true,
+ "git_head": "a525b658962091fb2ab4456bf59b4a56acdb6e33",
+ "scope": [
+  "tests/live",
+  "tests/offline/live-guard.test.ts",
+  "agenticflow/docs/SERVICES.md"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "d728c834c17d74c159831bdea70baf447b85af9328ab504739614a1d2be66e41",
+ "commands": [
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm test",
+   "exit": 0,
+   "output_tail": "|offline| tests/offline/db/client.test.ts (5 tests) 65ms\n \u2713 |offline| tests/offline/db/layering.test.ts (14 tests) 56ms\n \u2713 |offline| tests/offline/format.test.ts (19 tests) 32ms\n \u2713 |offline| tests/offline/ui/editable-cell.test.ts (5 tests) 12ms\n \u2713 |offline| tests/offline/shell/shell.test.ts (12 tests) 18ms\n \u2713 |offline| tests/offline/ui/tokens.test.ts (9 tests) 15ms\n \u2713 |offline| tests/offline/ui/primitives.test.ts (35 tests) 85ms\n \u2713 |offline| tests/offline/ui/evidence-pair.test.ts (10 tests) 22ms\n \u2713 |offline| tests/offline/db/result.test.ts (31 tests) 9ms\n \u2713 |offline| tests/offline/live-guard.test.ts (39 tests) 815ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  757ms\n \u2713 |offline| tests/offline/toolchain.test.ts (3 tests) 1422ms\n   \u2713 test project layout > collects no live or http file into the offline project  516ms\n   \u2713 test project layout > collects the http suite into the http project only  903ms\n\n Test Files  11 passed (11)\n      Tests  182 passed (182)\n   Start at  00:55:02\n   Duration  1.79s (transform 593ms, setup 0ms, collect 1.61s, tests 2.55s, environment 2ms, prepare 924ms)\n\nnpm notice run kpop-social-space@0.1.0 test\nnpm notice run vitest run --project=offline\n(node:79987) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80009) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80031) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:80072) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"env -u STAGING_SUPABASE_URL -u STAGING_SUPABASE_SERVICE_ROLE_KEY npm run test:live && exit 1; exit 0\"",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-79816\n\n\n Test Files  1 failed (1)\n      Tests  no tests\n   Start at  00:55:04\n   Duration  268ms (transform 28ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 56ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live\n(node:80100) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n\n\u23af\u23af\u23af\u23af\u23af\u23af Failed Suites 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  |live| tests/live/harness.live.test.ts [ tests/live/harness.live.test.ts ]\nLiveGuardError: the live suite refuses: STAGING_SUPABASE_URL and STAGING_SUPABASE_SERVICE_ROLE_KEY are not set. An unset name is a refusal, never a fallback \u2014 the live suite does not read the app's own SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.\n \u276f resolveStagingTarget tests/live/staging-target.ts:211:11\n    209|   if (!present(input.key)) missing.push(names.key);\n    210|   if (missing.length > 0) {\n    211|     throw new LiveGuardError(\n       |           ^\n    212|       `the live suite refuses: ${missing.join(\" and \")} ` +\n    213|         `${missing.length === 1 ? \"is\" : \"are\"} not set. ` +\n \u276f tests/live/setup.ts:69:45\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/live-guard.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-79816\n\n \u2713 |offline| tests/offline/live-guard.test.ts (39 tests) 742ms\n   \u2713 npm run test:live > refuses, non-zero, naming the missing name \u2014 and never falls back  698ms\n\n Test Files  1 passed (1)\n      Tests  39 passed (39)\n   Start at  00:55:05\n   Duration  1.19s (transform 85ms, setup 0ms, collect 208ms, tests 742ms, environment 0ms, prepare 50ms)\n\n(node:80134) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"! grep -rq STAGING_ src\"",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "bash -c \"test -f tests/live/parity.ts && test -f tests/live/sweep.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

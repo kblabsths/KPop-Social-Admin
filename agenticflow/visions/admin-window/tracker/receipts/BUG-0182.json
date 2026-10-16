@@ -1,0 +1,50 @@
+{
+ "id": "BUG-0182",
+ "created": "2026-09-11T10:23:23Z",
+ "green": true,
+ "git_head": "0aea562acc4db1cfef38c19987b55ed79f96de4e",
+ "scope": [
+  "src/lib/db/result.ts",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "2297a050c8c501d28bfdb01dab13be8624d5e4c1ef95701d597a406d7b5c71fe",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-43859\n\n \u2713 |offline| tests/offline/db/result.test.ts (128 tests) 72ms\n\n Test Files  1 passed (1)\n      Tests  128 passed (128)\n   Start at  03:23:00\n   Duration  558ms (transform 123ms, setup 0ms, collect 262ms, tests 72ms, environment 0ms, prepare 60ms)\n\n(node:43866) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/dashboard tests/offline/queues tests/offline/claims",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-43859\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (48 tests) 14ms\n \u2713 |offline| tests/offline/dashboard/read.test.ts (22 tests) 10ms\n \u2713 |offline| tests/offline/queues/filters.test.ts (41 tests) 16ms\n \u2713 |offline| tests/offline/claims/read.test.ts (38 tests) 78ms\n \u2713 |offline| tests/offline/queues/verdict-log.test.ts (29 tests) 169ms\n \u2713 |offline| tests/offline/dashboard/page.test.ts (66 tests) 397ms\n \u2713 |offline| tests/offline/queues/page.test.ts (117 tests) 2833ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  485ms\n \u2713 |offline| tests/offline/claims/page.test.ts (203 tests) 4456ms\n   \u2713 what a filled window promises > cannot reach past the cap from any state its own chips offer  401ms\n\n Test Files  8 passed (8)\n      Tests  564 passed (564)\n   Start at  03:23:01\n   Duration  5.45s (transform 1.75s, setup 0ms, collect 4.41s, tests 7.97s, environment 1ms, prepare 557ms)\n\n(node:43889) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts ONE document once\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts a pretty-printed document that IS the whole part exactly once\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -qF \"it(\\\"counts two documents in one part as two\" tests/offline/db/result.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run typecheck",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 typecheck\nnpm notice run tsc --noEmit\n"
+  }
+ ]
+}

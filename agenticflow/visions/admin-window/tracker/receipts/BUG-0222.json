@@ -1,0 +1,51 @@
+{
+ "id": "BUG-0222",
+ "created": "2026-09-15T03:48:54Z",
+ "green": true,
+ "git_head": "9487bbb0b7b39ccc31b19d040721e692db35c1bf",
+ "scope": [
+  "src/lib/paging/machine.ts",
+  "src/components/ui/paging.tsx",
+  "src/components/claims/paged-claim-list.tsx",
+  "src/components/browse/paged-browse-table.tsx",
+  "tests/offline/paging/machine.test.ts",
+  "tests/offline/ui/paging.test.ts",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/browse/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "0fed0a4dc9284f8f28fcd2b71fd38d4b64b16c13e48f54937d836b6a71b866e6",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/paging/machine.test.ts tests/offline/ui/paging.test.ts tests/offline/claims/page.test.ts tests/offline/browse/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-13619\n\n \u2713 |offline| tests/offline/paging/machine.test.ts (80 tests) 57ms\n \u2713 |offline| tests/offline/ui/paging.test.ts (85 tests) 149ms\n \u2713 |offline| tests/offline/browse/page.test.ts (71 tests) 1080ms\n \u2713 |offline| tests/offline/claims/page.test.ts (225 tests) 5451ms\n\n Test Files  4 passed (4)\n      Tests  461 passed (461)\n   Start at  20:47:34\n   Duration  6.44s (transform 1.00s, setup 0ms, collect 2.47s, tests 6.74s, environment 1ms, prepare 261ms)\n\n(node:13630) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "grep -q 'admin-window/BUG-0222' src/lib/paging/machine.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": " staging > renders each bucket's count exactly as the view holds it, per source filter  4738ms\n   \u2713 the classification buckets against staging > narrows the same way for every spelling of one source id  8154ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  1359ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  808ms\n   \u2713 which kind of fact a bucket figure is, against staging > labels each place a bucket count stands, on both tabs  1474ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  4114ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  1405ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  961ms\n   \u2713 paging past the first window, against staging > reaches every claim the walked narrowing holds, once each, and no more  5749ms\n   \u2713 paging past the first window, against staging > answers ONE press past the unnarrowed first screen, from the oldest end  1567ms\n   \u2713 the same paged order, walked three times, against staging > reaches the same claims, in the same places, on every walk \u2014 none twice, none skipped  5126ms\n   \u2713 the same paged order, walked three times, against staging > pending_claims holds exactly one row per observation_id  321ms\n\n Test Files  1 passed (1)\n      Tests  19 passed (19)\n   Start at  20:47:41\n   Duration  44.10s (transform 280ms, setup 29ms, collect 473ms, tests 43.36s, environment 0ms, prepare 52ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:13680) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run build",
+   "exit": 0,
+   "output_tail": "riments (use with caution):\n  \u2713 caseSensitiveRoutes\n\n  Creating an optimized production build ...\n\u2713 Compiled successfully in 2.4s\n  Running TypeScript ...\n  Finished TypeScript in 6.5s ...\n  Collecting page data using 9 workers ...\n  Generating static pages using 9 workers (0/8) ...\n  Generating static pages using 9 workers (2/8) \n  Generating static pages using 9 workers (4/8) \n  Generating static pages using 9 workers (6/8) \n\u2713 Generating static pages using 9 workers (8/8) in 160ms\n  Finalizing page optimization ...\n\nRoute (app)\n\u250c \u0192 /\n\u251c \u25cb /_not-found\n\u251c \u0192 /api/admin/browse/rows\n\u251c \u0192 /api/admin/claims/rows\n\u251c \u0192 /api/admin/records/[table]/[id]\n\u251c \u0192 /api/admin/review-items/[reviewItemId]/settle\n\u251c \u0192 /api/auth/[...nextauth]\n\u251c \u0192 /api/health\n\u251c \u0192 /browse\n\u251c \u0192 /claims\n\u251c \u0192 /cycles\n\u251c \u25cb /login\n\u251c \u0192 /queues\n\u251c \u0192 /queues/[reviewItemId]\n\u251c \u0192 /records/[table]/[id]\n\u2514 \u0192 /sources\n\n\n\u0192 Proxy (Middleware)\n\n\u25cb  (Static)   prerendered as static content\n\u0192  (Dynamic)  server-rendered on demand\n\nnpm notice run kpop-social-space@0.1.0 build\nnpm notice run next build\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-13619/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:14074) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

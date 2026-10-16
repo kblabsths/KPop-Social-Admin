@@ -1,0 +1,30 @@
+{
+ "id": "BUG-0057",
+ "created": "2026-09-03T23:14:04Z",
+ "green": true,
+ "git_head": "d8a796d2ac36603cd401850d27ef63bd6769898f",
+ "scope": [
+  "tests/live/claims.live.test.ts",
+  "src/app/claims/page.tsx"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 9,
+ "tree_hash": "35c6ec49fef4dfc9d967d44b3ae90f71612ccb2ba903e200332c0ee924d5a6b8",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=live tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-44460\n\n \u2713 |live| tests/live/claims.live.test.ts (6 tests) 29425ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  4085ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  6785ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  3584ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  3296ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  11419ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  16:13:26\n   Duration  30.09s (transform 144ms, setup 30ms, collect 329ms, tests 29.42s, environment 0ms, prepare 64ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=live tests/live/claims.live.test.ts\n(node:44487) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/claims/filters.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-44460\n\n \u2713 |offline| tests/offline/claims/filters.test.ts (15 tests) 6ms\n \u2713 |offline| tests/offline/claims/page.test.ts (76 tests) 2168ms\n\n Test Files  2 passed (2)\n      Tests  91 passed (91)\n   Start at  16:13:57\n   Duration  2.86s (transform 238ms, setup 0ms, collect 487ms, tests 2.17s, environment 0ms, prepare 158ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/claims/page.test.ts tests/offline/claims/filters.test.ts\n(node:44661) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

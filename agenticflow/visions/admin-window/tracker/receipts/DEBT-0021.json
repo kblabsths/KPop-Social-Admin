@@ -1,0 +1,41 @@
+{
+ "id": "DEBT-0021",
+ "created": "2026-09-15T06:16:25Z",
+ "green": true,
+ "git_head": "47257c3924926e414d99b7a2db3a49807836c4ae",
+ "scope": [
+  "src/lib/db/result.ts",
+  "src/lib/db",
+  "tests/offline/db/result.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "481256983c738aec5eb4bc0ee729689e887f77de2b4f054892ae2425f7378b3c",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "test \"$(grep -c 'authored?: readonly AccountSegment' src/lib/db/result.ts)\" -eq 0",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "grep -q 'authored: readonly AccountSegment' src/lib/db/result.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/db/result.test.ts tests/offline/db/layering.test.ts tests/offline/edit/records.test.ts tests/offline/verdict/seam.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-54495\n\n \u2713 |offline| tests/offline/edit/records.test.ts (42 tests) 15ms\n \u2713 |offline| tests/offline/verdict/seam.test.ts (53 tests) 20ms\n \u2713 |offline| tests/offline/db/result.test.ts (152 tests) 86ms\n \u2713 |offline| tests/offline/db/layering.test.ts (46 tests) 1376ms\n\n Test Files  4 passed (4)\n      Tests  293 passed (293)\n   Start at  23:16:11\n   Duration  1.77s (transform 438ms, setup 0ms, collect 988ms, tests 1.50s, environment 0ms, prepare 268ms)\n\n(node:54571) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

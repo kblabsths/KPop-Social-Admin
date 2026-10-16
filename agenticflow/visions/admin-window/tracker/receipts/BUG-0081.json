@@ -1,0 +1,20 @@
+{
+ "id": "BUG-0081",
+ "created": "2026-09-09T02:38:11Z",
+ "green": true,
+ "git_head": "dc0afc4e03168052e1df71b416ea2f1a1aa8ef1d",
+ "scope": [
+  "next.config.ts",
+  "tests/http/auth.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "c172adcd75e3001596948e6f83034f44e592f8565c9c5e7da475de938bd68d01",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=http tests/http/auth.http.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-84374\n\n \u2713 |http| tests/http/auth.http.test.ts (13 tests) 14211ms\n   \u2713 the built app over http > serves health and sends an unauthenticated visitor to the login page  10138ms\n   \u2713 the gate over the whole window > sends a stranger to /login and answers a signed-in visitor honestly  1020ms\n   \u2713 a record URL for a table the edit map does not carry > answers with the app's own 404, server-rendered, without weakening the gate  764ms\n   \u2713 a record URL for a table the edit map does not carry > BUG-0081: serves the framed 404 for a percent-encoded spelling of a struck table  588ms\n   \u2713 a record URL for a table the edit map does not carry > BUG-0083: serves the framed 404 for a case variant of a configured table  656ms\n   \u2713 a record URL for a table the edit map does not carry > still sends a stranger to the sign-in page  963ms\n\n Test Files  1 passed (1)\n      Tests  13 passed (13)\n   Start at  19:37:55\n   Duration  14.76s (transform 74ms, setup 0ms, collect 117ms, tests 14.21s, environment 0ms, prepare 174ms)\n\n(node:84382) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

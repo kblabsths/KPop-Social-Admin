@@ -1,0 +1,294 @@
+2026-09-02T05:50:40Z	supply_gate	blocked archive fetch from registry.npmjs.org (https://registry.npmjs.org/vite-tsconfig-paths)
+2026-09-02T06:03:14Z	artifact_gate	blocked write outside repo: /tmp_out_lint.txt
+2026-09-02T06:43:15Z	artifact_gate	blocked write outside repo: /tmp-none
+2026-09-02T07:06:05Z	artifact_gate	blocked write outside repo: /tmp/o
+2026-09-02T07:14:53Z	artifact_gate	blocked write outside repo: /,
+2026-09-02T07:50:57Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T08:13:56Z	artifact_gate	blocked write outside repo: //
+2026-09-02T08:46:47Z	evidence_budget	qa_evidence_overbudget: TASK-0007 4569/4000 chars
+2026-09-02T08:49:41Z	artifact_gate	blocked write outside repo: /g,
+2026-09-02T09:17:09Z	artifact_gate	blocked write outside repo: /BROWSE_VIEWSs*[:=]/.test
+2026-09-02T09:25:27Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
+2026-09-02T09:33:50Z	evidence_budget	qa_evidence_overbudget: TASK-0015 4214/4000 chars
+2026-09-02T09:38:03Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
+2026-09-02T09:45:32Z	evidence_budget	qa_evidence_overbudget: TASK-0017 5118/4000 chars
+2026-09-02T10:21:21Z	artifact_gate	blocked write outside repo: /g,
+2026-09-02T10:32:45Z	evidence_budget	qa_evidence_overbudget: TASK-0018 4599/4000 chars
+2026-09-02T10:44:23Z	evidence_budget	qa_evidence_overbudget: BUG-0012 4202/4000 chars
+2026-09-02T10:47:39Z	artifact_gate	blocked write outside repo: /g,
+2026-09-02T10:55:03Z	artifact_gate	blocked write outside repo: /_next/static/[^"]*\.css
+2026-09-02T11:15:30Z	artifact_gate	blocked write outside repo: /.exec
+2026-09-02T11:43:10Z	artifact_gate	blocked machinery write: agenticflow/scripts/qa_probe_task0028.ts
+2026-09-02T12:14:25Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
+2026-09-02T12:16:50Z	artifact_gate	blocked write outside repo: /i
+2026-09-02T12:21:36Z	evidence_budget	qa_evidence_overbudget: BUG-0017 4832/4000 chars
+2026-09-02T12:34:14Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T12:43:02Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T12:53:01Z	artifact_gate	blocked write outside repo: /tmp/x.log
+2026-09-02T14:23:19Z	evidence_budget	qa_evidence_overbudget: TASK-0012 4554/4000 chars
+2026-09-02T14:41:15Z	artifact_gate	blocked write outside repo: /tmp/npmci.log
+2026-09-02T14:45:09Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T14:59:01Z	artifact_gate	blocked write outside repo: /g,
+2026-09-02T15:44:45Z	artifact_gate	blocked write outside repo: /tmp_prefix_page.tsx
+2026-09-02T15:47:28Z	artifact_gate	blocked write outside repo: /tmp_unused
+2026-09-02T15:49:01Z	evidence_budget	qa_evidence_overbudget: BUG-0023 4160/4000 chars
+2026-09-02T15:56:52Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T16:07:52Z	artifact_gate	blocked write outside repo: /g
+2026-09-02T16:13:27Z	artifact_gate	blocked write outside repo: catalog
+2026-09-02T16:35:10Z	supply_gate	blocked npx of @railway/cli
+2026-09-02T16:35:10Z	supply_gate	blocked npx of railway
+2026-09-02T16:46:41Z	evidence_budget	qa_evidence_overbudget: BUG-0024 4277/4000 chars
+2026-09-02T17:41:59Z	artifact_gate	blocked write outside repo: /tmp/x.log
+2026-09-02T17:50:02Z	evidence_budget	qa_evidence_overbudget: BUG-0030 5006/4000 chars
+2026-09-02T17:53:00Z	evidence_budget	qa_evidence_overbudget: BUG-0029 4026/4000 chars
+2026-09-02T18:21:32Z	artifact_gate	blocked write outside repo: /`/.test
+2026-09-02T18:21:46Z	artifact_gate	blocked write outside repo: /src`,
+2026-09-02T18:25:09Z	evidence_budget	qa_evidence_overbudget: BUG-0030 4395/4000 chars
+2026-09-02T18:47:55Z	evidence_budget	qa_evidence_overbudget: BUG-0032 4628/4000 chars
+2026-09-02T18:58:39Z	evidence_budget	qa_evidence_overbudget: BUG-0030 4476/4000 chars
+2026-09-02T18:59:43Z	artifact_gate	blocked write outside repo: //
+2026-09-02T19:32:03Z	evidence_budget	qa_evidence_overbudget: TASK-0020 4894/4000 chars
+2026-09-02T19:46:54Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-02T20:00:37Z	artifact_gate	blocked write outside repo: /
+2026-09-02T20:15:21Z	supply_gate	blocked npx of prettier
+2026-09-02T20:44:32Z	artifact_gate	blocked write outside repo: /head:s*true/.test
+2026-09-02T21:15:13Z	evidence_budget	qa_evidence_overbudget: TASK-0032 4284/4000 chars
+2026-09-02T21:42:50Z	artifact_gate	blocked write outside repo: /b
+2026-09-02T21:59:16Z	artifact_gate	blocked write outside repo: /tmp/ci.log
+2026-09-03T05:02:20Z	artifact_gate	blocked write outside repo: /NaN
+2026-09-03T20:57:55Z	artifact_gate	blocked write outside repo: /tmp/nope
+2026-09-03T21:38:28Z	evidence_budget	qa_evidence_overbudget: TASK-0033 4312/4000 chars
+2026-09-03T22:25:04Z	artifact_gate	blocked write outside repo: /.env .env`); never copy it around.
+
+**The production-like walk repeats the mapping on both commands.**
+2026-09-03T22:31:20Z	evidence_budget	qa_evidence_overbudget: BUG-0040 4272/4000 chars
+2026-09-03T22:37:58Z	supply_gate	blocked npx of /Users/ben-m4/Desktop/Coding/KPOP/kspace
+2026-09-03T22:44:47Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
+2026-09-03T23:18:29Z	artifact_gate	blocked write outside repo: /residue
+2026-09-03T23:26:48Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-03T23:31:29Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-03T23:34:11Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T00:30:21Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T00:57:37Z	artifact_gate	blocked write outside repo: /_next/static/[^"]*\.css[^"]*
+2026-09-04T02:17:48Z	evidence_budget	qa_evidence_overbudget: BUG-0065 4243/4000 chars
+2026-09-04T02:18:52Z	artifact_gate	blocked write outside repo: /records/groups/[0-9a-f-]\{36\}
+2026-09-04T02:25:51Z	artifact_gate	blocked write outside repo: /tmp/nt.log
+2026-09-04T02:34:23Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T03:43:22Z	artifact_gate	blocked write outside repo: /tmp/lint.out
+2026-09-04T03:58:36Z	evidence_budget	qa_evidence_overbudget: TASK-0036 4373/4000 chars
+2026-09-04T04:11:23Z	artifact_gate	blocked write outside repo: /tmp/dev/null
+2026-09-04T04:53:47Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T05:28:19Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T05:40:26Z	evidence_budget	qa_evidence_overbudget: BUG-0074 4407/4000 chars
+2026-09-04T05:43:46Z	supply_gate	blocked npx of prettier
+2026-09-04T06:17:01Z	artifact_gate	blocked write outside repo: /g,
+2026-09-04T06:25:44Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T06:40:34Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T07:06:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-04T07:06:57Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/DEBT-0005
+2026-09-04T07:08:49Z	artifact_gate	blocked write outside repo: ../next.log
+2026-09-04T07:20:49Z	evidence_budget	qa_evidence_overbudget: DEBT-0003 5097/4000 chars
+2026-09-04T07:55:06Z	evidence_budget	qa_evidence_overbudget: DEBT-0003 4090/4000 chars
+2026-09-09T01:02:02Z	artifact_gate	blocked machinery write: agenticflow/run.yaml
+2026-09-09T01:04:43Z	artifact_gate	blocked write outside repo: /Users/ben-m4/.claude/projects/-Users-ben-m4-Desktop-Coding-KPOP-kspace-Admin/memory/reset-run-yaml-knobs.md
+2026-09-09T01:08:29Z	artifact_gate	blocked machinery write: agenticflow/run.yaml
+2026-09-09T01:37:29Z	evidence_budget	qa_evidence_overbudget: TASK-0042 4174/4000 chars
+2026-09-09T01:49:40Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T01:50:17Z	artifact_gate	blocked write outside repo: /tmp-lint.log
+2026-09-09T01:54:40Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T01:55:52Z	evidence_budget	qa_evidence_overbudget: TASK-0037 4240/4000 chars
+2026-09-09T01:56:31Z	evidence_budget	qa_evidence_overbudget: TASK-0047 4404/4000 chars
+2026-09-09T02:07:12Z	artifact_gate	blocked write outside repo: /g,
+2026-09-09T02:07:59Z	artifact_gate	blocked write outside repo: /bcheckb/i.test
+2026-09-09T02:11:27Z	artifact_gate	blocked write outside repo: /verdicts/.test
+2026-09-09T02:13:37Z	evidence_budget	qa_evidence_overbudget: TASK-0040 4179/4000 chars
+2026-09-09T02:23:54Z	artifact_gate	blocked write outside repo: /tmp/insert.ts.txt
+2026-09-09T02:32:26Z	evidence_budget	qa_evidence_overbudget: TASK-0048 4117/4000 chars
+2026-09-09T02:37:05Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T02:37:48Z	artifact_gate	blocked write outside repo: ../logs/snapshot-before.tsv
+2026-09-09T02:43:26Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T02:49:49Z	evidence_budget	qa_evidence_overbudget: TASK-0052 4273/4000 chars
+2026-09-09T02:51:38Z	artifact_gate	blocked write outside repo: /
+2026-09-09T02:52:59Z	artifact_gate	blocked write outside repo: /tmp/x.txt
+2026-09-09T03:00:44Z	artifact_gate	blocked write outside repo: //rest/v1/
+2026-09-09T03:07:53Z	evidence_budget	qa_evidence_overbudget: BUG-0083 4172/4000 chars
+2026-09-09T03:18:54Z	artifact_gate	blocked write outside repo: /g
+2026-09-09T03:26:03Z	evidence_budget	qa_evidence_overbudget: TASK-0058 4465/4000 chars
+2026-09-09T03:36:26Z	evidence_budget	qa_evidence_overbudget: TASK-0053 4137/4000 chars
+2026-09-09T03:39:58Z	artifact_gate	blocked write outside repo: /.test
+2026-09-09T03:58:41Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T04:00:04Z	artifact_gate	blocked write outside repo: /`,
+2026-09-09T04:02:32Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T04:05:52Z	artifact_gate	blocked write outside repo: /g
+2026-09-09T04:11:11Z	evidence_budget	qa_evidence_overbudget: TASK-0046 5605/4000 chars
+2026-09-09T04:17:49Z	evidence_budget	qa_evidence_overbudget: TASK-0054 4399/4000 chars
+2026-09-09T04:17:59Z	artifact_gate	blocked write outside repo: /tmp-none
+2026-09-09T04:23:11Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T04:26:43Z	evidence_budget	qa_evidence_overbudget: BUG-0087 4582/4000 chars
+2026-09-09T04:27:35Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T04:30:04Z	artifact_gate	blocked write outside repo: /
+2026-09-09T04:36:48Z	evidence_budget	qa_evidence_overbudget: TASK-0059 5154/4000 chars
+2026-09-09T04:44:16Z	evidence_budget	qa_evidence_overbudget: BUG-0086 4069/4000 chars
+2026-09-09T04:54:19Z	evidence_budget	qa_evidence_overbudget: BUG-0090 4257/4000 chars
+2026-09-09T04:54:35Z	evidence_budget	qa_evidence_overbudget: BUG-0089 4825/4000 chars
+2026-09-09T05:01:51Z	evidence_budget	qa_evidence_overbudget: BUG-0093 4131/4000 chars
+2026-09-09T05:02:06Z	artifact_gate	blocked write outside repo: /tmp/na
+2026-09-09T05:19:57Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T05:43:35Z	evidence_budget	qa_evidence_overbudget: BUG-0097 4215/4000 chars
+2026-09-09T05:49:20Z	evidence_budget	qa_evidence_overbudget: BUG-0096 4027/4000 chars
+2026-09-09T06:02:10Z	artifact_gate	blocked write outside repo: /tmp/qa0094_guard.keep
+2026-09-09T06:05:46Z	evidence_budget	qa_evidence_overbudget: TASK-0056 4665/4000 chars
+2026-09-09T07:20:19Z	evidence_budget	qa_evidence_overbudget: BUG-0103 4940/4000 chars
+2026-09-09T07:54:06Z	evidence_budget	qa_evidence_overbudget: BUG-0103 4376/4000 chars
+2026-09-09T08:40:42Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T09:14:30Z	evidence_budget	qa_evidence_overbudget: BUG-0107 4145/4000 chars
+2026-09-09T09:33:27Z	evidence_budget	qa_evidence_overbudget: BUG-0108 4476/4000 chars
+2026-09-09T10:02:19Z	evidence_budget	qa_evidence_overbudget: BUG-0107 4184/4000 chars
+2026-09-09T10:32:17Z	evidence_budget	qa_evidence_overbudget: BUG-0113 4601/4000 chars
+2026-09-09T10:58:00Z	evidence_budget	qa_evidence_overbudget: BUG-0109 4629/4000 chars
+2026-09-09T11:30:27Z	artifact_gate	blocked write outside repo: ../../tracker/evidence/BUG-0118/prefix-sentences.txt
+2026-09-09T11:34:32Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T11:37:30Z	evidence_budget	qa_evidence_overbudget: BUG-0118 4141/4000 chars
+2026-09-09T11:56:01Z	artifact_gate	blocked write outside repo: /
+2026-09-09T12:12:32Z	artifact_gate	blocked write outside repo: /.
+2026-09-09T12:36:21Z	evidence_budget	qa_evidence_overbudget: BUG-0119 4276/4000 chars
+2026-09-09T12:46:39Z	evidence_budget	qa_evidence_overbudget: BUG-0120 4167/4000 chars
+2026-09-09T13:08:22Z	evidence_budget	qa_evidence_overbudget: BUG-0121 4018/4000 chars
+2026-09-09T13:42:51Z	evidence_budget	qa_evidence_overbudget: BUG-0122 4059/4000 chars
+2026-09-09T14:37:35Z	artifact_gate	blocked write outside repo: /records/events/[0-9a-f-]\{36\}
+2026-09-09T15:07:13Z	supply_gate	blocked npm of <unparsed>
+2026-09-09T15:10:08Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T15:10:17Z	artifact_gate	blocked write outside repo: ../../agenticflow/tracker/evidence/BUG-0130/pre.txt
+2026-09-09T15:32:47Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
+2026-09-09T15:35:43Z	evidence_budget	qa_evidence_overbudget: BUG-0131 4329/4000 chars
+2026-09-09T15:58:47Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T16:10:37Z	evidence_budget	qa_evidence_overbudget: BUG-0133 4050/4000 chars
+2026-09-09T16:34:41Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T16:44:34Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T16:51:50Z	evidence_budget	qa_evidence_overbudget: BUG-0135 4063/4000 chars
+2026-09-09T17:41:53Z	artifact_gate	blocked write outside repo: /tmp_probe.html
+2026-09-09T18:19:08Z	artifact_gate	blocked write outside repo: /[a-f]/i.test
+2026-09-09T19:05:49Z	artifact_gate	blocked write outside repo: /tmp/dev/null
+2026-09-09T19:45:42Z	artifact_gate	blocked write outside repo: /g,
+2026-09-09T19:58:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T20:13:08Z	artifact_gate	blocked write outside repo: /tmp/x.log
+2026-09-09T20:13:49Z	evidence_budget	qa_evidence_overbudget: BUG-0143 4126/4000 chars
+2026-09-09T20:14:48Z	artifact_gate	blocked write outside repo: /bisNarrowedb/.test
+2026-09-09T20:22:54Z	evidence_budget	qa_evidence_overbudget: DEBT-0010 4409/4000 chars
+2026-09-09T20:30:54Z	artifact_gate	blocked write outside repo: /tmp/does-not-exist
+2026-09-09T20:48:39Z	evidence_budget	qa_evidence_overbudget: BUG-0145 4089/4000 chars
+2026-09-09T21:04:49Z	artifact_gate	blocked write outside repo: /tmp_out.html
+2026-09-09T21:14:22Z	artifact_gate	blocked write outside repo: /tmp-unused
+2026-09-09T21:16:45Z	artifact_gate	blocked write outside repo: /settle
+2026-09-09T21:20:15Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T21:41:30Z	artifact_gate	blocked write outside repo: /tmp_lint.log
+2026-09-09T21:54:54Z	evidence_budget	qa_evidence_overbudget: DEBT-0011 4735/4000 chars
+2026-09-09T22:00:42Z	artifact_gate	blocked write outside repo: /tmp_out.txt
+2026-09-09T22:04:55Z	evidence_budget	qa_evidence_overbudget: DEBT-0013 4235/4000 chars
+2026-09-09T22:12:50Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T22:14:30Z	evidence_budget	qa_evidence_overbudget: DEBT-0011 5502/4000 chars
+2026-09-09T22:25:11Z	evidence_budget	qa_evidence_overbudget: BUG-0149 4216/4000 chars
+2026-09-09T22:38:46Z	evidence_budget	qa_evidence_overbudget: BUG-0151 4200/4000 chars
+2026-09-09T22:43:10Z	artifact_gate	blocked write outside repo: /tmp/x.log
+2026-09-09T22:56:47Z	evidence_budget	qa_evidence_overbudget: DEBT-0011 5284/4000 chars
+2026-09-09T22:59:27Z	artifact_gate	blocked write outside repo: /tmp/none
+2026-09-09T23:10:56Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T23:14:00Z	supply_gate	blocked npx of prettier
+2026-09-09T23:17:51Z	evidence_budget	qa_evidence_overbudget: BUG-0147 4930/4000 chars
+2026-09-09T23:19:09Z	evidence_budget	qa_evidence_overbudget: BUG-0150 4133/4000 chars
+2026-09-09T23:26:50Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-09T23:28:29Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
+2026-09-09T23:36:01Z	evidence_budget	qa_evidence_overbudget: BUG-0152 4731/4000 chars
+2026-09-10T00:04:25Z	artifact_gate	blocked write outside repo: /
+2026-09-10T00:04:44Z	artifact_gate	blocked write outside repo: /
+2026-09-10T00:13:17Z	evidence_budget	qa_evidence_overbudget: BUG-0154 4085/4000 chars
+2026-09-10T00:36:43Z	artifact_gate	blocked write outside repo: reads=[0-9]* | counts=\[[^]]*\] | dec=[a-z_]* | sig=[a-z_]*
+2026-09-10T00:46:44Z	evidence_budget	qa_evidence_overbudget: DEBT-0012 4536/4000 chars
+2026-09-10T01:27:08Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-10T01:49:19Z	evidence_budget	qa_evidence_overbudget: BUG-0157 4079/4000 chars
+2026-09-10T17:34:31Z	artifact_gate	blocked write outside repo: /tmp_out.txt
+2026-09-10T18:20:34Z	artifact_gate	blocked write outside repo: /tmp/claims_head.py
+2026-09-10T19:09:06Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-10T19:51:15Z	artifact_gate	blocked write outside repo: /tmp/x.py
+2026-09-10T20:14:04Z	artifact_gate	blocked write outside repo: /tmp/insert.mjs
+2026-09-10T20:21:11Z	artifact_gate	blocked write outside repo: /tmp/x1
+2026-09-10T20:28:47Z	artifact_gate	blocked write outside repo: /tmp_lint.log
+2026-09-10T20:42:05Z	artifact_gate	blocked write outside repo: /tmp/x.py
+2026-09-10T22:08:36Z	artifact_gate	blocked write outside repo: /api/auth/callback/google`
+2026-09-10T23:06:29Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-10T23:19:10Z	artifact_gate	blocked write outside repo: /tmp/lintout
+2026-09-10T23:21:42Z	supply_gate	blocked npx of tsx
+2026-09-10T23:43:11Z	artifact_gate	blocked write outside repo: /
+2026-09-11T00:16:44Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T00:23:55Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T00:36:55Z	artifact_gate	blocked write outside repo: /data-paging=([a-z]+)/.exec
+2026-09-11T00:54:30Z	artifact_gate	blocked write outside repo: /tmp/dev/null
+2026-09-11T01:18:27Z	artifact_gate	blocked write outside repo: /tmp/x.json
+2026-09-11T03:22:09Z	evidence_budget	qa_evidence_overbudget: TASK-0067 4566/4000 chars
+2026-09-11T03:41:58Z	artifact_gate	blocked write outside repo: /tmp/na
+2026-09-11T04:51:49Z	artifact_gate	blocked write outside repo: /tmp/na
+2026-09-11T04:55:56Z	evidence_budget	qa_evidence_overbudget: TASK-0075 4550/4000 chars
+2026-09-11T05:04:17Z	evidence_budget	qa_evidence_overbudget: TASK-0076 4083/4000 chars
+2026-09-11T05:17:35Z	artifact_gate	blocked write outside repo: /.exec
+2026-09-11T05:32:53Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T05:43:05Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T06:03:15Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T06:58:17Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T07:16:12Z	evidence_budget	qa_evidence_overbudget: TASK-0077 4110/4000 chars
+2026-09-11T07:21:45Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T07:26:15Z	evidence_budget	qa_evidence_overbudget: BUG-0173 4005/4000 chars
+2026-09-11T09:10:44Z	artifact_gate	blocked write outside repo: /.exec
+2026-09-11T09:59:17Z	evidence_budget	qa_evidence_overbudget: BUG-0185 4422/4000 chars
+2026-09-11T10:07:23Z	evidence_budget	qa_evidence_overbudget: DEBT-0017 4720/4000 chars
+2026-09-11T10:10:54Z	artifact_gate	blocked write outside repo: /g,
+2026-09-11T10:37:56Z	artifact_gate	blocked write outside repo: /
+2026-09-11T10:38:16Z	artifact_gate	blocked write outside repo: /
+2026-09-11T11:38:12Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T11:38:33Z	artifact_gate	blocked write outside repo: /tmp-none
+2026-09-11T11:45:33Z	artifact_gate	blocked write outside repo: /tmp/na
+2026-09-11T11:54:19Z	supply_gate	blocked npx of prettier
+2026-09-11T11:59:35Z	artifact_gate	blocked write outside repo: /tmp/x.txt
+2026-09-11T12:00:19Z	evidence_budget	qa_evidence_overbudget: BUG-0188 4065/4000 chars
+2026-09-11T12:25:23Z	evidence_budget	qa_evidence_overbudget: BUG-0189 4139/4000 chars
+2026-09-11T12:34:12Z	artifact_gate	blocked write outside repo: /tmp_live_pids
+2026-09-11T13:06:45Z	evidence_budget	qa_evidence_overbudget: BUG-0184 4032/4000 chars
+2026-09-11T13:53:58Z	artifact_gate	blocked write outside repo: /tmp_ignore
+2026-09-11T14:03:50Z	artifact_gate	blocked write outside repo: /tmp/dummy
+2026-09-11T14:06:18Z	artifact_gate	blocked write outside repo: /tmp/x.ts
+2026-09-11T14:53:02Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T15:00:12Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T15:45:58Z	evidence_budget	qa_evidence_overbudget: TASK-0060 4224/4000 chars
+2026-09-11T17:41:39Z	evidence_budget	qa_evidence_overbudget: BUG-0200 4296/4000 chars
+2026-09-11T17:46:38Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T18:10:27Z	evidence_budget	qa_evidence_overbudget: BUG-0203 4123/4000 chars
+2026-09-11T18:31:32Z	artifact_gate	blocked write outside repo: /tmp/x.py
+2026-09-11T18:47:11Z	artifact_gate	blocked write outside repo: /records/events/[0-9a-f-]\{36\}
+2026-09-11T18:58:59Z	evidence_budget	qa_evidence_overbudget: BUG-0205 4170/4000 chars
+2026-09-11T19:01:48Z	artifact_gate	blocked write outside repo: /tmp_out_lint.txt
+2026-09-11T19:08:54Z	artifact_gate	blocked write outside repo: /queues/[0-9a-f-]\{36\}
+2026-09-11T19:53:21Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/using errcode = 'KS[0-9]\{3\}'.* (the sibling is running its own campaign — everything is major while it does)
+2026-09-11T21:06:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T21:19:05Z	evidence_budget	qa_evidence_overbudget: TASK-0078 5106/4000 chars
+2026-09-11T21:31:11Z	artifact_gate	blocked write outside repo: /tmp_body_sink
+2026-09-11T21:36:23Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T23:31:52Z	evidence_budget	qa_evidence_overbudget: BUG-0209 4495/4000 chars
+2026-09-11T23:43:28Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-11T23:54:07Z	evidence_budget	qa_evidence_overbudget: TASK-0079 4617/4000 chars
+2026-09-12T00:04:29Z	evidence_budget	qa_evidence_overbudget: BUG-0217 4958/4000 chars
+2026-09-12T01:08:30Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/theirs.json (the sibling is running its own campaign — everything is major while it does)
+2026-09-12T01:23:42Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/-name (the sibling is running its own campaign — everything is major while it does)
+2026-09-15T04:03:49Z	artifact_gate	blocked write outside repo: /tmp_out
+2026-09-15T04:50:56Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-15T05:11:48Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-15T05:17:44Z	artifact_gate	blocked write outside repo: /rest/v1`,
+2026-09-15T05:46:03Z	evidence_budget	qa_evidence_overbudget: BUG-0223 4438/4000 chars
+2026-09-15T06:00:24Z	artifact_gate	blocked sibling write: /Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/-name (the sibling is running its own campaign — everything is major while it does)
+2026-09-15T06:03:40Z	evidence_budget	qa_evidence_overbudget: BUG-0225 4042/4000 chars
+2026-09-15T06:07:16Z	artifact_gate	blocked write outside repo: /-s*d/.test
+2026-09-15T06:34:18Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-15T06:34:49Z	artifact_gate	blocked write outside repo: /tmp_out.txt
+2026-09-15T06:42:03Z	evidence_budget	qa_evidence_overbudget: TASK-0081 4921/4000 chars
+2026-09-15T07:03:49Z	artifact_gate	blocked write outside repo: /tmp/x
+2026-09-15T07:25:49Z	evidence_budget	qa_evidence_overbudget: BUG-0233 5771/4000 chars
+2026-09-15T08:15:17Z	evidence_budget	qa_evidence_overbudget: BUG-0234 4243/4000 chars
+2026-09-15T23:09:12Z	supply_gate	blocked brew of duti

@@ -1,0 +1,31 @@
+{
+ "id": "TASK-0052",
+ "created": "2026-09-09T02:49:00Z",
+ "green": true,
+ "git_head": "6a78ddf1bb255370ad69b1db064540efdee3324d",
+ "scope": [
+  "tests/live/edit.live.test.ts",
+  "tests/live/sweep.ts",
+  "tests/live/residue.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "6a5bdfa5d290affa1c9aaad368ef450eb248db23978b0557ee1d775350853e6b",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/edit.live.test.ts",
+   "exit": 0,
+   "output_tail": "a forged edit > is refused on a resolver-owned table, which has no write path at all  303ms\n   \u2713 a resolver-owned record page > renders from staging with no editable widget on it  712ms\n   \u2713 a resolver-owned record page > displays every column the map names, with staging's own value  857ms\n   \u2713 a resolver-owned record page > shows the source behind each field the decision log covers  534ms\n   \u2713 the walk sandbox > edits a mapped column through the surface, and a reset restores the fixture  1011ms\n   \u2713 the walk sandbox > writes label, and the database keeps it as label's own type  549ms\n   \u2713 the walk sandbox > writes tally, and the database keeps it as tally's own type  525ms\n   \u2713 the walk sandbox > writes is_flagged, and the database keeps it as is_flagged's own type  494ms\n   \u2713 the walk sandbox > writes note, and the database keeps it as note's own type  522ms\n   \u2713 the walk sandbox > writes observed_on, and the database keeps it as observed_on's own type  518ms\n   \u2713 the walk sandbox > clears note to the app's own absence, then fills it in again  760ms\n   \u2713 the walk sandbox > clears observed_on to the app's own absence, then fills it in again  742ms\n   \u2713 the walk sandbox > reports the database's refusal when label is cleared, and label still stands  601ms\n   \u2713 the walk sandbox > reports the database's refusal when tally is cleared, and tally still stands  582ms\n   \u2713 the walk sandbox > reports the database's refusal when is_flagged is cleared, and is_flagged still stands  577ms\n\n Test Files  1 passed (1)\n      Tests  20 passed (20)\n   Start at  19:48:46\n   Duration  10.83s (transform 164ms, setup 30ms, collect 362ms, tests 10.08s, environment 0ms, prepare 110ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/edit.live.test.ts\n(node:94215) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/residue.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-94117\n\nstdout | tests/live/residue.live.test.ts > staging, after the campaign > carries no value this campaign wrote, in any column it could write\nresidue sweep of ubfjjqlvnpnoborczbdb.supabase.co: 16 column(s) scanned across 3 of 3 mapped table(s)\n  events: scanned 7 text column(s) for \"admin-window\" [title=0, event_type=0, status=0, time_precision=0, description=0, poster_url=0, ticket_url=0]; not scannable, ilike has no operator for their type: [event_id (uuid), starts_at (timestamp with time zone), ends_at (timestamp with time zone), venue_id (uuid), created_at (timestamp with time zone)]\n  venues: scanned 7 text column(s) for \"admin-window\" [name=0, address=0, city=0, country=0, timezone=0, website=0, image_url=0]; not scannable, ilike has no operator for their type: [venue_id (uuid), aliases (text[]), latitude (double precision), longitude (double precision), created_at (timestamp with time zone)]\n  walk_sandbox: scanned 2 text column(s) for \"admin-window\" [label=0, note=0]; not scannable, ilike has no operator for their type: [sandbox_id (uuid), tally (integer), is_flagged (boolean), observed_on (date), created_at (timestamp with time zone)]\n\n \u2713 |live| tests/live/residue.live.test.ts (6 tests) 2048ms\n   \u2713 staging, after the campaign > carries no value this campaign wrote, in any column it could write  1825ms\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  19:48:58\n   Duration  2.57s (transform 70ms, setup 29ms, collect 150ms, tests 2.05s, environment 0ms, prepare 149ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/residue.live.test.ts\n(node:94288) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  }
+ ]
+}

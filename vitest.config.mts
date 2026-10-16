@@ -1,0 +1,136 @@
+import { defineConfig } from "vitest/config";
+import tsconfigPaths from "vite-tsconfig-paths";
+import {
+  HANDOFF_INCLUDE,
+  HTTP_INCLUDE,
+  ISOLATED_INCLUDE,
+  LIVE_INCLUDE,
+  OFFLINE_INCLUDE,
+} from "./tests/suite-globs";
+
+/**
+ * Five projects, one per suite (admin-window/TASK-0001, `isolated` added by
+ * admin-window/BUG-0032, `handoff` by admin-window/TASK-0080).
+ *
+ * Each project's include glob is rooted at its own directory, so the offline
+ * project is structurally unable to collect a live or http test — see
+ * `tests/offline/toolchain.test.ts`, which asserts that against the runner's
+ * own file discovery.
+ *
+ * `tsconfigPaths()` gives every project the repo's `@/*` alias.
+ */
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "offline",
+          include: OFFLINE_INCLUDE,
+          environment: "node",
+          // Budgets, not speed limits (admin-window/BUG-0029). Vitest's 5000ms
+          // default was the whole defect: the slowest offline test measured
+          // 3391ms cold-idle here and 4712ms warm on the box that filed the
+          // bug — a margin small enough that a receipt worktree, which always
+          // runs colder and under whatever else the machine is doing, flipped
+          // the same tree between RED and GREEN. Under 2x CPU
+          // oversubscription that same test measured 7647ms and failed.
+          // With that test split per bucket, the slowest offline test measured
+          // cold here is 2261ms (live-guard.test.ts, which spawns a child
+          // vitest) and the heaviest cross-product slice is 1249ms, so 20s is
+          // ~9x the worst cold measurement — and still >2x the 7647ms that a
+          // 2x-oversubscribed machine produced before the split. It bounds a
+          // hang; it does not police speed.
+          testTimeout: 20_000,
+          // Hooks here shell out to real compilers — `tsc --listFilesOnly`
+          // (~1.2s idle) and two `vitest list` startups — which the 10s
+          // default does not comfortably cover on a loaded machine.
+          hookTimeout: 60_000,
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "live",
+          include: LIVE_INCLUDE,
+          environment: "node",
+          // The staging guard (admin-window/TASK-0003). Registering it here is
+          // what makes it unskippable: every live test file runs it first, and
+          // a missing STAGING_ name fails the run before a test body executes.
+          setupFiles: ["./tests/live/setup.ts"],
+          testTimeout: 60_000,
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "http",
+          include: HTTP_INCLUDE,
+          environment: "node",
+          testTimeout: 180_000,
+          hookTimeout: 180_000,
+          // Every http test starts the built app on the ONE fixed
+          // HTTP_TEST_PORT, so two files cannot run at once: the second
+          // would find the port held and the harness would (correctly)
+          // refuse to certify a server it did not start. One fork runs
+          // this project's files one after another, which is what makes a
+          // second http test file possible (admin-window/TASK-0017).
+          // `fileParallelism` is a root-only option, so it cannot express
+          // this for one project; `singleFork` can.
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "isolated",
+          include: ISOLATED_INCLUDE,
+          environment: "node",
+          // This project MUTATES the shared source tree (it plants and removes
+          // a probe under `src/`) to pin that every walk of that tree survives
+          // it. Two constraints follow, and both are asserted in
+          // `tests/offline/toolchain.test.ts` (admin-window/BUG-0032):
+          //
+          //  - one fork, one file at a time — two of these files would race
+          //    each other over the same probe path;
+          //  - and this project NEVER shares a `vitest run` with the offline
+          //    project, whose files walk that same tree in parallel workers.
+          //    `npm test` runs the two as separate, sequential invocations.
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
+          // Each case spawns a child vitest over four real test files, and one
+          // drives a filesystem churn loop against them.
+          testTimeout: 180_000,
+          hookTimeout: 180_000,
+        },
+      },
+      {
+        plugins: [tsconfigPaths()],
+        test: {
+          name: "handoff",
+          include: HANDOFF_INCLUDE,
+          environment: "node",
+          // OPT-IN, and that is the whole point of it existing
+          // (admin-window/TASK-0080, ARCHITECTURE.md §10's rule of
+          // 2026-09-12). Every case in here READS the sibling checkout
+          // `kspace Scraper`, which this repo does not own, so its red can be
+          // produced by a legitimate edit next door — four times in one
+          // campaign it was, twice by this campaign's own handoff LANDING.
+          // `npm test` therefore does not name this project and neither does
+          // `ci_command`; `npm run test:handoff` is how the verifier and a
+          // handoff preparer run it, and `tests/offline/toolchain.test.ts`
+          // asserts both halves of that.
+          //
+          // Its one walk reads every `.sql` file of a repo-sized tree from
+          // disk, which is slower and colder than anything the offline
+          // project does, so it gets the offline project's hang bound rather
+          // than vitest's 5000ms default (admin-window/BUG-0029's reason,
+          // same arithmetic).
+          testTimeout: 20_000,
+          hookTimeout: 60_000,
+        },
+      },
+    ],
+  },
+});

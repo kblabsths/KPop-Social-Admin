@@ -1,0 +1,48 @@
+{
+ "id": "TASK-0049",
+ "created": "2026-09-09T03:23:20Z",
+ "green": true,
+ "git_head": "98c69c0c4947d5a9797d788037e5e48abfc0c4cc",
+ "scope": [
+  "src/app/api/admin/review-items/[reviewItemId]/settle/route.ts",
+  "src/components/review/close/slot.tsx",
+  "src/components/review/close/actions.ts",
+  "src/components/review/close/conflict-actions.tsx",
+  "src/components/review/close/link-actions.tsx",
+  "src/components/review/close/signal-actions.tsx",
+  "src/app/queues/[reviewItemId]/page.tsx",
+  "tests/offline/review-item/close-slot.test.ts",
+  "tests/offline/review-item/page.test.ts",
+  "tests/offline/absence/pages.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 5,
+ "tree_hash": "0ea2d6228952ec6152904a58162e8fc1934d500918f534ee5444f84d55a9e9ca",
+ "commands": [
+  {
+   "cmd": "bash -c 'rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit'",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/review-item/close-slot.test.ts tests/offline/review-item/page.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-25391\n\n \u2713 |offline| tests/offline/review-item/close-slot.test.ts (33 tests) 37ms\n \u2713 |offline| tests/offline/review-item/page.test.ts (68 tests) 378ms\n \u2713 |offline| tests/offline/absence/pages.test.ts (269 tests) 2075ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  396ms\n   \u2713 a surface offers a control only where the read behind it answered > puts no control inside a card that says a read did not happen, and gains none  882ms\n\n Test Files  3 passed (3)\n      Tests  370 passed (370)\n   Start at  20:22:40\n   Duration  2.94s (transform 1.05s, setup 0ms, collect 1.40s, tests 2.49s, environment 0ms, prepare 386ms)\n\n(node:25673) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/review-item.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-25391\n\n \u2713 |live| tests/live/review-item.live.test.ts (9 tests) 18433ms\n   \u2713 the review item's surface hooks against staging > names each graded surface once on an item that rendered  3044ms\n   \u2713 a real review item, rendered > resolves exactly the evidence ids the row carries, in its fold order  2353ms\n   \u2713 a real review item, rendered > renders each claim's own instant, source tier and its shape's own column  2435ms\n   \u2713 a real review item, rendered > puts the fact's current canonical value beside them, from the latest decision  2126ms\n   \u2713 a real review item, rendered > carries the header the anatomy requires, and no control at all  2133ms\n   \u2713 the close against staging > offers no control while the verdict log is absent, and names it  2141ms\n   \u2713 the close against staging > never settles anything by rendering the page  2145ms\n   \u2713 the header names its source, against staging > says the name the registry holds, in both links and in the cells below  1985ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  20:22:44\n   Duration  19.11s (transform 190ms, setup 29ms, collect 333ms, tests 18.43s, environment 0ms, prepare 123ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/review-item.live.test.ts\n(node:25740) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": "s not carry > still sends a stranger to the sign-in page  609ms\n \u2713 |http| tests/http/edit.http.test.ts (2 tests) 1445ms\n   \u2713 the record PATCH route over http > gates it, refuses every forged edit, and offers no other method  737ms\n   \u2713 a hostile record id at the wire (QA, admin-window/BUG-0068) > is answered by the gate, never by a 5xx and never in the database's words  708ms\n \u2713 |http| tests/http/walk-cookie.http.test.ts (1 test) 991ms\n   \u2713 the walker's minted cookie against the running app > opens the gated pages, and only under the server's own secret  991ms\n\n Test Files  3 passed (3)\n      Tests  16 passed (16)\n   Start at  20:23:12\n   Duration  7.31s (transform 75ms, setup 0ms, collect 133ms, tests 6.80s, environment 0ms, prepare 115ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-25391/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:25999) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:26033) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c 'test \"$(grep -rln \"\\.rpc(\" src --include=*.ts --include=*.tsx | wc -l)\" -eq 1'",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

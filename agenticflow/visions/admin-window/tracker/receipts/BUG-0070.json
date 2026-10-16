@@ -1,0 +1,37 @@
+{
+ "id": "BUG-0070",
+ "created": "2026-09-04T06:36:46Z",
+ "green": true,
+ "git_head": "73c368d100bb807832fdb23fb845ce1620fac829",
+ "scope": [
+  "src/app/claims/page.tsx",
+  "tests/offline/claims/page.test.ts",
+  "tests/offline/absence/pages.test.ts",
+  "tests/live/claims.live.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "08627f672935e8eaf55cfca7c45dee49bf2dad565de35491c82f03966c318b01",
+ "commands": [
+  {
+   "cmd": "npx vitest run --project=offline tests/offline/claims/page.test.ts tests/offline/absence/pages.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-69186\n\n \u2713 |offline| tests/offline/absence/pages.test.ts (265 tests) 1163ms\n   \u2713 the surfaces this file sweeps > exercises the naming assertion on every surface, and on enough objects  385ms\n \u2713 |offline| tests/offline/claims/page.test.ts (95 tests) 2418ms\n\n Test Files  2 passed (2)\n      Tests  360 passed (360)\n   Start at  23:35:42\n   Duration  3.30s (transform 893ms, setup 0ms, collect 1.06s, tests 3.58s, environment 0ms, prepare 212ms)\n\nnpm notice run kpop-social-space@0.1.0 npx\nnpm notice run 'vitest' run --project=offline tests/offline/claims/page.test.ts tests/offline/absence/pages.test.ts\n(node:69213) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:live -- tests/live/claims.live.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-69186\n\n \u2713 |live| tests/live/claims.live.test.ts (9 tests) 47532ms\n   \u2713 the Claims page's surface hooks against staging > names every surface on the page once, on both tabs  7524ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it  4367ms\n   \u2713 the classification buckets against staging > renders each bucket's count exactly as the view holds it, per source filter  8202ms\n   \u2713 the classification buckets against staging > draws the view's longest-waiting window, and states the whole it came from  4155ms\n   \u2713 the classification buckets against staging > renders the standing tab as the window of exactly that bucket's subset  3250ms\n   \u2713 the parked bucket against staging > is a string the database still spells, and the page never does  13728ms\n   \u2713 a source is named against staging > says the registry's name in every SOURCE cell, and still links by the id  3104ms\n   \u2713 a source is named against staging > names the source_id chips the same way, each still narrowing by its id  2959ms\n\n Test Files  1 passed (1)\n      Tests  9 passed (9)\n   Start at  23:35:46\n   Duration  48.22s (transform 180ms, setup 32ms, collect 343ms, tests 47.53s, environment 0ms, prepare 73ms)\n\nnpm notice run kpop-social-space@0.1.0 test:live\nnpm notice run vitest run --project=live tests/live/claims.live.test.ts\n(node:69277) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

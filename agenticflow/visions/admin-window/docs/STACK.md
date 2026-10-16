@@ -1,0 +1,515 @@
+# STACK — kspace Admin, campaign `admin-window`
+
+**Brownfield: this file documents what IS.** The stack is fixed by
+`contracts/admin-observability.md` §3 ("what persists is infrastructure: the
+Next.js app on Railway deploying from `main`, NextAuth sign-in gated by
+`admin_allowed_emails`, every read and write server-side through the service
+role. Changing any of these is a design change, not a build choice"). Nothing
+below was chosen by the factory except the **test runner** (§4) — the repo had
+none. Every line names the file that proves it.
+
+Read 2026-09-01: `contracts/admin-build.md` (ground rules), `AGENTS.md`,
+`package.json`, `package-lock.json` (lockfileVersion 3),
+`node_modules/next/dist/docs/01-app/**` (Next 16 differs from training data —
+read the bundled docs, not memory).
+
+---
+
+## 1. Runtimes and language
+
+| thing | version | where it is declared / observed | why |
+| --- | --- | --- | --- |
+| Node.js | `>=20.0.0` declared; **26.7.0** observed on this machine 2026-09-01 | `package.json` `engines.node`; `node -v` | what the app already runs on; Railway/nixpacks resolves from `engines` |
+| npm | 12.0.2 observed; lockfile v3 | `npm -v`, `package-lock.json` | the only package manager here — no pnpm/yarn/bun lockfile exists |
+| TypeScript | `^5` (`strict: true`, `noEmit`) | `package.json`, `tsconfig.json` | already the language of every file in `src/` |
+| React | 19.2.4 (exact-pinned) | `package.json` | Next 16's runtime |
+| Next.js | 16.2.2 (exact-pinned), **App Router** | `package.json`, `src/app/**` | the deployed app |
+| Tailwind CSS | v4 (`@tailwindcss/postcss`) | `postcss.config.mjs`, `src/app/globals.css` (`@import "tailwindcss"`) | already the styling layer; v4 is CSS-first (`@theme`), not `tailwind.config.js` |
+| ESLint | v9 flat config, `eslint-config-next` 16.2.2 | `eslint.config.mjs` | `npm run lint` is acceptance test 1 |
+
+**Do not upgrade any of these in M1.** A version move is a DEP ticket
+(`agenticflow/docs/ALLOWED_DEPS.md`, "a grandfathered entry never lowers the
+bar for its own upgrade"), and the deploy is out of this campaign's scope.
+
+## 2. Storage — none of it is ours
+
+The app owns **zero** schema. Storage is the shared Supabase (Postgres)
+project, reached over PostgREST by `@supabase/supabase-js` ^2.101.1
+(`src/lib/supabase.ts`), **server-side only, with the service-role key**.
+
+- **Schema truth is the sibling repo**: `/Users/ben-m4/Desktop/Coding/KPOP/kspace Scraper/supabase/migrations/`.
+  This repo's `supabase/migrations/` holds exactly **two** app-owned files
+  (`20260406_admin_allowed_emails.sql`, `20260407_add_kblabs_admin_email.sql`)
+  and **never grows** in M1 (M1 exit criterion: zero schema).
+- **No ORM, no query builder, no migration tool in this repo.** PostgREST
+  through supabase-js is the entire data access story
+  (`ALLOWED_DEPS.md`, "Product shape, for the record").
+- Consequence a builder must plan around: **PostgREST cannot run arbitrary
+  SQL.** No `percentile_cont`, no ad-hoc join, no aggregate beyond `count`.
+  Gauges fetch bounded row sets and aggregate in TypeScript — see
+  `ARCHITECTURE.md` §6. This is not a workaround to be "fixed" with an RPC:
+  the acceptance doc forbids building a SQL-executing route.
+
+## 3. The auth gate and the service-role client (carried over untouched)
+
+- `src/middleware.ts` — `export { auth as middleware } from "@/lib/auth"` with
+  a matcher that protects **everything** except `api/auth`, `api/health`,
+  `_next/static`, `_next/image`, `favicon.ico`, `login`. Adding a page adds
+  protection automatically; adding a public path is a design change.
+- `src/lib/auth.ts` — NextAuth v5 (`next-auth` ^5.0.0-beta.30), Google
+  provider, JWT sessions, `pages.signIn = "/login"`. The `signIn` callback
+  looks the email up in **`admin_allowed_emails`** (case-insensitive `ilike`)
+  and **fails closed** on error or miss.
+- `src/lib/admin.ts` — `requireAdmin()`: the same allowlist check for route
+  handlers, returning 401/403 `Response`s.
+- `src/lib/supabase.ts` — `getSupabaseAdmin()`, a lazily-created
+  `createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}})`
+  singleton. **Server-side only**; the key must never reach a client bundle
+  (acceptance test 12).
+- `src/app/api/health/route.ts` — unauthenticated `{ok:true}`; Railway's
+  healthcheck target. Leave it alone.
+
+These four files plus `src/app/login/page.tsx` are the only pre-campaign
+`src/` files that survive the rebuild (`ARCHITECTURE.md` §2).
+
+## 4. Test runner — the one thing this campaign chooses
+
+**Vitest** (`vitest`, latest 3.x at DEP time), with `vite-tsconfig-paths` so
+tests resolve the repo's `@/*` alias. Filed as **DEP-0001**; nothing may be
+installed before the toolsmith lands it in `ALLOWED_DEPS.md`.
+
+Why Vitest and not something else:
+
+- It is one of the four runners **Next.js documents itself**
+  (`node_modules/next/dist/docs/01-app/02-guides/testing/vitest.md`, read
+  2026-09-01) — the boring, well-trodden option for a TS/ESM Next app, and
+  the one the QA Adversary and Verifier will already know.
+- Jest needs `next/jest`, babel/SWC transform config and CJS/ESM mediation for
+  the same result; `node:test` would need a separate TS loader story. Vitest
+  reads `tsconfig` paths, runs TS natively, and needs one config file.
+- **No jsdom, no Testing Library, no Playwright dependency in this campaign.**
+  Next's own guide says Vitest does not support `async` Server Components;
+  our answer is architectural rather than another dependency: a route's
+  page function is the **only** async component and every child is a pure
+  sync component (`ARCHITECTURE.md` §5), so a test does
+  `renderToStaticMarkup(await Page(props))` with `react-dom/server` — already
+  a dependency — and asserts on the markup. Screenshots and browser walks are
+  the walk agent's Playwright (kit-owned, `agenticflow/.venv-tools`), not a
+  product dependency.
+
+### The offline / live split (acceptance tests 1 and 13)
+
+Two directories, two scripts, no ambiguity — the directory **is** the live
+marker:
+
+```
+tests/offline/**/*.test.ts     npm test          # default; NEVER touches a network
+tests/live/**/*.live.test.ts   npm run test:live # staging; refuses if names unset
+tests/http/**/*.http.test.ts   npm run test:http # builds + starts the app, no DB needed
+```
+
+- `npm test` passes with **no** `STAGING_SUPABASE_*` names in the environment.
+  That is the bar of acceptance test 1, and it is structural: the offline
+  project's glob cannot reach `tests/live/`.
+- `npm run test:live` **refuses loudly** (non-zero, no fallback) when
+  `STAGING_SUPABASE_URL` or `STAGING_SUPABASE_SERVICE_ROLE_KEY` is unset. An
+  unset name is never a fallback to `SUPABASE_*` (acceptance doc ground rule).
+- Every live test sweeps every row it wrote (acceptance test 13).
+- Vitest does not read `.env`; the live setup file loads it explicitly with
+  `dotenv` (already a devDependency, grandfathered).
+
+## 5. The exact incantations
+
+Run every one of these from the repo root
+`/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin` (the directory name contains a
+space — quote it).
+
+| purpose | command | port |
+| --- | --- | --- |
+| dev server (default) | `npm run dev` | **3000** |
+| **walk / sandbox instance** | `npm run dev -- --port 8771` | **8771** |
+| production-like walk | `npm run build && npm run start -- --port 8771` (walk launch: step 1's second block — the prefix goes on **both** commands) | **8771** |
+| type check | `./node_modules/.bin/tsc --noEmit` | — |
+| lint | `npm run lint` | — |
+| offline suite | `npm test` | — |
+| live suite (staging) | `npm run test:live` | — |
+| http suite | `npm run test:http` | 8772 (its own server) |
+| **handoff suite** (opt-in; reads the sibling `kspace Scraper` read-only, outside `npm test` and outside `ci_command`) | `npm run test:handoff` | — |
+| **reset the walk sandbox** | `node tests/walk/reset-sandbox.mts` (walk prep: step 3's block — it needs the same mapping) | — |
+| **residue sweep** (read-only leftover check; since the amendment of 2026-09-08 no walk writes a catalog row, so it should never fire) | `npm run test:live -- tests/live/residue.live.test.ts` | — |
+
+- **8770 is the factory's attention UI** (`run.yaml` `ui_port`). Never bind it.
+- **Five tiers, and the fifth is opt-in** (added 2026-09-15, architect): `tests/handoff/**` holds the guards that READ `../kspace Scraper`, so a legitimate event next door cannot redden every builder's `npm test` (ARCHITECTURE §10, admin-window/TASK-0080). Nothing runs it for you: the VERIFIER runs it at every milestone close and records its file and test counts, and whoever prepares or re-checks a handoff runs it then. Measured green 2026-09-15 at `e8bb9518`: 1 file, 12 tests, 0.4 s, against a sibling that has raised KS033 since its 2026-09-13 migrations.
+- A walk instance takes its database credentials from **its own process
+  environment** under the names `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`,
+  mapped there from the `STAGING_*` names by the launching shell — the app
+  itself never reads a `STAGING_*` name. `.env` no longer carries
+  `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` at all; it carries the
+  `STAGING_*` pair, which the launch line loads (recipe below, step 1) —
+  production values live only in Railway's production environment (Ben's
+  ruling, 2026-09-03, recorded in `agenticflow/docs/DECISIONS.md`). Nothing in
+  code falls back to another name, and no value is ever printed. **Both walk
+  rows in the table above need that mapping, and neither gets it from the table
+  cell alone** — step 1 below has a verbatim block for each, because a
+  command-prefix assignment binds to one command and the production-like row is
+  two.
+- `npm run lint` and `npm run build` both complete in seconds here (measured
+  2026-09-01: lint 2.8s once `agenticflow/**` is ignored, build 6.2s, tsc
+  1.1s) — cheap enough to sit in every ticket's checks.
+
+### The walk instance: launch it, get past the gate, drive it
+
+Everything below is verbatim and runnable from the repo root. It is the whole
+recipe for the M1 endgame walkers (designer walk, user-sims, verifier), settled
+by Ben's two rulings of 2026-09-03, narrowed by his vision amendment of
+2026-09-08 (step 3), and proved by `tests/http/walk-cookie.http.test.ts`.
+
+**1. Launch the instance.** The two names the app reads (`SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`) are mapped from the staging names on the launching
+shell's command line, so they exist for that process and nowhere else. The
+staging names themselves live in exactly one place — the **repo-root `.env`**
+(gitignored; its names, and only its names, are listed in `.env.example`) — and
+a fresh shell does not have them, so loading `.env` is part of the launch line.
+Run the whole thing inside a subshell `( … )`, so the loaded values die with
+that process:
+
+```sh
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run dev -- --port 8771 )
+```
+
+That is verbatim how the walk instance running on 8771 was launched, and it
+works in both bash and zsh. Two things about it are not optional:
+
+- **The `set -a` prefix.** Drop it and the failure is silent rather than loud:
+  an unset shell variable expands to the empty string, so the app starts with
+  `SUPABASE_URL=""` — and `.env` cannot repair that, because Next's env loader
+  skips any name already present in the process environment, empty string
+  included (`node_modules/@next/env/dist/index.js`). Nothing complains at
+  startup: the first server-side read throws in `getSupabaseAdmin()`
+  (`supabaseUrl is required`, `src/lib/supabase.ts`), each panel catches that
+  and renders its named refusal — **`SUPABASE_URL is not set`** — and the page
+  still answers 200. A walker who does not know this reports app-wide breakage
+  that does not exist. **If every panel of every page says that one line,
+  suspect your launch line before you file anything.** Measured 2026-09-03
+  (admin-window/BUG-0039, admin-window/BUG-0051).
+- **The surrounding `( … )`.** `set -a` exports *every* name in `.env` for the
+  length of that subshell — OAuth secrets included — and the closing paren is
+  what keeps them out of your interactive shell and out of every later command
+  in the session.
+
+**Never print a value to check your work.** No `echo "$STAGING_SUPABASE_URL"`,
+no `printenv`, no `cat .env`, no `env | grep` — a secret value that reaches a
+transcript is burned and Ben has to rotate it. Test *presence* instead, which
+prints one word:
+
+```sh
+[ -n "${STAGING_SUPABASE_URL:-}" ] && echo SET || echo UNSET
+```
+
+`.env` is gitignored, so it exists **only in the primary checkout** — a walk
+driven from a git worktree fails at `source .env` with `No such file or
+directory` (loud, at least). Walk from the primary repo root, or symlink the
+primary checkout's copy into the worktree with `ln -s`; never copy it around.
+
+**The production-like walk repeats the mapping on both commands.** A
+command-prefix assignment binds to a *single* simple command, so in
+`A=1 npm run build && npm run start` the started server — the thing a walker
+actually drives — inherits nothing, and `set -a` cannot rescue it (`.env`
+carries the `STAGING_*` pair, not the two names the app reads). Both halves
+therefore carry the prefix:
+
+```sh
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run build && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  AUTH_URL="http://localhost:8771" npm run start -- --port 8771 )
+```
+
+Get it wrong and both symptoms are quiet: every panel renders the
+`SUPABASE_URL is not set` refusal with zero staging rows, and an uncookied
+request answers `307` to `http://localhost:3000/login?...` — the `:3000` chase
+`AUTH_URL` exists to prevent, from a server that never received it. Measured
+2026-09-03 (admin-window/BUG-0051); the corrected block above was re-driven on
+a scratch port the same day and serves real staging rows.
+
+`AUTH_URL` is not optional. next-auth resolves the app's own origin from it
+(`node_modules/next-auth/lib/env.js`); without it every redirect the walk
+follows is rewritten to `:3000` and the walk chases a server that is not there.
+It also decides the **cookie name**: `@auth/core`'s `defaultCookies()` prefixes
+`__Secure-` only for an `https:` URL
+(`node_modules/next-auth/node_modules/@auth/core/lib/utils/cookie.js`), so an
+`http://` walk instance uses the unprefixed `authjs.session-token` the mint
+below produces.
+
+The instance also needs `AUTH_SECRET` in that same environment — the mint and
+the server must agree on it, and neither has a default. The `source .env` above
+is what supplies it to the server; the mint helper below reaches the same value
+on its own (its process environment first, then the repo-root `.env`), so the
+two agree without either printing it.
+
+**2. Mint a session cookie.** Sign-in is Google-only, so a walker gets past the
+gate with a minted cookie rather than a sign-in flow. The minting helper lives
+outside `src/` on purpose (`tests/walk/session-cookie.mts`); the app gains no
+provider, no dev flag and no second sign-in path:
+
+```sh
+node tests/walk/session-cookie.mts
+```
+
+stdout is **exactly one line**: the cookie as JSON. Diagnostics and refusals go
+to stderr, and `AUTH_SECRET`'s value never appears on either stream. Flags:
+`--domain <host>` (default `localhost`), `--max-age <seconds>` (default 7200),
+`--email <address>` (default the walker identity). With `AUTH_SECRET` unset,
+empty or whitespace-only, the CLI exits non-zero naming that one name and mints
+nothing — there is no fallback to invent.
+
+**3. Reset the walk sandbox — immediately before every walk, mandatory.**
+`public.walk_sandbox` is the ONLY table a walk WRITES to, and it **is on
+staging** — Ben pasted the DDL on 2026-09-08 (see the caveats below). Running
+this is still how you confirm that for yourself before you plan a save. It
+exists on staging only, and this puts it back to its three seed rows so the
+walk you are about to run starts from the same state the last one did:
+
+```sh
+( set -a && source .env && set +a && \
+  SUPABASE_URL="$STAGING_SUPABASE_URL" SUPABASE_SERVICE_ROLE_KEY="$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
+  node tests/walk/reset-sandbox.mts )
+```
+
+Same subshell, same mapping, same reasons as step 1 — the tool reads
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` from its own environment, loads no
+`.env` of its own, and refuses through the same staging guard the live suite
+uses (a host that is not the target declared in `agenticflow/docs/SERVICES.md`
+is a non-zero refusal that writes nothing). Run it **before** every walk, not
+just after one: a before-reset is the only one a crashed or abandoned walk
+cannot skip. Running it again after a walk that wrote is welcome but optional.
+
+**Measured 2026-09-08 on `ubfjjqlvnpnoborczbdb.supabase.co`
+(admin-window/TASK-0037), by pasting the block above into a fresh shell:** it
+exits **0** and prints `walk_sandbox reset on ubfjjqlvnpnoborczbdb.supabase.co
+(declared staging target "ubfjjqlvnpnoborczbdb"): deleted 3, seeded 3, read back
+and verified against tests/walk/sandbox-fixture.ts.` The cadence above was then
+exercised end to end on a production build of this tree: reset, then `note` of
+row `…0001` rewritten from `A note a walker may rewrite.` to a probe **through
+the cell on the record page** (200, and the value survived a reload), then the
+same block again — after which all three rows read back byte-identical to
+`tests/walk/sandbox-fixture.ts`, compared column by column. `created_at` is the
+one column two resets do not leave identical: it is re-set by the column default
+on every insert and is outside the map, which is why the comparison is over
+`SANDBOX_COLUMNS` and not `select("*")`. Both refusals were re-run the same day
+and both still exit **1**, having read and written nothing: the two names unset
+(`env -u SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY node
+tests/walk/reset-sandbox.mts`) names those two names, and a `SUPABASE_URL`
+pointing at a host `SERVICES.md` does not declare names the host and the
+declared target. The round trip is now automated too, as the walk-sandbox block
+of `tests/live/edit.live.test.ts`, and `npm run test:live --
+tests/live/residue.live.test.ts` now SWEEPS the sandbox rather than reporting it
+absent — `5 of 5 mapped table(s)`, `walk_sandbox: scanned 2 text column(s) …
+[label=0, note=0]` — so a walk that leaves a stamped value in `label` or `note`
+is caught by the same sweep everything else is.
+
+Four things about that command, so nothing below is a surprise:
+
+- **On success it prints one line** naming the table, the host and the counts
+  it deleted and seeded. On failure it exits non-zero and says why. The
+  service-role key appears on neither stream, ever.
+- **It emits a `MODULE_TYPELESS_PACKAGE_JSON` warning on stderr** before it does
+  anything ("Module type of …/tests/live/staging-target.ts is not specified").
+  That is Node reparsing a `.ts` module in a package without `"type": "module"`,
+  it is expected, and it is the price of the tool sharing the live suite's one
+  staging guard rather than carrying a second copy. Not a bug; do not file it.
+- **If it refuses saying `walk_sandbox` is not on that host**, the table has not
+  been created yet — it is created BY HAND, once, by Ben, from the paste-ready
+  SQL in `agenticflow/tracker/for-human/TASK-0034.md`. The tool never creates
+  it. **That refusal is also how a walker learns whether it has a write surface
+  at all**, and it is the only test worth trusting — not a date, not this
+  paragraph's age. Run step 3 first, read what it said, take the matching
+  branch:
+  - **It refused *naming the table and the host* — `the table "walk_sandbox"
+    is not on <host>` — so the table is absent, and a save-path walk has NO
+    write surface at all.** That one sentence is the only refusal that means
+    absence: it is the single `SandboxAbsentError` in
+    `tests/walk/reset-sandbox.mts`, raised from the database's own absence code
+    (`PGRST205` / `42P01`) on a real read. **Every other non-zero exit is a
+    refusal that says nothing about the table** — see the next branch — and
+    none of them puts you here. **Staging is no longer on this branch.** It was
+    when that was measured on 2026-09-04; Ben has since pasted the DDL, and on
+    2026-09-08 the same block succeeded on `ubfjjqlvnpnoborczbdb.supabase.co`
+    (`deleted 3, seeded 3`) while the residue sweep scanned the table instead
+    of reporting it absent (admin-window/TASK-0037). The branch is kept because
+    the refusal, not a date and not this paragraph, is still the only test
+    worth trusting — a project without the paste lands here — but a walker who
+    meets it on staging today has hit a refusal about the RUN, and should read
+    the next branch.
+
+    **RETIRED 2026-09-08 — what this branch used to say.** Until that date it
+    told a save-path walk to edit one field of one existing `groups`/`idols`
+    row, note the original, restore it in a `finally` and run the residue
+    sweep: the interim exception of Ben's ruling of 2026-09-03. Ben's vision
+    amendment of **2026-09-08** struck *"groups/idols edit directly within it"*
+    from VISION — "admin edits catalog tables only through the observation
+    pipeline; do not re-implement direct edits" — and the architect's dated
+    2026-09-08 entry in `agenticflow/docs/DECISIONS.md` ("direct catalog
+    editing is struck: the three regimes, and the door that must stay shut")
+    records what it closes; read that entry rather than a summary of it here.
+    **No walk and no test writes a `groups` or `idols` row again**, on this
+    branch or any other. The retirement is the amendment's, not the sandbox
+    paste's: it holds whether or not the table exists, and it does not come
+    back on any date.
+
+    **So on this branch the honest walk is a narrowed one.** Walk the reads and
+    the rendering, and record the gap in the walk report in those terms — *save
+    path not walked: `walk_sandbox` absent on `<host>`, so there is no write
+    surface* — then move on. That is a complete walk report, not a hole to
+    plug. The bans that apply here are the standing ones and they are absolute:
+    never `groups` or `idols`, never `events` or `venues`, never an insert,
+    never a delete, and never a workaround — no substitute table, no fixture
+    writer, no second sandbox, no direct PATCH "just to see the 200". The paste
+    in `agenticflow/tracker/for-human/TASK-0034.md` §2 is the only thing that
+    gives the save path a surface again, and it is Ben's to run — on staging he
+    ran it on 2026-09-08, and admin-window/TASK-0037 proved the sandbox there
+    the same day, which is why this branch is history on that host.
+
+    The residue sweep in §5's table stays as a **read-only** leftover check of
+    the M1-era writes; nothing a walk does now should ever make it fire.
+  - **It refused any OTHER way — you have learned nothing about the table, and
+    neither of the other branches is open to you.** An unset name (`the
+    walk-sandbox reset tool refuses: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+    are not set`), a guard refusal on a host that is not the declared staging
+    target, or any `SandboxResetError` is a refusal about the RUN, not about the
+    table's existence — a refused tool is not an absent table. One of them is a
+    trap worth naming: if the seed leg fails, the tool says the delete already
+    ran and `walk_sandbox` is **now EMPTY** — the table EXISTS, so the sandbox
+    branch is the live one (and a catalog-row write is wrong in every state, per
+    the branch above). Fix the cause (most often a missing `source .env` —
+    step 1) and run step 3 again until it either succeeds or names the table and
+    the host. Measured 2026-09-04: `env -u SUPABASE_URL -u
+    SUPABASE_SERVICE_ROLE_KEY node tests/walk/reset-sandbox.mts` exits 1 with
+    the unset-name refusal above, having read nothing at all.
+  - **It succeeded — the sandbox is the write surface, and the only one.** Write
+    there and nowhere else (caveats below). Nothing about the catalog turns on
+    this moment: the interim `groups`/`idols` practice was not waiting to be
+    replaced, it was retired outright on 2026-09-08. Success here decides only
+    whether a save-path walk has a surface, never whether a catalog row may be
+    touched.
+- **It is DML and nothing else**: four PostgREST requests — read one row to
+  check the table is there, delete every row, insert the fixture
+  (`tests/walk/sandbox-fixture.ts`), read it back and verify. No DDL, no
+  migration, no SQL.
+
+Then walk it at its own address:
+
+    http://localhost:8771/records/walk_sandbox/00000000-0000-4000-8000-000000000001
+
+The three seeded rows are `…0001`, `…0002` and `…0003`. Nothing links to them:
+there is no nav entry and no Browse row, by design, so an operator never trips
+over the sandbox and a walker reaches it by typing the URL above.
+
+**One refusal there is deliberate, and is not a bug.** `label`, `tally` and
+`is_flagged` are `not null` in the table. Clearing a cell sends `null`, so
+clearing one of those three is refused by the database (Postgres `23502`) and
+the surface must show that refusal without claiming the save landed. That is a
+walkable error path put there on purpose. File a bug only if the cell claims
+success, blanks the value, or reports nothing at all. `note` and `observed_on`
+are nullable — those two are where the em-dash absence and the fill-it-in path
+live.
+
+**4. Drive it.** Add the descriptor to the browser context before the first
+navigation (Playwright, Python):
+
+```python
+import json, subprocess
+cookie = json.loads(
+    subprocess.run(
+        ["node", "tests/walk/session-cookie.mts"],
+        capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+    ).stdout
+)
+context.add_cookies([cookie])
+page.goto("http://localhost:8771/")
+```
+
+**Two caveats a walker must know before it reports a bug.**
+
+- **The sign-in flow itself is never walked.** That blind spot is accepted, not
+  overlooked: a minted cookie starts the walk already past the gate, so nothing
+  the walk sees says anything about Google sign-in.
+- **A walker's saves LAND on staging — nothing a walk saves is a dry run.** Ben added
+  the labelled row `walker@admin-window.local` to staging's
+  `admin_allowed_emails` on 2026-09-03 (beside `kb.labs.ths@gmail.com`), which
+  is the table `requireAdmin()` (`src/lib/admin.ts`) consults on **every**
+  request from `src/app/api/admin/records/[table]/[id]/route.ts`. Measured the
+  same day (admin-window/BUG-0038): a PATCH carrying the minted cookie answers
+  **200** and the column really changes. The middleware gate is the looser one —
+  it asks only `!!session?.user` (`src/lib/auth.ts`) — so reads were never the
+  question.
+
+  **What this obliges a walker to do** turns on one fact, and step 3's own
+  answer is how you establish it — so run step 3 before you plan any save.
+
+  - **Once `public.walk_sandbox` is on staging** (step 3 succeeds), write to
+    the **walk sandbox and nowhere else**. The sandbox (`ARCHITECTURE.md` §9.1)
+    exists so that a save-path walk has a table of its own — reset before every
+    walk, carrying no catalog fact, reachable only at the address in step 3.
+    Never `groups` or `idols`, never `events` or `venues`, never an insert,
+    never a delete.
+  - **While step 3 refuses with that one absence sentence** — `the table
+    "walk_sandbox" is not on <host>`, and no other refusal counts — **a
+    save-path walk has no write surface at all, and the walk report says so.**
+    Walk the reads and the rendering, write the save path down as not walked
+    for that reason, and stop there; a narrowed walk honestly reported is the
+    whole of what this state allows. The interim exception that used to fill
+    this gap — one field of one existing `groups`/`idols` row, restored in a
+    `finally` and swept — was **retired on 2026-09-08** by Ben's vision
+    amendment, not by the paste (step 3's first branch; the architect's dated
+    2026-09-08 entry in `agenticflow/docs/DECISIONS.md`). The same bans hold
+    here as on the other branch: never `groups` or `idols`, never `events` or
+    `venues`, never an insert, never a delete, never a workaround built to get
+    a write in anyway. The paste is on Ben's own schedule — done on staging on
+    2026-09-08 — so a walker establishes which state it is in by running step 3,
+    never by reading this paragraph; nothing here flips on a date.
+
+  In **both** states: never a resolver-owned table (`events`, `venues`), never
+  a catalog table at all — `groups` and `idols` included since the amendment —
+  never an insert, never a delete, anywhere. A save that fails is a finding
+  worth reporting; a save left behind in a catalog table is damage in a
+  database three repos share, which is why the sandbox is now the only surface
+  a walk may ever write, and why a walk that finds no sandbox reports a
+  narrowed walk instead of finding another way in.
+
+## 6. Deploy (untouched by this campaign)
+
+`railway.toml`: nixpacks builder, `buildCommand = npm run build`,
+`startCommand = npm run start`, healthcheck `/api/health`. Railway deploys
+from `main`. **Every push to `main` must leave the app deployable against
+whatever project the deployed service targets** — which is why a missing
+ecosystem table renders a not-provisioned state instead of throwing
+(acceptance test 9). The campaign never repoints the service and never edits
+`railway.toml`.
+
+## 7. Repo hygiene
+
+`.gitignore` already covers `/node_modules`, `/.next`, `/out`, `/build`,
+`/coverage`, `*.tsbuildinfo`, `.env*`, and the factory's volatile paths. No
+seeding needed. One correction lands in TASK-0001: **`eslint.config.mjs` must
+ignore `agenticflow/**`** — the kit's Python venv ships Playwright's bundled
+JS, and ESLint currently walks into it and reports 2,064 errors that have
+nothing to do with the product (measured 2026-09-01; with the ignore, `npm run
+lint` exits 0). Acceptance test 1 is unreachable without it.
+
+## Trust boundary
+
+`public-surface: the NextAuth + admin_allowed_emails sign-in gate, and the
+service-role privilege behind it` — every route under `src/app/**`, including
+the edit surface's PATCH route.
+
+This is an internet-reachable Railway service that holds a service-role key
+able to write the shared catalog. Security-adversarial QA is in scope and
+aimed at that boundary: unauthenticated reach (acceptance test 12), forged
+edit requests naming a column outside the config map (acceptance test 7), and
+service-role material leaking into a client bundle. Probing the staging
+database's own grants beyond what those tests need is not this campaign's
+budget — and production is never a target, ever.

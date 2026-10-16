@@ -1,0 +1,32 @@
+{
+ "id": "BUG-0135",
+ "created": "2026-09-09T16:50:57Z",
+ "green": true,
+ "git_head": "0d025376ebf0b9c340242d28e45deb79343cee6d",
+ "scope": [
+  "src/lib/db/review-items.ts",
+  "src/app/queues/page.tsx",
+  "tests/offline/review/review-items.test.ts",
+  "tests/offline/queues/page.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 3,
+ "tree_hash": "2fc07d87ed674765fd12a0e69bafb1dcf3ffe37cb9f62edd039c1e2f72c1d776",
+ "commands": [
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && ./node_modules/.bin/vitest run --project=offline tests/offline/review/review-items.test.ts tests/offline/queues/page.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\n\n \u2713 |offline| tests/offline/review/review-items.test.ts (41 tests) 13ms\n \u2713 |offline| tests/offline/queues/page.test.ts (107 tests) 2649ms\n   \u2713 a zero that a filter produced > leaves a block untouched by EVERY value its kind implies, and by no other  483ms\n\n Test Files  2 passed (2)\n      Tests  148 passed (148)\n   Start at  09:50:39\n   Duration  3.50s (transform 329ms, setup 0ms, collect 575ms, tests 2.66s, environment 0ms, prepare 335ms)\n\n(node:85100) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && bash -c \"rm -rf .next/types && npm run lint && ./node_modules/.bin/tsc --noEmit\"",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  },
+  {
+   "cmd": "cd \"/Users/ben-m4/Desktop/Coding/KPOP/kspace Admin\" && grep -q readCount src/lib/db/review-items.ts",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}

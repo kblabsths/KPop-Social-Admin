@@ -1,0 +1,461 @@
+import { describe, expect, it } from "vitest";
+import { ROW_CAP } from "@/lib/db/result";
+import {
+  RUN_COLUMNS,
+  RUN_COUNTS,
+  RUN_WINDOW,
+  readRuns,
+} from "@/lib/db/runs";
+import { T } from "@/lib/db/tables";
+import { canonicalUrlText } from "@/lib/url/text";
+import {
+  NEWEST_FIRST,
+  NO_SUCH_SOURCE,
+  RUNS,
+  SOURCE,
+  SUCCEEDED,
+  runsFrom,
+} from "./population";
+import {
+  permissionDenied,
+  stubClient,
+  tableNotInSchemaCache,
+  type RecordedCall,
+} from "../../fixtures/stub-client";
+
+/**
+ * `src/lib/db/runs.ts` — the adapter framework's `runs` window read (campaign
+ * admin-window/TASK-0016).
+ *
+ * Exercised through the scripted stub client, so every assertion is about the
+ * QUERY this module builds and what it does with the answer — never about a
+ * network. The two properties that matter most here are structural: the read
+ * is a WINDOW read (ARCHITECTURE.md §4.3 — ordered, limited, no
+ * `{ count: "exact" }`, no `.range()`), and the `?source=` facet is matched by
+ * NAME against `runs.source`, because that column is text with no foreign key
+ * (§6 trap 6).
+ */
+
+/** One method's arguments out of a recorded query chain. */
+function steps(call: RecordedCall, method: string): unknown[][] {
+  return call.steps.filter((step) => step.method === method).map((step) => step.args);
+}
+
+/** Every method name the chain called, in order. */
+function methods(call: RecordedCall): string[] {
+  return call.steps.map((step) => step.method);
+}
+
+describe("the ruled column set", () => {
+  it("is exactly the nine Ben ruled on 2026-09-02, in that order", () => {
+    // The set and its order are the contract (DECISIONS.md, 2026-09-02; the
+    // ticket enumerates the nine). A tenth column re-opens a settled decision
+    // rather than extending a table, so this assertion is the door.
+    expect([...RUN_COLUMNS]).toEqual([
+      "source",
+      "started_at",
+      "ended_at",
+      "outcome",
+      "error_summary",
+      "records_parsed",
+      "claims_emitted",
+      "records_unlinked",
+      "failure_class",
+    ]);
+    expect(RUN_COLUMNS).toHaveLength(9);
+  });
+
+  it("names the three counts, and nothing that is not one", () => {
+    expect([...RUN_COUNTS]).toEqual([
+      "records_parsed",
+      "claims_emitted",
+      "records_unlinked",
+    ]);
+    for (const counter of RUN_COUNTS) {
+      expect(RUN_COLUMNS, counter).toContain(counter);
+    }
+  });
+
+  it("leaves the other thirteen columns of the table out of M1", () => {
+    // The out-of-scope thirteen, named on the ruling. Reading one here is what
+    // would answer a settled question by the back door.
+    for (const column of [
+      "checkpoint_before",
+      "checkpoint_after",
+      "payloads_fetched",
+      "payloads_archived",
+      "records_rejected",
+      "claims_dropped_empty",
+      "claims_collapsed",
+      "claims_ai",
+      "records_linked",
+      "records_escalated",
+      "batches_written",
+      "observations_returned",
+    ]) {
+      expect(RUN_COLUMNS as readonly string[], column).not.toContain(column);
+    }
+  });
+});
+
+describe("the runs window read", () => {
+  it("asks for the nine ruled columns and the key, newest first, under an explicit cap", async () => {
+    const stub = stubClient({ [T.runs]: { data: RUNS } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+
+    expect(result.kind).toBe("ok");
+    expect(stub.tablesRead()).toEqual([T.runs]);
+
+    const call = stub.calls[0];
+    const selected = String(steps(call, "select")[0][0]);
+    for (const column of ["run_id", ...RUN_COLUMNS]) {
+      expect(selected, column).toContain(column);
+    }
+
+    // A TOTAL order: the sort column, then the primary key, so two runs that
+    // started on the same instant cannot swap places between reloads.
+    expect(steps(call, "order")).toEqual([
+      ["started_at", { ascending: false }],
+      ["run_id", { ascending: false }],
+    ]);
+    expect(steps(call, "limit")).toEqual([[RUN_WINDOW]]);
+  });
+
+  it("is a window read, not a complete one", async () => {
+    // ARCHITECTURE.md §4.3: a complete read is `{ count: "exact" }` + a total
+    // order + `.range(0, cap - 1)`, and its `ok` array is the whole matching
+    // set. This read makes no such claim — every number the page renders off
+    // it is a column of the row it sits in — so it must not ask for a count it
+    // would then have to honour.
+    const stub = stubClient({ [T.runs]: { data: RUNS } });
+    await readRuns({}, stub.asSupabaseClient());
+
+    const call = stub.calls[0];
+    expect(methods(call)).not.toContain("range");
+    expect(steps(call, "select")[0][1]).toBeUndefined();
+  });
+
+  it("returns the rows newest first, whatever order they arrived in", async () => {
+    const stub = stubClient({ [T.runs]: { data: RUNS } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+
+    expect(result.data.rows.map((row) => row.run_id)).toEqual(
+      NEWEST_FIRST.map((row) => row.run_id),
+    );
+  });
+
+  it("reports a window that filled its cap as truncated, and one that did not as not", async () => {
+    const full = stubClient({ [T.runs]: { data: RUNS } });
+    const filled = await readRuns({ limit: RUNS.length }, full.asSupabaseClient());
+    if (filled.kind !== "ok") throw new Error(`expected ok, got ${filled.kind}`);
+    expect(filled.data.truncated).toBe(true);
+    expect(filled.data.limit).toBe(RUNS.length);
+
+    const roomy = stubClient({ [T.runs]: { data: RUNS } });
+    const spare = await readRuns({ limit: RUNS.length + 1 }, roomy.asSupabaseClient());
+    if (spare.kind !== "ok") throw new Error(`expected ok, got ${spare.kind}`);
+    expect(spare.data.truncated).toBe(false);
+  });
+
+  it("never asks for more rows than the platform will return", async () => {
+    const stub = stubClient({ [T.runs]: { data: [] } });
+    await readRuns({ limit: ROW_CAP * 5 }, stub.asSupabaseClient());
+    expect(steps(stub.calls[0], "limit")).toEqual([[ROW_CAP]]);
+
+    // A cap nobody can compute falls back to the page's window rather than
+    // becoming an unbounded query.
+    const junk = stubClient({ [T.runs]: { data: [] } });
+    await readRuns({ limit: Number.NaN }, junk.asSupabaseClient());
+    expect(steps(junk.calls[0], "limit")).toEqual([[RUN_WINDOW]]);
+  });
+
+  it("answers an empty table with no rows, and never a state of its own", async () => {
+    const stub = stubClient({ [T.runs]: { data: [] } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.rows).toEqual([]);
+    expect(result.data.truncated).toBe(false);
+    expect(result.data.source).toBeNull();
+  });
+
+  it("classifies an absent table as not provisioned, naming it", async () => {
+    const stub = stubClient({ [T.runs]: { error: tableNotInSchemaCache(T.runs) } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+    expect(result).toEqual({ kind: "not_provisioned", missing: T.runs });
+  });
+
+  it("carries a refused read's own account, naming what it was reading", async () => {
+    const stub = stubClient({ [T.runs]: { error: permissionDenied(T.runs) } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+    if (result.kind !== "error") throw new Error(`expected error, got ${result.kind}`);
+    expect(result.reading).toBe(T.runs);
+    expect(result.message).toContain(`permission denied for table ${T.runs}`);
+  });
+});
+
+describe("the ?source= facet", () => {
+  it("narrows by NAME against the run's own source column, never by a key", async () => {
+    const stub = stubClient({
+      [T.runs]: { data: runsFrom(SOURCE.ticketmaster) },
+    });
+    const result = await readRuns(
+      { source: SOURCE.ticketmaster },
+      stub.asSupabaseClient(),
+    );
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+
+    const call = stub.calls[0];
+    expect(steps(call, "eq")).toEqual([["source", SOURCE.ticketmaster]]);
+    // `runs.source` is text with no foreign key (§6 trap 6): there is no id to
+    // match on and none may be invented.
+    expect(String(steps(call, "eq")[0][0])).not.toContain("source_id");
+    expect(result.data.source).toBe(SOURCE.ticketmaster);
+    expect(result.data.rows.map((row) => row.run_id)).toEqual(
+      runsFrom(SOURCE.ticketmaster).map((row) => row.run_id),
+    );
+  });
+
+  it("narrows nothing when no source was asked for", async () => {
+    const stub = stubClient({ [T.runs]: { data: RUNS } });
+    const result = await readRuns({}, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(steps(stub.calls[0], "eq")).toEqual([]);
+    expect(result.data.source).toBeNull();
+  });
+
+  it("keeps a run whose source name no registry row carries", async () => {
+    // No foreign key means an unregistered name is a legitimate run, and the
+    // facet reaches it like any other.
+    const stub = stubClient({ [T.runs]: { data: runsFrom(SOURCE.unregistered) } });
+    const result = await readRuns(
+      { source: SOURCE.unregistered },
+      stub.asSupabaseClient(),
+    );
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(steps(stub.calls[0], "eq")).toEqual([["source", SOURCE.unregistered]]);
+    expect(result.data.rows).toHaveLength(1);
+  });
+
+  it("answers a name that matches nothing with an empty window, not a refusal", async () => {
+    const stub = stubClient({ [T.runs]: { data: [] } });
+    const result = await readRuns({ source: NO_SUCH_SOURCE }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(result.data.rows).toEqual([]);
+    expect(result.data.source).toBe(NO_SUCH_SOURCE);
+  });
+
+  it("treats a facet carrying nothing as no facet at all", async () => {
+    expect(canonicalUrlText(undefined)).toBeNull();
+    expect(canonicalUrlText("")).toBeNull();
+    expect(canonicalUrlText("   ")).toBeNull();
+    // A present name narrows by itself…
+    expect(canonicalUrlText(SOURCE.ticketmaster)).toBe(SOURCE.ticketmaster);
+    // …and a PADDED one narrows by its twin (admin-window/BUG-0155). This
+    // assertion INVERTS: until the ruling of 2026-09-09 the padded value was
+    // returned verbatim, on the reasoning that "trimming it would match a row
+    // the URL did not ask for" — and the row it matched instead was none,
+    // under six sentences a browser had already re-spelled as the unpadded
+    // name. What is SHOWN is what was USED (ARCHITECTURE.md §7): the padding a
+    // paste carries is stripped where the value is derived, by ink and at the
+    // ends only, and the stripped string is the one both sent and spelled.
+    expect(canonicalUrlText(" spaced ")).toBe("spaced");
+
+    const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+    const result = await readRuns({ source: "" }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(steps(stub.calls[0], "eq")).toEqual([]);
+    expect(result.data.source).toBeNull();
+  });
+
+  /**
+   * The other half of what this facet may be: a name this app could not SPELL
+   * narrows nothing either (admin-window/BUG-0153; ARCHITECTURE.md §7, common
+   * violations row 15).
+   *
+   * For `?source=` the allowlist question and the narrowing question are ONE
+   * question, which is why the gate is here and not at a page: the value is
+   * not merely spelled, it is SENT — and what comes back on `RunWindow.source`
+   * is what the runs window line interpolates into four clauses of the app's
+   * own paragraph as bare text, where an unterminated U+202E reversed 87
+   * characters of it. Refused HERE, no caller can narrow a runs read by a name
+   * the app cannot put on screen, so the field that sentence is built from is
+   * spellable by construction.
+   *
+   * Graded on both fixtures (LESSONS 8), because a guard that never saw a
+   * passing spelling passes vacuously — and the pair either side of the bound
+   * differs by one character.
+   */
+  it.each([
+    ["RIGHT-TO-LEFT OVERRIDE, leading", `${String.fromCodePoint(0x202e)}bandsintown`],
+    ["LEFT-TO-RIGHT ISOLATE, inside", `ab${String.fromCodePoint(0x2066)}cd`],
+    ["ZERO WIDTH SPACE, inside", `ab${String.fromCodePoint(0x200b)}cd`],
+    ["BRAILLE PATTERN BLANK", `ab${String.fromCodePoint(0x2800)}cd`],
+    ["one character over the bound", "a".repeat(129)],
+    ["C1 control, inside", `ab${String.fromCodePoint(0x0085)}cd`],
+    ["astral character, inside", `ab${String.fromCodePoint(0x1f600)}cd`],
+  ] as const)(
+    "narrows by no name this app could not spell: %s [admin-window/BUG-0153]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBeNull();
+      // …and the read really is the unnarrowed read: no `.eq` reached
+      // PostgREST, and the window says it was narrowed by nothing, so no
+      // sentence built from it can claim a scope the read did not have.
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+      expect(result.data.rows).toHaveLength(1);
+    },
+  );
+
+  /**
+   * The passing fixtures, as `[what the URL carried, what the read narrows
+   * by]` — two columns since admin-window/BUG-0155, because those are no
+   * longer always the same string and the pair is the whole point: whatever
+   * the URL carried, ONE derived value reaches the `.eq` AND every sentence
+   * built from `RunWindow.source`.
+   *
+   * `"blanks around ink"` is the second assertion that INVERTS under the
+   * ruling of 2026-09-09 (the first is `" spaced "` above): it was returned
+   * verbatim and now derives to its unpadded twin.
+   */
+  it.each([
+    ["a registered source", SOURCE.ticketmaster, SOURCE.ticketmaster],
+    ["a name the registry never heard of", SOURCE.unregistered, SOURCE.unregistered],
+    [
+      "a value the URL invented",
+      '"><img src=x onerror=alert(1)>',
+      '"><img src=x onerror=alert(1)>',
+    ],
+    ["blanks around ink", " a ", "a"],
+    ["punctuation only", "%%%", "%%%"],
+    ["a value the length of the bound", "a".repeat(128), "a".repeat(128)],
+  ] as const)(
+    "still narrows by a name this app can spell: %s [admin-window/BUG-0153]",
+    async (_name, asked, narrowedBy) => {
+      expect(canonicalUrlText(asked)).toBe(narrowedBy);
+      const stub = stubClient({ [T.runs]: { data: [] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([["source", narrowedBy]]);
+      expect(result.data.source).toBe(narrowedBy);
+    },
+  );
+
+  /**
+   * **What is SHOWN is what was USED, at this read's own edge** — the half of
+   * the facet's contract that lives here (admin-window/BUG-0155;
+   * ARCHITECTURE.md §7, common violations row 20).
+   *
+   * `/cycles` renders six sentences from `RunWindow.source`, so the string
+   * this read hands back is the string a browser will lay out. These grade the
+   * two arms the ruling names, on both fixtures (LESSONS 8): a value whose
+   * padding a browser would drop CANONICALISES here, and a value a browser
+   * would RE-SPELL narrows NOTHING here. The page-level consequences — the
+   * facet box, the window line, the empty card, the dropped-parameter line —
+   * are graded in `tests/offline/cycles/page.test.ts`.
+   */
+  it.each([
+    ["a leading space", ` ${SOURCE.ticketmaster}`],
+    ["a trailing space", `${SOURCE.ticketmaster} `],
+    ["blanks at both ends", `  ${SOURCE.ticketmaster}  `],
+  ] as const)(
+    "narrows by a padded name exactly as by its twin: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBe(SOURCE.ticketmaster);
+      const stub = stubClient({ [T.runs]: { data: runsFrom(SOURCE.ticketmaster) } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      // The argument PostgREST received, not the one the URL carried.
+      expect(steps(stub.calls[0], "eq")).toEqual([["source", SOURCE.ticketmaster]]);
+      expect(result.data.source).toBe(SOURCE.ticketmaster);
+      expect(result.data.rows).toEqual(runsFrom(SOURCE.ticketmaster));
+    },
+  );
+
+  it.each([
+    ["two spaces inside", "tic  ketmaster"],
+    ["three spaces inside", "a   b"],
+    ["a doubled space that a strip of the ends cannot reach", " a  b "],
+  ] as const)(
+    "narrows by no name a browser would re-spell: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBeNull();
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+      expect(result.data.rows).toHaveLength(1);
+    },
+  );
+
+  /**
+   * **Padding the ALLOWLIST itself refuses is refused, not laundered** — the
+   * ordering inside `canonicalUrlText`, graded where it would otherwise be
+   * invisible (admin-window/BUG-0155).
+   *
+   * The strip is by INK, and the ink-less class (`hasVisibleContent`,
+   * `src/lib/verdict/decision.ts`) holds `\p{Cf}` — the bidi controls among
+   * them. Applied BEFORE the allowlist it would turn
+   * `?source=%E2%80%AEbandsintown` into a spellable `bandsintown` and narrow
+   * by it, undoing admin-window/BUG-0153, which rules that such a value is
+   * spelled nowhere and reported on the dropped-parameter line. So the
+   * allowlist is asked of the value AS THE URL CARRIED IT, and inside its
+   * range the only ink-less character is the space: a newline or a U+200B
+   * around a real source name narrows nothing and is reported dropped, which
+   * is the same answer the same characters get INSIDE a name.
+   *
+   * The cost is named rather than hidden: a paste that brings a trailing
+   * newline gets the dropped-parameter line instead of the source's runs. That
+   * is the arm the family already renders, and it is honest — the page never
+   * claims a narrowing it did not make.
+   */
+  it.each([
+    ["a trailing newline", `${SOURCE.ticketmaster}\n`],
+    ["a leading ZERO WIDTH SPACE", `${String.fromCodePoint(0x200b)}${SOURCE.ticketmaster}`],
+    ["a leading RIGHT-TO-LEFT OVERRIDE", `${String.fromCodePoint(0x202e)}${SOURCE.ticketmaster}`],
+    ["a trailing NO-BREAK SPACE", `${SOURCE.ticketmaster}${String.fromCodePoint(0x00a0)}`],
+  ] as const)(
+    "narrows by nothing when the padding itself is unspellable: %s [admin-window/BUG-0155]",
+    async (_name, asked) => {
+      expect(canonicalUrlText(asked)).toBeNull();
+      const stub = stubClient({ [T.runs]: { data: [SUCCEEDED] } });
+      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+      expect(steps(stub.calls[0], "eq")).toEqual([]);
+      expect(result.data.source).toBeNull();
+    },
+  );
+
+  it("still narrows by a name carrying ONE interior space [admin-window/BUG-0155]", async () => {
+    // A browser lays a single space out as written, so the sentence and the
+    // query still agree — and BUG-0147's bar holds: a half-typed URL is
+    // answered, spelled in full, over a window that matched nothing.
+    const asked = "a source that never ran";
+    expect(canonicalUrlText(asked)).toBe(asked);
+    const stub = stubClient({ [T.runs]: { data: [] } });
+    const result = await readRuns({ source: asked }, stub.asSupabaseClient());
+    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
+    expect(steps(stub.calls[0], "eq")).toEqual([["source", asked]]);
+    expect(result.data.source).toBe(asked);
+  });
+
+  it("hands back a value that is already its own derivation [admin-window/BUG-0155]", async () => {
+    // What a seam rests on (ARCHITECTURE.md §7): a component may render the
+    // facet it was handed exactly when `canonicalUrlText(v) === v`, which is
+    // only a usable question if the derivation is idempotent.
+    for (const asked of [
+      ` ${SOURCE.ticketmaster} `,
+      SOURCE.unregistered,
+      "a source that never ran",
+      "%%%",
+    ]) {
+      const once = canonicalUrlText(asked);
+      if (once === null) throw new Error(`expected a narrowing for ${JSON.stringify(asked)}`);
+      expect(canonicalUrlText(once), JSON.stringify(asked)).toBe(once);
+    }
+  });
+});

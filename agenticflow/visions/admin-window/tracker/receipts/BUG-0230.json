@@ -1,0 +1,47 @@
+{
+ "id": "BUG-0230",
+ "created": "2026-09-15T06:11:31Z",
+ "green": true,
+ "git_head": "1f8c7866d71ba457802f33b8b53b73d0e79835a4",
+ "scope": [
+  "src/lib/format.ts",
+  "src/lib/db/result.ts",
+  "tests/offline/format.test.ts",
+  "tests/http/absence.http.test.ts"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 2,
+ "tree_hash": "87120b37ff82123721db4a68230e6c9d7c345e2446f8dc2aabde13cea07723a3",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run --project=offline tests/offline/format.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-46527\n\n \u2713 |offline| tests/offline/format.test.ts (47 tests) 30ms\n\n Test Files  1 passed (1)\n      Tests  47 passed (47)\n   Start at  23:10:49\n   Duration  326ms (transform 48ms, setup 0ms, collect 67ms, tests 30ms, environment 0ms, prepare 55ms)\n\n(node:46534) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "npm run test:http",
+   "exit": 0,
+   "output_tail": "refuses every forged edit, and offers no other method  764ms\n   \u2713 a hostile record id at the wire (QA, admin-window/BUG-0068) > is answered by the gate, never by a 5xx and never in the database's words  698ms\n \u2713 |http| tests/http/walk-cookie.http.test.ts (1 test) 984ms\n   \u2713 the walker's minted cookie against the running app > opens the gated pages, and only under the server's own secret  984ms\n \u2713 |http| tests/http/records.http.test.ts (1 test) 695ms\n   \u2713 the record page over http > renders for every mapped table, past the id gate and through the reads  695ms\n\n Test Files  6 passed (6)\n      Tests  37 passed (37)\n   Start at  23:10:59\n   Duration  14.45s (transform 180ms, setup 0ms, collect 377ms, tests 13.84s, environment 0ms, prepare 54ms)\n\nnpm notice run kpop-social-space@0.1.0 test:http\nnpm notice run next build && vitest run --project=http\n\u26a0 Warning: Next.js inferred your workspace root, but it may not be correct.\n We detected multiple lockfiles and selected the directory of /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/package-lock.json as the root directory.\n To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n Detected additional lockfiles: \n   * /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-46527/package-lock.json\n\n\u26a0 The \"middleware\" file convention is deprecated. Please use \"proxy\" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy\n(node:46591) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:46781) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "! grep -F -n 'it.fails(\"renders a zero as a zero, whatever sign the number carries' tests/offline/format.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "! grep -F -n 'it.fails(\"publishes no minus-signed figure for a host total of' tests/http/absence.http.test.ts",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "./node_modules/.bin/tsc --noEmit",
+   "exit": 0,
+   "output_tail": ""
+  },
+  {
+   "cmd": "npm run lint",
+   "exit": 0,
+   "output_tail": "npm notice run kpop-social-space@0.1.0 lint\nnpm notice run eslint\n"
+  }
+ ]
+}

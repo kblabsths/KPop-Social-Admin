@@ -1,0 +1,386 @@
+import {
+  AWAITING_LABEL,
+  AWAITING_SURFACE,
+  AwaitingRowTrendSection,
+  NOTHING_MATCHED,
+  NOTHING_REGISTERED,
+  REGISTRY_SURFACE,
+  REJECTION_LABEL,
+  REJECTION_SURFACE,
+  RejectionSection,
+  SourceChips,
+  sourceColumns,
+} from "@/components/sources";
+import {
+  DataTable,
+  DroppedParamsLine,
+  Empty,
+  Identifier,
+  Page,
+  Section,
+  StateOf,
+  narrowedTo,
+} from "@/components/ui";
+import { canonicalRecordId } from "@/lib/records/id";
+import {
+  listSources,
+  selectSources,
+  type SourceState,
+  type SourcesFilter,
+} from "@/lib/db/sources";
+import { readAwaitingRowTrend } from "@/lib/gauges/pending-claims";
+import { readRejectionStampGauge } from "@/lib/gauges/settled-values";
+import { sourceNamesOf } from "@/lib/sources/names";
+import {
+  SOURCES_NARROWING_FACETS,
+  SOURCE_FACET,
+  type SourceNarrowing,
+} from "@/lib/sources/routes";
+// The narrowing vocabulary itself — the SHAPE of a facet table and the two
+// functions over it — from the leaf that owns URL meaning, so this page and
+// `/claims` say one sentence from one declaration (admin-window/TASK-0072,
+// LESSONS 5). The facet TABLE is this surface's own and lives in
+// `lib/sources/routes.ts`; nothing of the phrase is written here.
+import {
+  isSurfaceNarrowed,
+  unchippedNarrowings,
+  unchippedPhrase,
+} from "@/lib/url/narrowing";
+// What the URL asked for that this page did not do, from the ONE module that
+// owns that rule for every route (admin-window/BUG-0141). Imported, never
+// retyped: four bugs have landed on that one sentence and a second spelling
+// would be born with none of them (LESSONS 5, ARCHITECTURE.md §13.7).
+import { droppedParams } from "@/lib/url/dropped-params";
+
+/**
+ * Sources — **the registry's state rows, and who keeps being wrong** (campaign
+ * admin-window/TASK-0013).
+ *
+ * Authority: spec §4 ("the sources state rows: lifecycle, current tier,
+ * checkpoint, last run, per-source gauge trends"), §5 (the pending-claims
+ * per-source `awaiting_row` trend and the settled-values gauge),
+ * `contracts/data-model.md` (source registry — config + state), LOOK_AND_FEEL
+ * ("Sources … is the data-table rule applied; it carries no bespoke layout",
+ * quality bars 1, 4, 10, 11).
+ *
+ * Three rules this page is built on, each of which it would be easy to break:
+ *
+ *  - **Config is not state.** The description, the domains fed, the usage, the
+ *    dials and the legal status are scraper YAML, and this campaign reads no
+ *    scraper file at runtime (spec §10). What renders below is the `sources`
+ *    TABLE and nothing else — no invented config column, and no registry value
+ *    hand-copied into this repo.
+ *  - **Last run is matched by NAME.** `sources` has no last-run column and
+ *    `runs.source` has no foreign key (ARCHITECTURE.md §6 trap 6, migration
+ *    `20260829000001`). `src/lib/db/sources.ts` is the one place that match
+ *    happens; a source with no run renders the dash, which means "has never
+ *    run" and never "we could not read it".
+ *  - **Tier is a badge, not a colour.** Only severity and health carry colour,
+ *    so a page of sources is not a rainbow (LOOK_AND_FEEL, Chips and badges).
+ *
+ * This page function is the ONLY async component on the route
+ * (ARCHITECTURE.md §5): it reads, it shapes, every child is a pure sync
+ * component with plain props — which is what lets the offline suite render
+ * `renderToStaticMarkup(await SourcesPage(props))` with no jsdom and no
+ * database, and the live suite compare its rows with rows the test reads
+ * itself.
+ *
+ * **Those children live in `src/components/sources/`** (campaign
+ * admin-window/DEBT-0004, ARCHITECTURE.md §13.6), beside every other page's,
+ * and the three URLs this page builds live below both of them in the pure leaf
+ * `lib/sources/routes.ts` — the page reads the facet off `searchParams` with
+ * the same constant the chip row writes into a link, so neither owns it.
+ *
+ * **Nothing settles anything in M1**: every control in this markup is a link.
+ */
+
+/**
+ * Three reads happen per request against the live database, so the route
+ * renders per request rather than being prerendered at build time
+ * (`node_modules/next/dist/docs/01-app/02-guides/caching-without-cache-components.md`,
+ * "Route segment config"). Reading `searchParams` already opts this page in,
+ * but the prop is optional — the shell's route test renders every page with no
+ * props at all — and a page prerendered at build, where the app has no
+ * credential, would ship a FROZEN error state that never re-reads.
+ */
+export const dynamic = "force-dynamic";
+
+/* ── the URL, which is the whole of this page's state ────────────────────── */
+
+/** A `searchParams` value, in every shape Next can hand one over. */
+type ParamValue = string | string[] | undefined;
+
+/** The `searchParams` object a page awaits. */
+type SearchParams = Record<string, ParamValue>;
+
+/**
+ * The FIRST value the URL carries for a key. `?source_id=a&source_id=b` is
+ * ambiguous state and the web platform already answers it —
+ * `URLSearchParams.get()` returns the first — so a hand-edited URL lands on a
+ * real, bookmarkable state rather than an error page.
+ */
+function firstValue(value: ParamValue): string | undefined {
+  if (Array.isArray(value)) return value.length === 0 ? undefined : value[0];
+  return value;
+}
+
+/**
+ * The narrowing the URL asked for — **from the URL alone** (campaign
+ * admin-window/BUG-0139).
+ *
+ * It takes no read's rows, which is what lets the three reads below be issued
+ * TOGETHER: both gauges narrow at the query (`observations.source_id` is a real
+ * column on the side each of them scans), so a narrowing that waited for the
+ * registry's rows would put the sequential round trip straight back.
+ *
+ * The one thing it asks of a value is that it be a uuid AT ALL, and that is a
+ * question about the REQUEST rather than about the registry: `source_id` is a
+ * uuid column, so a value that is not one can equal no row anywhere and
+ * Postgres refuses the comparison before a row is considered (`22P02 invalid
+ * input syntax for type uuid`), which every surface then renders as "the read
+ * failed, reload" — advice that can never work, because reloading re-sends the
+ * same malformed URL. That is admin-window/BUG-0065's ruling on `/records`,
+ * and `canonicalRecordId` answers it with `isRecordId`'s one grammar; a second
+ * uuid pattern here would be a second answer to one question. So a hand-typed
+ * `?source_id=nobody` narrows NOTHING and the page renders the whole registry,
+ * exactly as it always has.
+ *
+ * It asks for the value CANONICALISED, in one call, because the narrowing it
+ * returns is then compared two ways: by Postgres, which matches every spelling
+ * of one uuid, at the awaiting-row gauge's query — and by JavaScript, which
+ * matches exactly one, in `selectSources` and `selectPendingClaims`. Handed the URL's
+ * raw value both comparisons disagree, and a source the database matched was
+ * denied by the page (admin-window/BUG-0140). Canonicalised HERE, where the
+ * narrowing is made and nowhere else, every spelling `isRecordId` accepts —
+ * uppercased, hyphen-less, mixed — selects the row PostgREST would, and the
+ * chips and row links spell the narrowing back as that one id.
+ *
+ * A well-formed id the registry turns out not to hold DOES narrow, in every
+ * spelling: the page renders `data-empty="narrowing"` — "nothing matched",
+ * told apart from the registry that holds nothing — and the gauges answer the
+ * same narrowing the table renders, which is the property a figure on this
+ * page rests on. That is fact 1 and it is not the whole answer: over a
+ * registry holding NO rows the same id removed nothing, and the arm the page
+ * renders is decided from the population too (`isSurfaceNarrowed` below,
+ * admin-window/DEBT-0008).
+ */
+function filterFrom(params: SearchParams): SourcesFilter {
+  const asked = firstValue(params[SOURCE_FACET]);
+  const narrowing = asked === undefined ? null : canonicalRecordId(asked);
+  return narrowing === null ? {} : { source_id: narrowing };
+}
+
+/* ── the narrowing the WINDOW LINES name ────────────────────────── */
+
+/**
+ * What a windowed read was NARROWED TO, as the phrases its window line says —
+ * `null` for a read that covered the whole object (campaign
+ * admin-window/TASK-0073, SPEC F15).
+ *
+ * Asked of the filter that read was GIVEN, never of the URL: a window line
+ * states the read that HAPPENED (ARCHITECTURE.md §4.3), so a facet this page
+ * dropped — `?source_id=` carrying something that is not a uuid, or a
+ * parameter this route does not read at all — never reaches a filter and so
+ * appears in no scope, and a facet that did reach one appears in every line
+ * whose read carried it and in no line whose read did not. Nothing here asks
+ * what came back: a narrowed scan that returned no rows still names its
+ * narrowing, exactly as `/claims`' gauge line does
+ * (admin-window/BUG-0163, admin-window/BUG-0123).
+ *
+ * Every word of it is imported. The phrase SHAPE and its composition are
+ * `lib/url/narrowing.ts`' and `components/ui/window-line.tsx`'; the facet
+ * table is this surface's own, in `lib/sources/routes.ts`. This page writes no
+ * narrowing sentence and neither does `components/sources/trends.tsx` — the
+ * two lines are handed the answer (LESSONS 5).
+ */
+function scopeOf(given: SourceNarrowing): readonly string[] | null {
+  return narrowedTo(
+    unchippedNarrowings(given, SOURCES_NARROWING_FACETS).map(unchippedPhrase),
+  );
+}
+
+/* ── the page ────────────────────────────────────────────────────────────── */
+
+export default async function SourcesPage({
+  searchParams,
+}: {
+  /**
+   * Next 16 hands `searchParams` over as a promise
+   * (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/page.md`).
+   * Optional, so the page also renders standing alone with no props, the way
+   * the shell's route test calls every page.
+   */
+  searchParams?: Promise<SearchParams>;
+} = {}) {
+  const params = (await searchParams) ?? {};
+
+  // The narrowing comes from the URL alone, so it is known BEFORE anything is
+  // read and no leg waits on another's rows.
+  const filter = filterFrom(params);
+
+  // Three independent reads, issued together (campaign admin-window/BUG-0139).
+  // None of them needs anything from the other two, and they were awaited one
+  // after the other: the registry, whole — every narrowing below is
+  // `selectSources`' — and the two gauges, which are the other kind of read,
+  // bounded ordered WINDOWS (§4.3 kind 2), each naming the window it shows.
+  // BOTH gauges narrow at the QUERY, because `observations.source_id` is a real
+  // column on the side each of them scans (admin-window/BUG-0194 gave the
+  // rejection scan the facet the awaiting-row scan already carried). Each keeps
+  // its own `DbResult` and its own Section state, so no leg's refusal removes
+  // another leg's rows (§4.1, common violations row 14).
+  //
+  // Each read's own options object is NAMED, and the same object is handed to
+  // the read and to `scopeOf`: the filter a read was GIVEN and the words its
+  // window line says about that read are then one expression and cannot come to
+  // disagree (admin-window/TASK-0073, admin-window/BUG-0163). That is also why
+  // the settled-values line moves with its figures now — the section reports one
+  // source's rows because the SCAN read one source's rows, so the cap in that
+  // sentence, the truncation verdict under it and the figures beside it are all
+  // over one population (admin-window/BUG-0194, admin-window/BUG-0114).
+  const awaitingRead = { filter };
+  const rejectionsRead = { filter };
+  const [sources, trend, rejections] = await Promise.all([
+    listSources(),
+    readAwaitingRowTrend(awaitingRead),
+    readRejectionStampGauge(rejectionsRead),
+  ]);
+
+  const held = sources.kind === "ok" ? sources.data : [];
+  const shown = selectSources(held, filter);
+
+  // What the registry calls each source, from the COMPLETE registry read
+  // above. The trend below labels its rows with it through `sourceLabel`, the
+  // app's one rule for what a source is called (`lib/sources/names.ts`): this
+  // page hands over the registry's answer and decides nothing about it
+  // (admin-window/BUG-0158 — the per-row `find(...)?.source ?? null` this
+  // replaced could not tell a missing row from a blank name). The narrowing
+  // CHIPS take the same map (admin-window/BUG-0159): a chip is a source
+  // labelled by its id too, and it spelled `source.source` raw — no fallback
+  // at all — so one blank registry row made this page give two answers for one
+  // source in one render. The registry TABLE's own name cell takes it for the
+  // same reason and was the last site of that class on this page
+  // (admin-window/TASK-0060), so every source this page names — chip, row,
+  // trend — is named by one rule from one read.
+  const names = sourceNamesOf(held);
+
+  // Which emptiness this is, from TWO facts and not from the URL alone
+  // (ARCHITECTURE.md §4.3, admin-window/DEBT-0008). Fact 1 is structural: a
+  // `source_id` in the URL is always a real narrowing of this table, since no
+  // registry row is implied by anything else on it. Fact 2 is the REGISTRY'S
+  // OWN POPULATION — and it costs no query, because `listSources` is a
+  // COMPLETE read (§4.3 kind 1) of the registry whole, deliberately unnarrowed
+  // so `selectSources` can do every narrowing: its `ok` array IS the
+  // population. A registry holding nothing had no row for any id to remove, so
+  // an id in the URL may not be given as the reason the table is empty; the
+  // read's own refusal is this page's state and is rendered by the `StateOf`
+  // card above, so there is no separate leg here whose refusal could delete a
+  // row (the shape `/queues` needs, where the population is its own count
+  // read — admin-window/BUG-0135).
+  const narrowed = isSurfaceNarrowed(filter.source_id !== undefined, {
+    rendered: shown.length,
+    population: held.length,
+  });
+
+  const emptyWords = narrowed ? NOTHING_MATCHED : NOTHING_REGISTERED;
+
+  return (
+    <Page title="Sources">
+      {sources.kind === "ok" && held.length > 0 ? (
+        <SourceChips sources={held} names={names} filter={filter} />
+      ) : null}
+
+      {/* What the URL asked for that this page did NOT do — the sentence
+          `/claims`, `/queues` and `/cycles` already render, from the same code
+          (admin-window/BUG-0201; ARCHITECTURE.md common violations row 9). It
+          stands beside the chip row because it is a fact of the URL and not of
+          any read: it renders the same over an `ok` read, a refusal and a
+          registry that is not there, and the chips above it are drawn only
+          when the registry answered with rows.
+
+          The narrowing handed over is `filter` — **what the reads actually
+          carried**, never the URL's raw value. So `?source_id=deadbeef`, which
+          `filterFrom` reduces to no narrowing at all because it can equal no
+          row anywhere, is NAMED here rather than swallowed under a registry
+          that answers with every source (the silence Tomas read as "I asked
+          for one source and this is it"); while a canonical id that really did
+          narrow is not named, whether or not the registry holds that row —
+          that emptiness is `data-empty="narrowing"`'s to say.
+
+          Nothing is consumed elsewhere and nothing is withheld by name: this
+          route has no tab strip and no word it may not render, so it states
+          its own empty lists rather than taking the module's `tab` default —
+          a `?tab=` here really is a parameter this page did not apply, exactly
+          as `/cycles` (the other tabless route) reports one.
+
+          The filter is SPREAD for the same reason `/queues` spreads its own:
+          `SourcesFilter` is an interface, so it has no implicit index
+          signature and the rule's `AppliedNarrowing` is a record — the copy is
+          the type edge and nothing else, and it carries exactly the keys the
+          reads carried. */}
+      <DroppedParamsLine
+        dropped={droppedParams(params, { ...filter }, [], [])}
+      />
+
+      <Section title="Registry" surface={REGISTRY_SURFACE}>
+        {sources.kind === "not_provisioned" ? (
+          // A card replaces the surface; nothing above it describes a table
+          // that is not there (LOOK_AND_FEEL state 3).
+          <StateOf result={sources} />
+        ) : sources.kind === "ok" && shown.length === 0 ? (
+          // Two different emptinesses, two different renderings: the registry
+          // that holds nothing, and the narrowing that matched nothing. The
+          // hook says WHICH, so neither can be mistaken for the other or for
+          // an absent table.
+          <div data-empty={narrowed ? "narrowing" : "registry"}>
+            <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
+          </div>
+        ) : (
+          <>
+            <DataTable<SourceState>
+              label="Sources"
+              columns={sourceColumns(filter, names)}
+              rows={sources.kind === "ok" ? shown : []}
+              rowKey={(row) => row.source_id}
+              placeholder={
+                sources.kind === "error" ? <StateOf result={sources} /> : undefined
+              }
+            />
+            <p className="type-body text-ink-secondary">
+              State, not configuration: what the registry holds about a source —
+              its description, the domains it feeds, its dials and its legal
+              status — lives in the scraper repo and is not read here. Tier is
+              the source&rsquo;s current tier, which drifts. Last run is the
+              newest run whose <Identifier>source</Identifier>{" "}
+              name matches this row; a source that has never run shows no run.
+            </p>
+          </>
+        )}
+      </Section>
+
+      <Section title="Awaiting-row trend" surface={AWAITING_SURFACE}>
+        {trend.kind === "ok" ? (
+          <AwaitingRowTrendSection
+            trend={trend.data}
+            filter={filter}
+            names={names}
+            scope={scopeOf(awaitingRead.filter)}
+          />
+        ) : (
+          <StateOf result={trend} eyebrow={AWAITING_LABEL} />
+        )}
+      </Section>
+
+      <Section title="Settled values" surface={REJECTION_SURFACE}>
+        {rejections.kind === "ok" ? (
+          <RejectionSection
+            gauge={rejections.data}
+            filter={filter}
+            scope={scopeOf(rejectionsRead.filter)}
+          />
+        ) : (
+          <StateOf result={rejections} eyebrow={REJECTION_LABEL} />
+        )}
+      </Section>
+    </Page>
+  );
+}

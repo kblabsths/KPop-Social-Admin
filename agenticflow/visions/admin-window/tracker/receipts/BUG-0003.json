@@ -1,0 +1,24 @@
+{
+ "id": "BUG-0003",
+ "created": "2026-09-02T07:05:52Z",
+ "green": true,
+ "git_head": "793476f77ba3c9cb54c95f17fd9afbc6cbc74af2",
+ "scope": [
+  "tests/offline/db"
+ ],
+ "isolation": "worktree",
+ "foreign_files": 4,
+ "tree_hash": "02416c3bf0d39652ba498d8bccd572a9e7f4c3045757681193d7cc0dc5417dcb",
+ "commands": [
+  {
+   "cmd": "./node_modules/.bin/vitest run tests/offline/db/layering.test.ts",
+   "exit": 0,
+   "output_tail": "\n RUN  v3.2.7 /Users/ben-m4/Desktop/Coding/KPOP/kspace Admin/agenticflow/.worktrees/_receipt-78394\n\n \u2713 |offline| tests/offline/db/layering.test.ts (14 tests) 53ms\n\n Test Files  1 passed (1)\n      Tests  14 passed (14)\n   Start at  00:05:52\n   Duration  325ms (transform 28ms, setup 0ms, collect 29ms, tests 53ms, environment 0ms, prepare 56ms)\n\n(node:78401) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n"
+  },
+  {
+   "cmd": "bash -c \"! grep -q 'it.fails(\\\"detects a reader that uses bracket' tests/offline/db/layering.test.ts\"",
+   "exit": 0,
+   "output_tail": ""
+  }
+ ]
+}
