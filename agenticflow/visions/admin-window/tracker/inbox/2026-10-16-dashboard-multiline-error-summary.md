@@ -1,0 +1,7 @@
+# Dispatcher, 2026-10-16: the automated scraper writes multi-line run errors; the dashboard's "verbatim" cell collapses them
+
+Found while checking the automated scraper's output against Admin (Ben's ask, 2026-10-16). Read-only facts on staging: the Railway ingest job's two failed runs (2026-10-15T03:15Z and 03:20Z, ticketmaster) carry a FOUR-line `runs.error_summary` ("door.clients: refusing to run: the database connector raised OperationalError … STAGING_SUPABASE_DB_URL names" + three more lines). `tests/live/dashboard.live.test.ts` ("renders the newest runs … with the source the database holds") fails on exactly that row: the rendered cell text has a space where the database has a newline. Every other read-only live file is green (runs, cycles, sources, queues, review-item, claims, browse: 77/77).
+
+Expected (src/app/page.tsx:386, "the producer's own error_summary, inline and VERBATIM"): a multi-line summary renders as the database holds it (line breaks preserved) and the live case's comparison holds. Found: whitespace collapsed. Cosmetic, P3, patch lane; one surface. Note for the fix: decide whether the cell renders line breaks (pre-wrap) or the oracle compares whitespace-normalised — the former is what "verbatim" means.
+
+Pipeline health note for Ben (not an Admin defect): those two runs failed to open the staging DB connection from Railway; the 2026-10-16T01:20Z run succeeded (48 observations, checkpoint advanced).
