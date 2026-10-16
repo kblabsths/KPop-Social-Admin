@@ -40,7 +40,7 @@ import {
   expectDrawnAsLinkAtRest,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
-import { oneEach, surfaceHooks } from "../../live/parity";
+import { oneEach, surfaceHooks } from "../../fixtures/surface-state";
 import { ID, eventListingRow, eventRow, fieldProvenanceRow, sourceRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -980,7 +980,7 @@ const EVENTS_HOOK = '[data-surface="events"]';
 
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
-   * The live oracle grades ONE surface and `stateOf` (`tests/live/parity.ts`)
+   * The live oracle grades ONE surface and `stateOf` (`tests/fixtures/surface-state.ts`)
    * refuses any selector matching other than exactly one element. Until
    * admin-window/DEBT-0002 it addressed this body as
    * `section:nth-of-type(1) > :last-child`, compounding the page's section

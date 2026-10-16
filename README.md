@@ -91,12 +91,51 @@ The scripts themselves are in `package.json`:
 | `npm run lint` | ESLint (flat config, `eslint.config.mjs`) — must be clean before pushing |
 | `npm run typecheck` | `tsc --noEmit`, strict |
 | `npm test` | the offline tiers (`tests/offline/`, `tests/isolated/`) — no network, and green with no staging names in the environment |
-| `npm run test:live` | the live tier (`tests/live/`) against **staging**; refuses loudly if the staging names are unset |
+| `npm run test:live` | the live tier: a read-only contract smoke, ~10 cases in one file (`tests/live/contract.live.test.ts`), proving the offline stubs' assumptions about how PostgREST answers on **staging**; needs the staging names and refuses loudly if they are unset |
 | `npm run test:http` | the HTTP tier (`tests/http/`) — builds the app, starts it, drives it over HTTP; needs no database |
 
 The directory a test lives in *is* its tier (`tests/suite-globs.ts`): `npm test` cannot reach
 `tests/live/`, which is why the offline suite is safe to run anywhere. Agent walk tooling lives in
-`tests/walk/` and writes only to the staging-only `walk_sandbox` table.
+`tests/walk/` and writes only to the staging-only `walk_sandbox` table; no test script can reach it
+(none of the scripts above names it).
+
+## Testing
+
+Ben's rules of 2026-09-16 (`agenticflow/tracker/proposals/2026-09-16-testing-rules.md`), binding on
+every test in this repo and on every agent that writes one:
+
+1. **No test asserts a value it did not write.** A count, an id, a title or a
+   population read from a shared database is not a fixture.
+2. **No test writes anywhere shared.** Not production, not staging, not a
+   sandbox table on staging. If a proof seems to need a shared write, the
+   proof is in the wrong place — redesign it, never grant an exception.
+3. **Live tests are expensive.** Few, read-only, each with a one-line reason it
+   must be live. Their only job is to prove the offline stubs are honest about
+   how the real service answers. (All tests should be clear; live ones must
+   also justify their cost.)
+4. **A test earns its place** by naming a bug it would catch that no other test
+   catches. A pin that restates an existing rule, or grades how a thing happened
+   to be written, is deleted.
+
+### Proof versus test — the misunderstanding that produced the writes
+
+"Proven end to end" in an acceptance list means: a person or an agent walks the
+real thing ONCE, watches it, and leaves a dated note. It never means "write a
+re-runnable test that does it on every run". The M2/M3 acceptance items 6, 7
+and 8 were read the second way, became tests/live/settle.live.test.ts and
+three tasks that had to write staging (TASK-0084/0085/0086), and produced
+BUG-0215's residue. Ben walked them instead on 2026-09-16 (five of eight
+actions; the report is in the inbox). Reword acceptance items to "walked and
+recorded" wherever "proven" appears, and treat the verifier's close walk as the
+mechanism.
+
+A release-time live suite against a **disposable** database (never staging or
+production) is the one legitimate re-runnable end-to-end run. Deferred: not
+worth building until there is a production release to protect. Record it so it
+is not reinvented as a staging test.
+
+The guard over these rules for the live tier is `tests/offline/live-guard.test.ts`: one live file,
+no write-shaped call in it, and a `LIVE BECAUSE:` line above every case.
 
 ## Deployment
 

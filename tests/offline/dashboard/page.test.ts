@@ -17,7 +17,7 @@ import {
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
 import { blankCells } from "../absence/surfaces";
-import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../fixtures/surface-state";
 import type { ResolutionRunRow as CycleRow } from "@/lib/db/cycles";
 import {
   resolutionRunRow,
@@ -2232,7 +2232,7 @@ const HOOKS = Object.values(SURFACE_HOOKS);
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these three
    * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
    * `<div>` wrapped around an existing one, either duplicates a match or

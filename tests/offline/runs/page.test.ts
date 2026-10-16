@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RUN_COLUMNS, RUN_COUNTS, RUN_WINDOW } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
-import { readNumber } from "../../live/parity";
+import { readNumber } from "../../fixtures/surface-state";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
 import { RUN_CELL_HOOK, columnsFromHooks } from "../../fixtures/run-hooks";
 import { runRow, type RunRow as RunFixture } from "../../fixtures/rows";

@@ -10,7 +10,7 @@ import {
   expectDrawnAsLinkAtRest,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
-import { stateOf as surfaceStateOf } from "../../live/parity";
+import { stateOf as surfaceStateOf } from "../../fixtures/surface-state";
 import {
   ID,
   observationRow,

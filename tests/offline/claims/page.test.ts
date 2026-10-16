@@ -58,7 +58,7 @@ import {
   claimView,
   nameOf,
 } from "./population";
-import { oneEach, surfaceHooks } from "../../live/parity";
+import { oneEach, surfaceHooks } from "../../fixtures/surface-state";
 import {
   observationRow,
   pendingClaimRow,
@@ -5863,7 +5863,7 @@ const EXPECTED: Record<string, Record<string, number>> = {
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these
    * POSITIONALLY — `section:nth-of-type(n)` — and on THIS page the position
    * was already tab-dependent, so the oracle carried a `listOf(tab)` function

@@ -36,7 +36,7 @@ import {
   expectNotDrawnAsLink,
   faceOf,
 } from "../../fixtures/link-spelling";
-import { oneEach, stateOf, surfaceHooks } from "../../live/parity";
+import { oneEach, stateOf, surfaceHooks } from "../../fixtures/surface-state";
 
 /**
  * The review-item detail page, rendered (campaign admin-window/TASK-0011).
@@ -3537,7 +3537,7 @@ describe("a table wider than its column", () => {
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed the header as
    * `section:nth-of-type(1)` and the evidence body as
    * `section:nth-of-type(2) > :nth-child(2)` — the second compounding this
