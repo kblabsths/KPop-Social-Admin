@@ -55,7 +55,8 @@ import { submitReferenceEdit } from "./submit";
  * **Absent the settlement function it does not render at all.** The page asks
  * the one seam whether the override path is open and draws no picker when it
  * is not — no disabled control, and never a button toward a write path that
- * does not exist. That is the graded normal case of this milestone, and it is
+ * does not exist. That is a graded case (which databases are in that world
+ * is ARCHITECTURE.md §9.2's to say), and what it draws is
  * the read-only reference line M1 already shipped (`fields.ts`, FEAT-0011).
  *
  * ## What is a pure unit here, and why

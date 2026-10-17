@@ -30,9 +30,9 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  *
  * **This list is not a claim that a settlement can be made.** Whether any
  * control renders at all is `readSettlementReadiness`' answer, taken in
- * `slot.tsx`: with `verdicts` absent — staging today, and what `main` deploys
- * against for the whole of M2 — the slot draws the not-provisioned card and
- * this list is never rendered. No control here would ever call a function this
+ * `slot.tsx`: against a database without `verdicts` (which databases those
+ * are is ARCHITECTURE.md §9.2's to say) the slot draws the not-provisioned
+ * card and this list is never rendered. No control here would ever call a function this
  * database does not have, and nothing here queues, buffers or works around one
  * (spec §10's one forbidden move).
  *

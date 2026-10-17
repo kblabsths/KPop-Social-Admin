@@ -167,12 +167,12 @@ function receiptOf(data: unknown): VerdictReceipt | null {
  * does not use the form.
  *
  * On the wire it is one call in one transaction — there is no client-side
- * multi-step settlement and no second write path. Absence is the normal case
- * for the whole of M2: `settle_review_item` is not installed on staging or in
- * production, so `PGRST202` / `42883` come back and `callFunction` classifies
- * them `not_provisioned` naming the function (admin-window/BUG-0080: an
- * absence claim follows what was ASKED, and this seam is what asks for a
- * function).
+ * multi-step settlement and no second write path. Absence is a graded case,
+ * not an error: against a database that does not expose `settle_review_item`
+ * (which ones do is ARCHITECTURE.md §9.2's to say), `PGRST202` / `42883` come
+ * back and `callFunction` classifies them `not_provisioned` naming the
+ * function (admin-window/BUG-0080: an absence claim follows what was ASKED,
+ * and this seam is what asks for a function).
  */
 export async function settleReviewItem(
   client: DbClient | undefined,
@@ -473,10 +473,11 @@ function readObservationFacts(
  * verdicts landing on the same instant cannot swap places between reloads and
  * the window is the same window twice running.
  *
- * **Absence is the graded normal case.** `verdicts` is not on staging and not
- * in production, so this returns `not_provisioned` naming `verdicts`, the tab
- * draws that card, and no window line is published for a read that never
- * returned (ARCHITECTURE.md §4.3, DECISIONS 2026-09-04).
+ * **Absence is a graded case.** Against a database without `verdicts` (which
+ * databases those are is ARCHITECTURE.md §9.2's to say) this returns
+ * `not_provisioned` naming `verdicts`, the tab draws that card, and no window
+ * line is published for a read that never returned (ARCHITECTURE.md §4.3,
+ * DECISIONS 2026-09-04).
  *
  * The observation leg runs only when the first read RETURNED rows carrying an
  * `observation_id`: an absent `verdicts` asks `observations` nothing at all.

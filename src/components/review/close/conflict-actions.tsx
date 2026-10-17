@@ -39,9 +39,9 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  * contradiction of "never offer a control that would call a missing function":
  * the readiness question is asked ONCE, above, by `CloseSlot`
  * (`readSettlementReadiness`), which draws the not-provisioned card and
- * renders no control at all while `verdicts` is absent — the normal case for
- * the whole of M2. A second reading of that question here would be the
- * hand-copied probe common violation 9 forbids.
+ * renders no control at all while `verdicts` is absent (which databases are
+ * in that world is ARCHITECTURE.md §9.2's to say). A second reading of that
+ * question here would be the hand-copied probe common violation 9 forbids.
  *
  * It is a module of its own so the three shapes can be built in parallel from
  * isolated worktrees without landing in one file (ARCHITECTURE.md §13.9).

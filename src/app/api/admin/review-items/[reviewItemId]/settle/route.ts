@@ -50,12 +50,13 @@ import { decisionRefusals, type VerdictDecision } from "@/lib/verdict/decision";
  *    caller could type would be a log anyone past the gate could write in
  *    someone else's name.
  *
- * **The absent function is the normal answer** for the whole of M2 and it is
- * not an error: `settle_review_item` is not installed on staging or in
- * production, so the one call comes back `not_provisioned` naming it and this
- * route answers 503 naming the same object — the same card the slot already
- * draws before the click (ARCHITECTURE.md §9.2). Nothing here queues, buffers
- * or retries the write, and nothing writes around it (spec §10).
+ * **The absent function is a graded answer, not an error.** Against a
+ * database that does not expose `settle_review_item` the one call comes back
+ * `not_provisioned` naming it and this route answers 503 naming the same
+ * object — the same card the slot already draws before the click. Which
+ * databases are in that world is stated in ARCHITECTURE.md §9.2 and nowhere
+ * here. Nothing here queues, buffers or retries the write, and nothing writes
+ * around it (spec §10).
  */
 
 /** The parts of the decision the caller supplies. Graded, never trusted. */

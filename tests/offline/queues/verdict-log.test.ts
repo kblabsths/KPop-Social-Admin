@@ -37,9 +37,9 @@ import {
  * app resolves a client through, so both of the tab's legs (`verdicts`, and
  * the `observations` leg that only supplies a link) go through one script.
  *
- * **Absence is the graded normal case**: `verdicts` arrives with M2's handoff
- * migration and is on neither staging nor production, so the state this file
- * exercises first is the one an operator sees today.
+ * **The absent world is graded first**: `verdicts` arrives with M2's handoff
+ * migration (which databases hold it is ARCHITECTURE.md §9.2's to say), and
+ * the state this file exercises first is the fixture that withholds it.
  *
  * Assertions are STRUCTURE and BEHAVIOUR — which rows render in which order,
  * which hooks they carry, which state the surface declares — plus the
@@ -258,7 +258,7 @@ function windowHooks(markup: string): Record<string, string | undefined> {
   };
 }
 
-/* ── absence, first, because it is the normal case ───────────────────────── */
+/* ── absence, first: the absent world ────────────────────────────────────── */
 
 describe("the tab against a database without verdicts", () => {
   for (const [code, absence] of [

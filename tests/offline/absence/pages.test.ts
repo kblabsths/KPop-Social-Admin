@@ -626,8 +626,9 @@ describe("a window line describes a window the page read", () => {
  * happen. This is the same rule about the other half of a surface: a page may
  * not offer an ACTION whose read did not happen either. M2's close slot is the
  * first surface where the two come apart — its controls are backed by a read
- * of the verdict log, which is absent on staging and in production for the
- * whole milestone — and the edit surface is the second. A per-page assertion
+ * of the verdict log, which this sweep's fixture withholds (the absent world;
+ * ARCHITECTURE.md §9.2 says which databases are in it) — and the edit surface
+ * is the second. A per-page assertion
  * would leave the third to whoever remembers, which is precisely how the
  * window-line class reached three bugs (admin-window/BUG-0063/0067/0070).
  *

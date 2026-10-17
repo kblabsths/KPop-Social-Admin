@@ -32,10 +32,10 @@ import { oneEach, stateOf, surfaceHooks } from "../../fixtures/surface-state";
  * Four states, and the file grades all four because three of them are
  * absences and the fourth is what happens when there is nothing to render:
  *
- *  1. the log's table is ABSENT — staging today and `main`'s deploy target for
- *     the whole of M2 — and the detail draws the ONE not-provisioned card the
- *     close slot already draws, naming that object, with the rest of the page
- *     exactly as M1 shipped it;
+ *  1. the log's table is ABSENT — the absent world; which databases are in
+ *     it is ARCHITECTURE.md §9.2's to say — and the detail draws the ONE
+ *     not-provisioned card the close slot already draws, naming that object,
+ *     with the rest of the page exactly as M1 shipped it;
  *  2. the table is there and holds NO ROW for a settled item: an honest gap in
  *     the data, said in the block's own words and distinguishable in the
  *     markup from state 1 — never a blank slot, never a claim that the object

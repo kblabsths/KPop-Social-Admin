@@ -46,10 +46,10 @@ export type FieldWidget = "cell" | "picker" | "read_only";
  * (campaign admin-window/TASK-0054, FEAT-0011 criterion 2).
  *
  * The map says which columns may be written; whether the path that writes them
- * exists is a different question, and for the override path the answer is
- * usually NO — the settlement function is not installed on staging or in
- * production, and absence is the graded normal case of this milestone
- * (ARCHITECTURE §9.2). A closed path draws no control at all: not a disabled
+ * exists is a different question, answered by `readSettlementReadiness` for
+ * the override path — and the absent answer is a graded case, never an error
+ * (which databases hold the settlement objects is ARCHITECTURE §9.2's to say,
+ * not this file's). A closed path draws no control at all: not a disabled
  * input, which could be re-enabled from a console, and never a button toward a
  * write path that does not exist. The page names the reason once, above the
  * table.
@@ -209,7 +209,7 @@ export function recordFields(
  * today, and the check is what keeps that from mattering.
  *
  * A closed path draws NOTHING here, exactly as it does for a cell: no picker,
- * no disabled button, no control toward a write path that is not installed.
+ * no disabled button, no control toward a write path this database lacks.
  */
 function pickable(
   config: TableEditConfig,

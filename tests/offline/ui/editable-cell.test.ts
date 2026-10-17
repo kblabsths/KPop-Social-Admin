@@ -2288,7 +2288,7 @@ describe("a refused write names what failed and what to do", () => {
   });
 
   it("does not send an operator round a loop when the refusal is not about the value", () => {
-    // The override path's normal answer for the whole of M2 (the route's 503).
+    // The override path's answer in the absent world (the route's 503).
     // "Correct the value and save again" is advice that cannot work here, so
     // this arm exists to not give it.
     const fix = refusalFix("settle_review_item is not present in this database");

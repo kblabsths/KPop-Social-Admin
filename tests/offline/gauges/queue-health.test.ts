@@ -27,8 +27,8 @@ import {
  * here (spec §10 parks the visibility × impact formula).
  *
  * The one figure this gauge cannot compute is settles-per-week —
- * `review_items` carries no settle timestamp, and `verdicts` does not exist
- * until M2's handoff. It reports `null`, and the test below is what stops a
+ * `review_items` carries no settle timestamp, and the gauge reads
+ * `review_items` alone. It reports `null`, and the test below is what stops a
  * later hand from filling that null with a zero.
  */
 

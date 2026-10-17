@@ -36,12 +36,11 @@ import {
  * The close slot — its frame, its seams and its route (campaign
  * admin-window/TASK-0049, spec §7, ARCHITECTURE.md §9.2).
  *
- * **The ABSENT case is graded first, because it is the normal one.** Neither
- * the verdict log nor `settle_review_item` exists on staging or in production
- * and neither will until Ben installs M2's handoff migrations, so the state
- * this file opens with is the one `main` deploys against for the whole
- * milestone: the not-provisioned card, naming the object the read named, with
- * no control of any kind. The ready path follows it.
+ * **The ABSENT world is graded first.** This file opens with a fixture that
+ * withholds both the verdict log and `settle_review_item` — which databases
+ * are in that world is ARCHITECTURE.md §9.2's to say, not this file's — and
+ * grades the not-provisioned card, naming the object the read named, with no
+ * control of any kind. The ready path follows it.
  *
  * Three tiers, in one file because they are one behaviour:
  *
@@ -128,7 +127,7 @@ function functionInstalled(action = "keep_current"): Script {
   return { [FN.settleReviewItem]: { data: verdictLogEntry({ action }) } };
 }
 
-/** A database where it is not — staging today, and `main`'s deploy target. */
+/** A database where it is not — the absent world (ARCHITECTURE.md §9.2). */
 function functionAbsent(): Script {
   return {
     [FN.settleReviewItem]: { error: functionNotInSchemaCache(FN.settleReviewItem) },
@@ -408,7 +407,7 @@ describe("the settle route", () => {
   });
 
   it("answers the absent function 503, naming it, after exactly one call", async () => {
-    // The normal case for the whole of M2, and the one `main` deploys against.
+    // The absent world (ARCHITECTURE.md §9.2 says which databases are in it).
     for (const script of [
       functionAbsent(),
       { [FN.settleReviewItem]: { error: undefinedFunction(FN.settleReviewItem) } },

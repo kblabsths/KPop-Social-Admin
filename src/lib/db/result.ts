@@ -123,11 +123,11 @@ const COLUMN_ABSENT_CODES: ReadonlySet<string> = new Set(["PGRST204", "42703"]);
  * cache (`PGRST202`), or Postgres itself says undefined_function (`42883`).
  *
  * The fifth kind of object the window reads (campaign admin-window/TASK-0047).
- * M2 settles a review item through one call to a resolver procedure that does
- * not exist until the handoff migration is installed, so its absence is the
- * NORMAL case for the whole milestone and must reach a page as the same
- * not-provisioned state a missing table does — never as an error, never as a
- * throw (ARCHITECTURE.md §4.1, §4.3).
+ * M2 settles a review item through one call to a resolver procedure that
+ * arrives with the handoff migration (which databases hold it is
+ * ARCHITECTURE.md §9.2's to say), so its absence is a GRADED case and must
+ * reach a page as the same not-provisioned state a missing table does —
+ * never as an error, never as a throw (ARCHITECTURE.md §4.1, §4.3).
  *
  * These two codes only ever mean an absence to a caller that ASKED for a
  * function; see `AskedObject`.
@@ -1485,9 +1485,10 @@ export async function readOne<Row>(
  * (admin-window/TASK-0047 established the absence, admin-window/BUG-0080
  * narrowed it to this seam).
  *
- * M2's normal case: the resolver procedure is not installed until the handoff
- * migration is, so `not_provisioned` naming it is what the close slot renders,
- * every time, until it is (ARCHITECTURE.md §4.1, §4.3). It never throws, and
+ * The absent world is graded, not thrown: against a database that does not
+ * expose the resolver procedure (ARCHITECTURE.md §9.2 says which do),
+ * `not_provisioned` naming it is what the close slot renders, every time
+ * (ARCHITECTURE.md §4.1, §4.3). It never throws, and
  * `ok` carries whatever the function returned — `null` when it returned
  * nothing.
  */

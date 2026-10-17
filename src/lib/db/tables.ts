@@ -8,9 +8,10 @@
  *
  * The names are the scraper repo's — schema truth is
  * `kspace Scraper/supabase/migrations/`, never this file.
- * `verdicts` does not exist yet (it arrives with M2's handoff migration); it is
- * named here on purpose, so a read of it classifies as `not_provisioned`
- * against today's database instead of being spelled inline later.
+ * `verdicts` arrives with M2's handoff migration (which databases hold it is
+ * ARCHITECTURE.md §9.2's to say); it is named here on purpose, so a read of it
+ * classifies as `not_provisioned` against a database without it instead of
+ * being spelled inline later.
  */
 export const T = {
   reviewItems: "review_items",
@@ -119,10 +120,10 @@ export function objectKindOf(name: TableName): ObjectKind {
  *
  * The name is the scraper repo's, like every name in `T`: `settle_review_item`
  * arrives with M2's handoff artifact
- * (`agenticflow/tracker/for-human/M2-handoff-settle-review-item.md`) and does
- * NOT exist on staging or in production today. It is named here on purpose, so
- * the one call site classifies as `not_provisioned` against today's database
- * instead of spelling the name inline later (ARCHITECTURE.md §9.2).
+ * (`agenticflow/tracker/for-human/M2-handoff-settle-review-item.md`); which
+ * databases hold it is stated in ARCHITECTURE.md §9.2, not here. It is named
+ * here on purpose, so the one call site classifies as `not_provisioned`
+ * against a database without it instead of spelling the name inline later.
  *
  * `apply_resolution` is deliberately absent and must never be added: it exists,
  * it WRITES the catalog, and nothing in Admin may call it. The resolver runs
