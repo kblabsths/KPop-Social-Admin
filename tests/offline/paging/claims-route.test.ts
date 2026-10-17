@@ -13,11 +13,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * PROMISES the client (ARCHITECTURE.md §4.3 read kind 3):
  *
  *  - the GATE runs first and a refused gate issues NO read;
- *  - the BOUND reaches nothing but `pageBound`, and a refused bound reaches no
- *    read at all — the recorder stays empty over the whole refusal table,
- *    while the one canonical bound in that same table IS served, so the table
- *    cannot pass by refusing everything;
- *  - full-or-exhausted, on both edges: a read of `CLAIM_WINDOW` rows answers
+ *  - the WINDOW reaches nothing but `windowBound`, and a refused window
+ *    reaches no read at all — the recorder stays empty over the whole refusal
+ *    table, while the windows the serving table names ARE served, so the
+ *    table cannot pass by refusing everything;
+ *  - full-or-exhausted, on both edges: a read of `SIZE` rows answers
  *    `exhausted: false`, a read of fewer — zero included — answers `true`, and
  *    the row count served is the row count read;
  *  - the facets are the PAGE's own derivation of the same URL;
@@ -65,14 +65,16 @@ const { GET } = await import("@/app/api/admin/claims/rows/route");
 // the seam between them is observable in one test (QA, admin-window/TASK-0066).
 const ClaimsPage = (await import("@/app/claims/page")).default;
 
-import { CLAIM_WINDOW } from "@/components/claims";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import { T } from "@/lib/db/tables";
 import {
-  MAX_PAGE_OFFSET,
-  OFFSET_PARAM,
+  DEFAULT_WINDOW_SIZE,
   PAGE_ANSWER_CACHE_CONTROL,
+  PAGE_PARAM,
   PAGE_ROUTES,
+  SIZE_PARAM,
+  WINDOW_SIZES,
+  largestPage,
   isPageAnswer,
   type PageAnswer,
 } from "@/lib/paging/bounds";
@@ -89,6 +91,9 @@ import {
 } from "../../fixtures/stub-client";
 import { REGISTRY, SOURCE, claimView } from "../claims/population";
 import { render } from "../ui/markup";
+
+/** The window size every query below that names none pages by. */
+const SIZE = DEFAULT_WINDOW_SIZE;
 
 /** The admin the stubbed gate hands the handler. Not a real address. */
 const ADMIN = { user: { email: "paging-suite@example.invalid" } };
@@ -198,7 +203,7 @@ describe("the gate, first and always", () => {
     const stub = database(script());
     gate.answer = { error: Response.json({ error: "Forbidden" }, { status: 403 }) };
 
-    const response = await GET(request(`?${OFFSET_PARAM}=50`));
+    const response = await GET(request(`?${PAGE_PARAM}=2`));
 
     expect(response.status).toBe(403);
     expect(gate.calls).toBe(1);
@@ -211,7 +216,7 @@ describe("the gate, first and always", () => {
     gate.answer = { error: Response.json({ error: "Unauthorized" }, { status: 401 }) };
 
     // A bound the handler would refuse 400 if it ever looked at it.
-    const response = await GET(request(`?${OFFSET_PARAM}=abc`));
+    const response = await GET(request(`?${PAGE_PARAM}=abc`));
 
     expect(response.status).toBe(401);
     expect(stub.calls).toEqual([]);
@@ -230,23 +235,29 @@ describe("the gate, first and always", () => {
  * reason and the bound AS SENT, the gated cache directives, and a recorder
  * that stayed EMPTY.
  */
-const REFUSED: ReadonlyArray<readonly [string, string, string]> = [
-  ["no offset parameter at all", "", ""],
-  ["an empty offset", `?${OFFSET_PARAM}=`, ""],
-  ["a word", `?${OFFSET_PARAM}=abc`, "abc"],
-  ["a leading space", `?${OFFSET_PARAM}=%2050`, " 50"],
-  ["an explicit sign", `?${OFFSET_PARAM}=%2B50`, "+50"],
-  ["a leading zero", `?${OFFSET_PARAM}=050`, "050"],
-  ["a decimal point", `?${OFFSET_PARAM}=50.0`, "50.0"],
-  ["an exponent", `?${OFFSET_PARAM}=1e2`, "1e2"],
-  ["a negative bound", `?${OFFSET_PARAM}=-50`, "-50"],
-  ["a bound below the window", `?${OFFSET_PARAM}=49`, "49"],
-  ["a bound off the window's grid", `?${OFFSET_PARAM}=51`, "51"],
-  ["a bound past the ceiling", `?${OFFSET_PARAM}=${MAX_PAGE_OFFSET + CLAIM_WINDOW}`, String(MAX_PAGE_OFFSET + CLAIM_WINDOW)],
+const REFUSED: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["an empty page", `?${PAGE_PARAM}=`, PAGE_PARAM, ""],
+  ["a page that is a word", `?${PAGE_PARAM}=abc`, PAGE_PARAM, "abc"],
+  ["a page with a leading space", `?${PAGE_PARAM}=%202`, PAGE_PARAM, " 2"],
+  ["a page with an explicit sign", `?${PAGE_PARAM}=%2B2`, PAGE_PARAM, "+2"],
+  ["a page with a leading zero", `?${PAGE_PARAM}=02`, PAGE_PARAM, "02"],
+  ["a page with a decimal point", `?${PAGE_PARAM}=2.0`, PAGE_PARAM, "2.0"],
+  ["a page with an exponent", `?${PAGE_PARAM}=1e1`, PAGE_PARAM, "1e1"],
+  ["a negative page", `?${PAGE_PARAM}=-1`, PAGE_PARAM, "-1"],
+  ["page zero", `?${PAGE_PARAM}=0`, PAGE_PARAM, "0"],
+  ["an empty size", `?${SIZE_PARAM}=`, SIZE_PARAM, ""],
+  ["a size this app does not offer", `?${SIZE_PARAM}=30`, SIZE_PARAM, "30"],
+  ["a size that is a word", `?${SIZE_PARAM}=fifty`, SIZE_PARAM, "fifty"],
+  [
+    "a page past the ceiling",
+    `?${PAGE_PARAM}=${largestPage(SIZE) + 1}`,
+    PAGE_PARAM,
+    String(largestPage(SIZE) + 1),
+  ],
 ];
 
-describe("the bound reaches nothing but pageBound", () => {
-  it.each(REFUSED)("refuses %s with 400, naming it, and reads nothing", async (_what, query, sent) => {
+describe("the window reaches nothing but windowBound", () => {
+  it.each(REFUSED)("refuses %s with 400, naming it, and reads nothing", async (_what, query, param, sent) => {
     const stub = database(script());
 
     const { status, body, cacheControl } = await ask(query);
@@ -255,7 +266,9 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(status).toBe(400);
     expect(answer.kind).toBe("refused");
     if (answer.kind !== "refused") return;
-    // The bound AS SENT — never a trimmed, repaired or clamped spelling of it.
+    // The parameter by NAME and its value AS SENT — never a trimmed, repaired
+    // or clamped spelling of it.
+    expect(answer.param).toBe(param);
     expect(answer.bound).toBe(sent);
     expect(answer.reason.length).toBeGreaterThan(0);
     expect(cacheControl).toBe(PAGE_ANSWER_CACHE_CONTROL);
@@ -263,17 +276,27 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(stub.calls, `${sent} reached a read`).toEqual([]);
   });
 
-  it("serves the one canonical bound in that same table, so the table cannot pass by refusing everything", async () => {
-    const stub = database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=50`);
-    const answer = accepted(body);
-
-    expect(status).toBe(200);
-    expect(answer.kind).toBe("ok");
-    // Exactly ONE read of the view, and it is the window the bound named.
-    expect(windowReads(stub).length).toBe(1);
-    expect(rangeOf(windowReads(stub)[0])).toEqual([50, 50 + CLAIM_WINDOW - 1]);
+  it("serves the windows the address names — the first by default, and each size at its own offset", async () => {
+    // So the table above cannot pass by refusing everything, and so the one
+    // guard both pages and both routes share is driven here on its serving
+    // arm: no parameters is window 1 at the default size, and page 3 at 20
+    // is rows 41–60.
+    for (const [query, from, size] of [
+      ["", 0, SIZE],
+      [`?${PAGE_PARAM}=2`, SIZE, SIZE],
+      [`?${PAGE_PARAM}=3&${SIZE_PARAM}=20`, 40, 20],
+      [`?${SIZE_PARAM}=100`, 0, 100],
+    ] as const) {
+      const stub = database(script());
+      const { status, body } = await ask(query);
+      const answer = accepted(body);
+      expect(status, query).toBe(200);
+      if (answer.kind !== "ok") throw new Error(`${query}: expected an ok window, got ${answer.kind}`);
+      expect(windowReads(stub).length, query).toBe(1);
+      expect(rangeOf(windowReads(stub)[0]), query).toEqual([from, from + size - 1]);
+      expect(answer.size, query).toBe(size);
+      expect(answer.page, query).toBe(from / size + 1);
+    }
   });
 });
 
@@ -281,35 +304,38 @@ describe("full-or-exhausted, the route's half of the contract", () => {
   it("answers a FULL window that continues", async () => {
     const stub = database(script());
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=50`);
+    const { status, body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     expect(status).toBe(200);
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(CLAIM_WINDOW);
+    expect(answer.rows.length).toBe(SIZE);
     expect(answer.exhausted).toBe(false);
     // The rows the READ returned, shaped as the first screen shapes its own.
     expect(answer.rows).toEqual(expectedLines(50, 100));
-    // The bound the REQUEST carried, echoed — never the read's own idea of it.
-    expect(answer.offset).toBe(50);
-    expect(rangeOf(windowReads(stub)[0])[0]).toBe(answer.offset);
+    // The window the REQUEST named, echoed — never the read's own idea of it.
+    expect(answer.page).toBe(2);
+    expect(answer.size).toBe(SIZE);
+    expect(rangeOf(windowReads(stub)[0])[0]).toBe((answer.page - 1) * answer.size);
   });
 
-  it("never reports a row count the read did not return, at any offset on the grid", async () => {
-    for (let offset = CLAIM_WINDOW; offset <= 200; offset += CLAIM_WINDOW) {
-      const stub = database(script());
-      const { body } = await ask(`?${OFFSET_PARAM}=${offset}`);
-      const answer = accepted(body);
-      if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
+  it("never reports a row count the read did not return, at any window of any size", async () => {
+    for (const size of WINDOW_SIZES) {
+      for (let page = 1; (page - 1) * size <= 200; page += 1) {
+        const stub = database(script());
+        const { body } = await ask(`?${PAGE_PARAM}=${page}&${SIZE_PARAM}=${size}`);
+        const answer = accepted(body);
+        if (answer.kind !== "ok") throw new Error(`expected an ok window, got ${answer.kind}`);
 
-      const [from, to] = rangeOf(windowReads(stub)[0]);
-      const read = POPULATION.slice(from, to + 1);
-      expect(answer.rows.length, `offset ${offset}`).toBe(read.length);
-      // The biconditional itself, at every bound: exhausted IS the short page.
-      expect(answer.exhausted, `offset ${offset}`).toBe(read.length < CLAIM_WINDOW);
-      // Never longer than the window: the read asks for one window and the
-      // answer carries what it got.
-      expect(answer.rows.length).toBeLessThanOrEqual(CLAIM_WINDOW);
+        const [from, to] = rangeOf(windowReads(stub)[0]);
+        const read = POPULATION.slice(from, to + 1);
+        const where = `page ${page} at ${size}`;
+        expect(from, where).toBe((page - 1) * size);
+        expect(answer.rows.length, where).toBe(read.length);
+        // The biconditional itself, at every window: exhausted IS the short one.
+        expect(answer.exhausted, where).toBe(read.length < size);
+        expect(answer.rows.length, where).toBeLessThanOrEqual(size);
+      }
     }
   });
 });
@@ -321,7 +347,7 @@ describe("the refusals a read can carry", () => {
       [T.sources]: registryAnswer,
     });
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=50`);
+    const { status, body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     // Absence is a normal answer: the PAGE decides what a not-provisioned
@@ -336,7 +362,7 @@ describe("the refusals a read can carry", () => {
       [T.sources]: registryAnswer,
     });
 
-    const { body } = await ask(`?${OFFSET_PARAM}=50`);
+    const { body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     if (answer.kind !== "error") throw new Error(`expected an error answer, got ${answer.kind}`);
@@ -355,11 +381,11 @@ describe("the refusals a read can carry", () => {
       [T.sources]: { error: permissionDenied(T.sources) },
     });
 
-    const { body } = await ask(`?${OFFSET_PARAM}=50`);
+    const { body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(CLAIM_WINDOW);
+    expect(answer.rows.length).toBe(SIZE);
     // `sourceLabel`'s own rule: an id the registry names nothing for stays on
     // screen verbatim — the id is then the only true thing the app can say.
     for (const row of answer.rows) expect(row.source).toBe(row.sourceId);
@@ -377,7 +403,7 @@ describe("the facets are the page's own", () => {
   it("passes the URL's narrowing through to the read", async () => {
     const stub = database(script());
 
-    await ask(`?domain=venues&source_id=${SOURCE.second}&${OFFSET_PARAM}=50`);
+    await ask(`?domain=venues&source_id=${SOURCE.second}&${PAGE_PARAM}=2`);
 
     const asked = equalities(windowReads(stub)[0]);
     expect(asked).toContainEqual(["domain", "venues"]);
@@ -389,7 +415,7 @@ describe("the facets are the page's own", () => {
 
     // The parked bucket is not a renderable one, so it narrows NOTHING here
     // exactly as it narrows nothing on the page (ARCHITECTURE.md §6 trap 4).
-    await ask(`?bucket=in_window&${OFFSET_PARAM}=50`);
+    await ask(`?bucket=in_window&${PAGE_PARAM}=2`);
 
     expect(equalities(windowReads(stub)[0]).map(([column]) => column)).not.toContain("bucket");
   });
@@ -419,15 +445,15 @@ describe("the facets are the page's own", () => {
 
 describe("the route owns the shape of what it serves", () => {
   const ARMS: Array<{ what: string; script: Script; query: string }> = [
-    { what: "ok", script: script(), query: `?${OFFSET_PARAM}=50` },
-    { what: "refused", script: script(), query: `?${OFFSET_PARAM}=abc` },
+    { what: "ok", script: script(), query: `?${PAGE_PARAM}=2` },
+    { what: "refused", script: script(), query: `?${PAGE_PARAM}=abc` },
     {
       what: "not_provisioned",
       script: {
         [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
         [T.sources]: registryAnswer,
       },
-      query: `?${OFFSET_PARAM}=50`,
+      query: `?${PAGE_PARAM}=2`,
     },
     {
       what: "error",
@@ -435,7 +461,7 @@ describe("the route owns the shape of what it serves", () => {
         [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
         [T.sources]: registryAnswer,
       },
-      query: `?${OFFSET_PARAM}=50`,
+      query: `?${PAGE_PARAM}=2`,
     },
   ];
 
@@ -471,7 +497,7 @@ describe("the route owns the shape of what it serves", () => {
 
   it("answers JSON", async () => {
     database(script());
-    const response = await GET(request(`?${OFFSET_PARAM}=50`));
+    const response = await GET(request(`?${PAGE_PARAM}=2`));
     expect(response.headers.get("content-type")).toMatch(/application\/json/);
   });
 
@@ -541,38 +567,67 @@ function idsWhere(keep: (row: PendingClaimRow) => boolean): string[] {
   return MIXED.filter(keep).map((row) => row.observation_id);
 }
 
-describe("the first screen and its continuation are one set", () => {
-  it("continues where the screen ended: no row repeated, none skipped", async () => {
-    const screen = await firstScreenIds({});
-    const { ids } = await pagedIds(`?${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+describe("the server screen and the route's window are one set", () => {
+  it("answers, for an address, exactly the window the page server-renders for it", async () => {
+    // SPEC F14 under page windows (design question 3): a cold load of
+    // `/claims?page=2&size=20` and a move to that window must draw the same
+    // rows, because they are the same bounded read of the same order.
+    for (const [page, size] of [
+      [2, 20],
+      [3, 50],
+      [1, 100],
+    ] as const) {
+      const screen = await firstScreenIds({ [PAGE_PARAM]: String(page), [SIZE_PARAM]: String(size) });
+      const { ids } = await pagedIds(`?${PAGE_PARAM}=${page}&${SIZE_PARAM}=${size}`);
+      expect(screen, `page ${page} at ${size}`).toEqual(ids);
+      expect(screen, `page ${page} at ${size}`).toEqual(
+        idsWhere(() => true).slice((page - 1) * size, page * size),
+      );
+    }
+  });
 
-    expect(screen.length).toBe(CLAIM_WINDOW);
-    // Disjoint — a repeated row is the defect an off-grid bound would cause.
-    expect(new Set([...screen, ...ids]).size).toBe(screen.length + ids.length);
-    // And contiguous in the read's own order — no row fell between them.
-    expect([...screen, ...ids]).toEqual(idsWhere(() => true).slice(0, screen.length + ids.length));
+  it("draws every id exactly once across all windows, at each of the three sizes", async () => {
+    // THE WINDOW INVARIANT, pinned offline over a fixture this file owns
+    // (README "Testing", rules 1 and 3): walking page 1, 2, … until the route
+    // says the set ended yields the population — every id once, in order, no
+    // duplicate at any seam and no skip. On staging this is what the browser
+    // walk counts (877 claims, 120 events), and that walk is a read.
+    for (const size of WINDOW_SIZES) {
+      const drawn: string[] = [];
+      let page = 1;
+      let exhausted = false;
+      while (!exhausted) {
+        const window = await pagedIds(`?${PAGE_PARAM}=${page}&${SIZE_PARAM}=${size}`);
+        drawn.push(...window.ids);
+        exhausted = window.exhausted;
+        page += 1;
+        if (page > 20) throw new Error(`the walk at ${size} never ended`);
+      }
+      expect(new Set(drawn).size, `size ${size}`).toBe(drawn.length);
+      expect(drawn, `size ${size}`).toEqual(idsWhere(() => true));
+      // The walk really took more than one window at every size.
+      expect(page - 1, `size ${size}`).toBe(Math.ceil(MIXED.length / size));
+    }
   });
 
   it("reads the standing TAB's subset on both surfaces, bucket facet and all", async () => {
     // The tab IS a bucket, so `listFilterOf` drops the URL's own bucket on it.
-    // A route that kept `bucket=agreeing` would append rows from a bucket the
-    // screen above is not showing — one list, two narrowings.
+    // A route that kept `bucket=agreeing` would serve rows from a bucket the
+    // page is not showing — one list, two narrowings.
     const params = { tab: "standing", bucket: "agreeing" };
     const screen = await firstScreenIds(params);
-    const { ids, exhausted } = await pagedIds(
-      `?tab=standing&bucket=agreeing&${OFFSET_PARAM}=${CLAIM_WINDOW}`,
-    );
+    const { ids, exhausted } = await pagedIds(`?tab=standing&bucket=agreeing&${PAGE_PARAM}=2`);
     const standing = idsWhere((row) => row.bucket === "standing_disagreement");
 
-    expect(screen).toEqual(standing.slice(0, CLAIM_WINDOW));
+    expect(screen).toEqual(standing.slice(0, SIZE));
     expect([...screen, ...ids]).toEqual(standing);
-    // The set ended inside this page, and the page says so.
+    // The set ended inside this window, and the window says so.
     expect(exhausted).toBe(true);
   });
 
-  it("keeps a control-less facet across the boundary", async () => {
+  it("keeps a control-less facet across windows", async () => {
     const screen = await firstScreenIds({ domain: "venues" });
-    const { ids } = await pagedIds(`?domain=venues&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
+    const { ids } = await pagedIds(`?domain=venues&${PAGE_PARAM}=2`);
 
     expect([...screen, ...ids]).toEqual(idsWhere((row) => row.domain === "venues"));
   });

@@ -4,13 +4,14 @@
  * database (ARCHITECTURE.md §4 rule 1, §5).
  *
  * One of them is a CLIENT component — `PagedClaimList`, the wrapper that
- * continues the list past its first window (admin-window/TASK-0067). It reads
- * no database either: its press goes to this app's own route handler through
- * `usePageRows`, the one framed exception to rule 1 (§4 rule 1 as amended
- * 2026-09-10), and every decision the press makes is `src/lib/paging/**`.
+ * draws the list one window at a time (admin-window/TASK-0067; page windows
+ * 2026-10-16). It reads no database either: a move goes to this app's own
+ * route handler through `usePageWindows`, the one framed exception to rule 1
+ * (§4 rule 1 as amended 2026-09-10), and every decision a move makes is
+ * `src/lib/paging/**`.
  */
 export { BucketTable, type BucketStat } from "./bucket-table";
-export { ClaimList, CLAIM_WINDOW, type ClaimLine } from "./claim-list";
+export { ClaimList, type ClaimLine } from "./claim-list";
 // A COMPONENT out of a "use client" module, which is the only thing a server
 // barrel may re-export from one: a re-export hands the binding to every server
 // module importing the barrel, so a helper or a constant from a client module

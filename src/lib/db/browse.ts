@@ -21,6 +21,7 @@ import {
   type SourceNameRow,
 } from "../browse/rows";
 import type { BrowseView } from "../browse/views";
+import { DEFAULT_WINDOW_SIZE } from "../paging/bounds";
 
 /**
  * What this module's window read runs OVER — the word its window line ends
@@ -58,7 +59,7 @@ export const EVENTS_OBJECT: ObjectKind = objectKindOf(T.events);
  *    answers "exactly the rows for these ids", and the sources behind a row
  *    are shown as THE sources behind it — a silently truncated provenance set
  *    would make that claim wrong rather than refused. Their input is a set of
- *    at most `view.window` ids, so the cap is reached only by a genuinely
+ *    at most one window's ids (100 at the largest size), so the cap is reached only by a genuinely
  *    extraordinary row count, and then the read says so with the real number.
  */
 
@@ -116,7 +117,7 @@ const SOURCE_COLUMNS = ["source_id", "source"] as const;
 
 /**
  * The events window: `created_at` descending, `event_id` descending to break a
- * tie, and ONE window of rows starting at `offset`.
+ * tie, and ONE window of `size` rows starting at `offset`.
  *
  * "Newest first" is ARRIVAL order — `events.created_at desc`, because the view
  * is "everything that came through the pipeline, newest first"
@@ -129,14 +130,16 @@ const SOURCE_COLUMNS = ["source_id", "source"] as const;
  * The order is TOTAL — the view's sort field, then the primary key, same
  * direction — which is what makes paging it safe at all: a partial order would
  * let two requests at adjacent bounds repeat a row or skip one.
- * `.range(offset, offset + view.window - 1)` replaces the `.limit(view.window)`
- * this read carried before paging existed (admin-window/TASK-0068); at the
- * default offset of 0 the two are the same query.
+ * `.range(offset, offset + size - 1)` is the window the URL named
+ * (`windowBound`, `lib/paging/bounds.ts`): page windows since 2026-10-16, so
+ * the size is the operator's choice of 20, 50 or 100 and no longer a number
+ * this view declares.
  */
 function eventsWindow(
   db: SupabaseClient,
   view: BrowseView,
   offset: number,
+  size: number,
 ): PromiseLike<DbResponse<EventArrivalRow[]>> {
   const ascending = view.sort.direction !== "desc";
   return db
@@ -144,7 +147,7 @@ function eventsWindow(
     .select(selectList(EVENT_COLUMNS))
     .order(view.sort.field, { ascending })
     .order("event_id", { ascending })
-    .range(offset, offset + view.window - 1) as unknown as PromiseLike<
+    .range(offset, offset + size - 1) as unknown as PromiseLike<
     DbResponse<EventArrivalRow[]>
   >;
 }
@@ -226,13 +229,14 @@ function unavailable(result: DbResult<unknown>): DbUnavailable | null {
 }
 
 /**
- * The recent-events view: ONE window of `view.window` events by arrival,
- * starting at `offset`, each with its venue name and the distinct sources
- * behind its applied fields.
+ * The recent-events view: ONE window of `size` events by arrival, starting at
+ * `offset`, each with its venue name and the distinct sources behind its
+ * applied fields.
  *
- * `offset` defaults to 0 — the first screen — so every caller written before
- * paging existed asks exactly the query it always did (admin-window/TASK-0068,
- * SPEC F14). Paging is what the operator can do AFTER that screen.
+ * `offset` defaults to 0 and `size` to `DEFAULT_WINDOW_SIZE` — the first
+ * window at the default size — so a caller that names no window asks exactly
+ * the query the first screen always asked (admin-window/TASK-0068, SPEC F14).
+ * Both pages and the route hand in the window the URL named.
  *
  * **The three legs are per PAGE, not per table.** Venues, provenance and
  * sources run over the ids of THIS window exactly as they ran over the first
@@ -245,7 +249,7 @@ function unavailable(result: DbResult<unknown>): DbUnavailable | null {
  * (ARCHITECTURE.md §4.3, "the count that grades exhaustion is the READ's own
  * count"). `joinBrowseRows` maps ONE row per event and the legs FILL columns,
  * so the row count a caller grades full-or-exhausted against is exactly the
- * count `.range(offset, offset + view.window - 1)` returned. A leg that
+ * count `.range(offset, offset + size - 1)` returned. A leg that
  * answers nothing at all — no listing row, no provenance row, no source row —
  * costs the columns it fills and NEVER a row: a page shortened in code would
  * report `exhausted` with rows still behind it and end the operator's paging
@@ -263,11 +267,12 @@ export async function readRecentEvents(
   view: BrowseView,
   db?: SupabaseClient,
   offset: number = 0,
+  size: number = DEFAULT_WINDOW_SIZE,
 ): Promise<RecentEventsListing> {
   const window = await readRows<EventArrivalRow>(
     T.events,
     EVENT_COLUMNS,
-    (client) => eventsWindow(client, view, offset),
+    (client) => eventsWindow(client, view, offset, size),
     db,
   );
   if (window.kind !== "ok") {

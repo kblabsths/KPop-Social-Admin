@@ -9,6 +9,7 @@ import {
   Section,
   StateOf,
   WindowLine,
+  WindowRefused,
   drawnWindow,
   oldestIn,
 } from "@/components/ui";
@@ -20,8 +21,16 @@ import {
 import { PagedWindowLine, PagingProvider } from "@/components/ui/paging";
 import type { BrowseRow } from "@/lib/browse/rows";
 import { EVENTS_OBJECT, readRecentEvents, type DbUnavailable } from "@/lib/db/browse";
-import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
-import { type RowIdKey, boundOf, idAt, initialPage } from "@/lib/paging/machine";
+import {
+  PAGE_PARAM,
+  PAGE_ROUTES,
+  SIZE_PARAM,
+  endsWithin,
+  firstRowOf,
+  rawWindowOf,
+  windowBound,
+} from "@/lib/paging/bounds";
+import { type RowIdKey, idAt, initialPage } from "@/lib/paging/machine";
 import {
   COLUMNS_PARAM,
   RECENT_EVENTS,
@@ -115,7 +124,7 @@ const EVENTS_WINDOW = "events";
  * spelled ONCE for the three things that must agree about it
  * (admin-window/BUG-0222, LESSONS 5).
  *
- * The bound this first screen ends at (`boundOf`), the ids it has already
+ * The screen signature this first screen carries (`screenOf`), the ids it has already
  * drawn (`initialPage`) and the id a paged row is recognised by (`deps.idKey`)
  * are three readings of one fact, and they must be the same field the table
  * keys its rows by (`BrowseTable`) — a set keyed on one field beside React
@@ -169,11 +178,33 @@ export default async function BrowsePage({
   const hrefFor = (keys: readonly BrowseColumnKey[]) =>
     columnsHref(view, BROWSE_PATH, keys);
 
-  const listing = await readRecentEvents(view);
-  const events = listing.events;
+  // THE WINDOW THE ADDRESS NAMES — page windows (Ben's ruling of 2026-09-11,
+  // built 2026-10-16). `?page=` and `?size=` are read by the ONE guard the
+  // paging route uses too (`windowBound`), so a cold load of
+  // `/browse?page=3&size=20` renders exactly the window a move to it would
+  // draw (SPEC F14). A refused window is refused BY NAME below — nothing is
+  // read, no rows are drawn and the first window is offered — never clamped.
+  const window = windowBound(rawWindowOf(params));
+  const listing =
+    window.kind === "ok"
+      ? await readRecentEvents(view, undefined, window.offset, window.window.size)
+      : null;
+  const events = listing === null ? null : listing.events;
 
   let body: ReactNode;
-  if (events.kind === "not_provisioned") {
+  if (window.kind === "refused") {
+    body = (
+      <WindowRefused
+        param={window.param}
+        reason={window.reason}
+        firstWindowHref={hrefFor(shown)}
+      />
+    );
+  } else if (events === null) {
+    // Unreachable — `listing` is null only on a refused window — and said
+    // rather than asserted, so the branches below read `events` as a read.
+    body = null;
+  } else if (events.kind === "not_provisioned") {
     body = <StateOf result={events} />;
   } else if (events.kind === "error") {
     // A state LINE inside the table, so the header stays put and the operator
@@ -197,41 +228,33 @@ export default async function BrowsePage({
     body = <BrowseTable view={view} shown={shown} rows={events.data} />;
   }
 
-  // WHETHER THE OPERATOR IS OFFERED MORE — the page's decision, and the whole
-  // of it (admin-window/TASK-0069, SPEC F14).
+  // WHETHER THE TABLE IS DRAWN AS A MOVABLE WINDOW — the page's decision, and
+  // the whole of it (admin-window/TASK-0069, SPEC F14; page windows 2026-10-16).
   //
-  // Browse's events read is a WINDOW read with NO COUNT BESIDE IT: it returns
-  // rows and nothing else. So there is no total to compare against, and the
-  // honest signal that there is more is that the window came back FULL — asked
-  // of the one function that answers that question, of the `held` this page is
-  // about to hand down, rather than re-derived beside it. `pageBound` is `ok`
-  // exactly when that `held` is a bound this surface can page from, so:
-  //
-  //  - a SHORT window is never pageable, and no state is ever constructed off
-  //    the bound grid (`initialPage(37, true)` is a state whose every press
-  //    `pageBound` refuses for ever — QA, admin-window/BUG-0168). The window
-  //    line above already states that case in its own numbers: "The window did
-  //    not fill — 12 of at most 50 — so it holds all the events the read
-  //    found";
-  //  - an EMPTY window is refused by the same call (a bound below the window
-  //    is not a bound), so the `Empty` card stands exactly as it did;
-  //  - `not_provisioned` and `error` render exactly what they render today.
-  //
-  // In every one of those arms no paging element exists in the markup at all —
-  // a control that cannot be honoured is never offered (SPEC F10).
+  // Browse's events read is a WINDOW read with NO COUNT BESIDE IT, so the
+  // honest signal that there is more is the read's own: a FULL window
+  // (`endsWithin`, handed to the provider as the first screen's `exhausted`).
+  // The affordance is drawn on every `ok` read that has something to window
+  // — rows on screen, or a window past the first, whose way back must be
+  // offered even when the read found nothing there. An EMPTY first window
+  // keeps the `Empty` card exactly as it did; `not_provisioned`, `error` and a
+  // refused address render with no paging element in the markup at all — a
+  // control that cannot be honoured is never offered (SPEC F10).
   const pageable =
+    window.kind === "ok" &&
+    events !== null &&
     events.kind === "ok" &&
-    pageBound(String(events.data.length), view.window).kind === "ok";
+    (events.data.length > 0 || window.window.page > 1);
   // The rows the wrapper is handed, or `null` where this page draws the body
   // itself — which is every other state, exactly as it drew it before.
-  const drawn = events.kind === "ok" && pageable ? events.data : null;
+  const drawn = events !== null && events.kind === "ok" && pageable ? events.data : null;
 
   // THE OBJECTS THIS PAGE HAS ALREADY REPORTED, above the table — its own two
   // legs, in the database's own spelling. A leg named once is not named again
   // below the rows: the same object twice tells the operator nothing and
   // doubles a red line. The identity is the OBJECT and not the leg key,
   // because the object is what both sides read from the same database.
-  const reported = [listing.venues, listing.provenance].flatMap(
+  const reported = (listing === null ? [] : [listing.venues, listing.provenance]).flatMap(
     (leg: DbUnavailable | null) =>
       leg === null ? [] : [leg.kind === "not_provisioned" ? leg.missing : leg.reading],
   );
@@ -248,9 +271,10 @@ export default async function BrowsePage({
   // the last one carries the oldest arrival the catalog holds when the window
   // did not fill.
   const eventsWindow =
-    events.kind === "ok"
+    window.kind === "ok" && events !== null && events.kind === "ok"
       ? drawnWindow({
-          limit: view.window,
+          // The window's SIZE — the operator's choice of 20, 50 or 100.
+          limit: window.window.size,
           held: events.data.length,
           // WHOSE NUMBER `held` IS, stated rather than left to be guessed from
           // its size (admin-window/BUG-0174): this surface's `held` is the rows
@@ -272,6 +296,9 @@ export default async function BrowsePage({
           // ARCHITECTURE.md §4.3 rule 4). On the paged arm `PagingProvider`
           // spreads this window, so it rides through untouched.
           continues: drawn !== null,
+          // WHERE THIS WINDOW STARTS in arrival order, stated from the window
+          // the address named (ARCHITECTURE.md §4.3 rule 4).
+          from: firstRowOf(window.window),
         })
       : null;
   const shows = { of: "catalog", rows: "events" } as const;
@@ -298,13 +325,14 @@ export default async function BrowsePage({
         options={columnOptions(view, shown)}
         hrefFor={hrefFor}
       />
-      {listing.venues ? <StateOf result={listing.venues} /> : null}
-      {listing.provenance ? <StateOf result={listing.provenance} /> : null}
+      {listing?.venues ? <StateOf result={listing.venues} /> : null}
+      {listing?.provenance ? <StateOf result={listing.provenance} /> : null}
       {drawn === null ? (
         <div data-surface={EVENTS_SURFACE}>{body}</div>
       ) : (
-        // The same rows, the same markup, the same order — plus whatever a
-        // press appends beneath them. The wrapper owns the surface div (it
+        // The same rows, the same markup, the same order — the window the
+        // address names, with the controls that move it ABOVE the rows
+        // (LOOK_AND_FEEL bar 14). The wrapper owns the surface div (it
         // wraps the TABLE alone, so a paged leg note is never graded as the
         // events read), and it takes the rows, the press and the window from
         // the provider above rather than deriving any of them
@@ -313,7 +341,6 @@ export default async function BrowsePage({
           surface={EVENTS_SURFACE}
           view={view}
           shown={shown}
-          initial={drawn}
           reported={reported}
         />
       )}
@@ -354,11 +381,14 @@ export default async function BrowsePage({
           params,
           { [COLUMNS_PARAM]: appliedColumns },
           [],
-          [],
+          // The window's two parameters are consumed by the table — rendered
+          // as the window, or refused by name on its own line — so neither is
+          // a parameter this page silently dropped.
+          [PAGE_PARAM, SIZE_PARAM],
         )}
       />
       <Section title={view.title}>
-        {drawn === null || eventsWindow === null ? (
+        {drawn === null || eventsWindow === null || window.kind !== "ok" ? (
           sectionBody
         ) : (
           // The window this surface pages by is spelled ONCE, here, and handed
@@ -374,23 +404,23 @@ export default async function BrowsePage({
             // under a client that kept its paged rows starts the surface
             // again instead of being concatenated with them
             // (admin-window/BUG-0216).
+            // THE WINDOW THE SERVER DREW — its rows, which window it is, and
+            // whether the read said the set ends inside it (`endsWithin`, the
+            // one derivation the route uses too) — plus the ids this screen
+            // drew, on the same field `BrowseTable` keys by, so a server screen
+            // re-rendered under a kept client state is told apart from the one
+            // that state continues (admin-window/BUG-0216).
             initial={initialPage<BrowseRow>(
-              drawn.length,
-              pageable,
-              boundOf(drawn, eventId),
-              // AND THE IDS THIS SCREEN HAS ALREADY DRAWN, so a page the
-              // route serves at a position rows have moved under cannot put
-              // an event on screen twice (admin-window/BUG-0222). Same
-              // spelling as the bound above and as `deps.idKey` below — one
-              // derivation of "what this row is called", which is also the
-              // field `BrowseTable` keys by.
+              drawn,
+              window.window,
+              endsWithin(drawn.length, window.window.size),
               drawn.map(eventId),
             )}
             window={eventsWindow}
             deps={{
               route: PAGE_ROUTES.browse,
+              path: BROWSE_PATH,
               params: browseQuery(view, shown),
-              size: view.window,
               // THE NAME, NEVER THE READER (admin-window/BUG-0226): every prop
               // written on this `"use client"` element is serialized into the
               // flight payload, and a function is the one shape that is not

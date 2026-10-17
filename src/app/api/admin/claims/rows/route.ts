@@ -1,4 +1,3 @@
-import { CLAIM_WINDOW } from "@/components/claims";
 import { requireAdmin } from "@/lib/admin";
 import { filterFrom, listFilterOf, tabFrom } from "@/lib/claims/filters";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
@@ -8,95 +7,76 @@ import { readSourceNames } from "@/lib/db/sources";
 import { idsOf } from "@/lib/gauges/gauge";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import {
-  OFFSET_PARAM,
   PAGE_ANSWER_CACHE_CONTROL,
-  pageBound,
+  PAGE_PARAM,
+  SIZE_PARAM,
+  windowBound,
   type PageAnswer,
 } from "@/lib/paging/bounds";
 import { sourceNamesOf } from "@/lib/sources/names";
 import { searchParamsOf } from "@/lib/url/search-params";
 
 /**
- * The claims list, CONTINUED — campaign admin-window/TASK-0066, SPEC F14.
+ * ONE WINDOW of the claims list — campaign admin-window/TASK-0066, SPEC F14,
+ * page windows since 2026-10-16.
  *
- * `GET /api/admin/claims/rows?<the page's own facets>&offset=<n>` answers ONE
- * page of the same window `/claims` server-rendered, at an explicit bound. It
- * is the app's second read route and the first that serves rows; the first
- * screen is unchanged, and this is what the operator can do AFTER it
- * (ARCHITECTURE.md §4.3 read kind 3).
+ * `GET /api/admin/claims/rows?<the page's own facets>&page=<n>&size=<s>`
+ * answers the window `/claims?page=<n>&size=<s>` would server-render, over
+ * the same narrowing: the rows of that window, in the list's own order, and
+ * whether the set ends inside it. It is the read a client move makes between
+ * windows (ARCHITECTURE.md §4.3 read kind 3); a cold load of the same URL
+ * renders the same window on the server.
  *
  * **The order of the guards is `src/app/api/admin/records/[table]/[id]/
  * route.ts`'s**, because a read route is gated exactly as a write route is:
  *
  *  - **The gate first, and always.** `requireAdmin()` is the first statement
- *    of the body, and `src/middleware.ts` — `export { auth as middleware }`,
- *    never `auth(handler)` — has already turned away a request with no session
- *    before this module is reached at all. Nothing below runs for a visitor
- *    who is not an allowlisted admin (M3 EC6).
+ *    of the body, and `src/middleware.ts` has already turned away a request
+ *    with no session before this module is reached at all (M3 EC6).
+ *  - **Then the WINDOW**, through `windowBound` — the one guard that decides
+ *    which windows this app serves, asked of the same two parameters the page
+ *    reads. A refusal is HTTP 400 carrying the `refused` answer, naming the
+ *    parameter and its value AS SENT, and no read is issued. Never clamped
+ *    (M3 EC6).
  *  - **Then the facets, through the PAGE's own derivation.** `filterFrom` +
  *    `tabFrom` + `listFilterOf` (`lib/claims/filters.ts`) are the same
  *    functions `src/app/claims/page.tsx` calls, given the same search
- *    parameters — so the rows a press appends belong to the narrowing the rows
- *    above them came from. **No facet is parsed in this file** (common
- *    violations row 20; LESSONS 5).
- *  - **Then the BOUND**, through `pageBound` — the one guard that decides
- *    which offsets this app may serve. A refusal is HTTP 400 carrying the
- *    `refused` answer, naming the reason and the bound AS SENT, and no read is
- *    issued. Never clamped, never defaulted (M3 EC6).
- *  - **Then the read**: `readClaimWindow` at that offset, the source-name
- *    registry for exactly this page's `source_id`s, and `claimLines` — the
- *    leaf the first screen shapes its own rows with (admin-window/TASK-0065).
+ *    parameters — so the rows of a window belong to the narrowing every other
+ *    window came from. **No facet is parsed in this file** (LESSONS 5).
+ *  - **Then the read**: `readClaimWindow` at that offset and size, the
+ *    source-name registry for exactly this window's `source_id`s, and
+ *    `claimLines` — the leaf the first screen shapes its own rows with.
  *
- * **THE RAW PARAMETER REACHES NOTHING BUT `pageBound`.** This file does no
- * arithmetic of its own on it — no coercion, no repair, no default — and the
- * only value that reaches `readClaimWindow`'s `offset` is the number
- * `pageBound` returned on its `ok` arm. That is not tidiness: QA measured
- * (admin-window/TASK-0065 close) that a hand-rolled numeric coercion of
- * `"abc"` is `NaN`, that staging answers `.range(NaN, NaN)` with an `ok` page
- * of ZERO rows, and that a zero-row `ok` page is EXHAUSTION — so a malformed
- * URL would render to the operator as a set that has ended rather than as a
- * refusal.
+ * **THE RAW PARAMETERS REACH NOTHING BUT `windowBound`.** This file does no
+ * arithmetic of its own on them — no coercion, no repair, no default — and the
+ * only values that reach `readClaimWindow` are the offset and size
+ * `windowBound` returned on its `ok` arm. QA measured (admin-window/TASK-0065
+ * close) that a hand-rolled numeric coercion of `"abc"` is `NaN`, that staging
+ * answers `.range(NaN, NaN)` with an `ok` page of ZERO rows, and that a
+ * zero-row `ok` page reads as exhaustion — so a malformed URL would render to
+ * the operator as a set that has ended rather than as a refusal.
  *
  * **FULL-OR-EXHAUSTED** (ARCHITECTURE.md §4.3, admin-window/BUG-0168's
- * ruling). `pageAnswerOf` sets `exhausted === rows.length < CLAIM_WINDOW`
- * from THIS read and from nothing else: a full window continues, a short one
- * — zero rows included — says the set has ended, and no other combination is
- * emitted. The window read is `.range(offset, offset + CLAIM_WINDOW - 1)`, so
- * a page longer than the window is not a page this route can ask for. The
- * client's driver holds the same contract as an invariant it CHECKS
- * (`requestPage`, `lib/paging/machine.ts`) and refuses any other combination
- * out loud, so an answer that broke it would turn every press on `/claims`
- * into a refusal line.
+ * ruling). `pageAnswerOf` sets `exhausted` from THIS read's row count against
+ * the window's size and from nothing else: a full window continues, a short
+ * one — zero rows included — says the set has ended inside it. The client's
+ * driver holds the same contract as an invariant it CHECKS (`requestPage`,
+ * `lib/paging/machine.ts`) and refuses any other combination out loud.
  *
  * **Absence is a normal answer, not an error**: a database with no
- * `pending_claims` answers `not_provisioned` naming it, and it is the PAGE
- * that decides what a not-provisioned surface looks like — by then no
- * affordance is drawn at all (SPEC F10, admin-window/TASK-0067). A registry
- * that refuses does NOT refuse the rows: `sourceLabel` renders the id verbatim
- * when the registry names nothing, exactly as the first screen does today.
+ * `pending_claims` answers `not_provisioned` naming it. A registry that
+ * refuses does NOT refuse the rows: `sourceLabel` renders the id verbatim when
+ * the registry names nothing, exactly as the first screen does.
  *
  * **A GATED ANSWER IS NEVER STORABLE, AND THIS ROUTE SAYS SO ITSELF**
- * (admin-window/BUG-0171). Every dynamically rendered page here already
- * carries the gated-answer cache directives because Next sets them on the
- * response; a Route Handler is given NO `Cache-Control` and answers with none
- * unless it writes one — measured off the wire by QA, which found every arm of
- * this route bare while the browse paging route on the same server carried
- * them. Without this, `/claims` and its own continuation would be one surface
- * under two cache policies, whatever store is reached: the browser's own, a
- * corporate forward proxy, or anything later placed in front of Railway.
- * `PAGE_ANSWER_CACHE_CONTROL` is the value, declared once in
- * `lib/paging/bounds.ts` and never a second string typed here, and it goes on
- * EVERY arm — the `ok` page, `not_provisioned`, `error` and the 400 refusal
- * alike. This says nothing about the GATE, which is unchanged and still runs
- * `requireAdmin()` on every request.
+ * (admin-window/BUG-0171): `PAGE_ANSWER_CACHE_CONTROL`, declared once in
+ * `lib/paging/bounds.ts`, goes on EVERY arm.
  *
  * **GET only.** No POST, no PATCH, no DELETE — this route reads, and Next
  * answers any other method 405.
  *
  * **No service-role material crosses to the client**: the answer carries
- * shaped rows and nothing else — no client, no URL, no key, no env name, and
- * no raw PostgREST error object beyond the `message` §4.1 already renders on
- * the page today.
+ * shaped rows and nothing else.
  */
 
 /** Every answer this route emits, on every arm. */
@@ -113,19 +93,23 @@ export async function GET(request: Request): Promise<Response> {
 
   const url = new URL(request.url);
 
-  // The bound, before the read exists: a refused bound issues no query at all.
-  // `pageBound` is handed the parameter VERBATIM and is the only reader of it.
-  const bound = pageBound(url.searchParams.get(OFFSET_PARAM), CLAIM_WINDOW);
+  // The window, before the read exists: a refused window issues no query at
+  // all. `windowBound` is handed the parameters VERBATIM and is the only
+  // reader of them; a repeated key takes the FIRST value, as
+  // `URLSearchParams.get()` does and as the page does.
+  const bound = windowBound({
+    page: url.searchParams.get(PAGE_PARAM),
+    size: url.searchParams.get(SIZE_PARAM),
+  });
   if (bound.kind === "refused") {
-    return answer({ kind: "refused", reason: bound.reason, bound: bound.bound }, 400);
+    return answer(
+      { kind: "refused", reason: bound.reason, param: bound.param, bound: bound.bound },
+      400,
+    );
   }
 
   // The page's own narrowing, derived by the page's own functions, off the
-  // record the ONE shared adapter builds (`lib/url/search-params.ts`, lifted
-  // out of this file by admin-window/TASK-0068 the day the browse paging route
-  // needed the same shape — LESSONS 5). It is a null-prototype record, so a
-  // key the URL carries is always an own property: `Object.hasOwn` or `in`,
-  // never `params.hasOwnProperty`.
+  // record the ONE shared adapter builds (`lib/url/search-params.ts`).
   const params = searchParamsOf(url.searchParams);
   const filter = listFilterOf(
     filterFrom(params, RENDERABLE_BUCKETS),
@@ -135,19 +119,16 @@ export async function GET(request: Request): Promise<Response> {
 
   const read = await readClaimWindow({
     filter,
-    limit: CLAIM_WINDOW,
-    // The ONE value that reaches an offset here: `pageBound`'s own answer.
+    limit: bound.window.size,
+    // The ONE value that reaches an offset here: `windowBound`'s own answer.
     offset: bound.offset,
   });
   if (read.kind !== "ok") {
-    // `not_provisioned` and `error` cross UNCHANGED (§4.1): the client's
-    // refusal names the same object this page's own card would name.
-    return answer(pageAnswerOf<ClaimLine>(read, bound.offset, CLAIM_WINDOW));
+    // `not_provisioned` and `error` cross UNCHANGED (§4.1).
+    return answer(pageAnswerOf<ClaimLine>(read, bound.window));
   }
 
-  // The names for exactly THIS page's sources, and no others. A refusal costs
-  // the labels and nothing else — `sourceLabel` then renders each id verbatim,
-  // which is the first screen's own answer to an unnamed source.
+  // The names for exactly THIS window's sources, and no others.
   const registry = await readSourceNames(idsOf(read.data, (claim) => claim.source_id));
   const names = sourceNamesOf(registry.kind === "ok" ? registry.data : []);
 
@@ -155,10 +136,6 @@ export async function GET(request: Request): Promise<Response> {
   // them, so the row count `pageAnswerOf` grades full-or-exhausted against is
   // the count the READ returned — nothing here adds, drops or re-sorts a row.
   return answer(
-    pageAnswerOf<ClaimLine>(
-      { kind: "ok", data: claimLines(read.data, names) },
-      bound.offset,
-      CLAIM_WINDOW,
-    ),
+    pageAnswerOf<ClaimLine>({ kind: "ok", data: claimLines(read.data, names) }, bound.window),
   );
 }

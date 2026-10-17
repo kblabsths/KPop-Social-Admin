@@ -26,6 +26,10 @@ he walked `/claims`' paging: a new Feel bar 14 (nothing the operator must find
 sits below a long list) and one dated clause on Feel bar 11 (paging is its
 exception in the shipped model, and the clause retires itself). Both are his
 words, not the designer's taste; bar 11's original sentence is unchanged.
+**Revised 2026-10-16** (page windows, built from
+`tracker/for-human/external-ticket-page-windows.md`): bar 11's dated clause
+retired itself — page position and size entered the URL — and bar 14 names
+where the page controls sit.
 
 **Out of scope:** `/login`. The sign-in gate carries over untouched (spec §3),
 so its rounded card, pink mark and drop shadow are sanctioned exceptions —
@@ -301,23 +305,11 @@ header's `animate-pulse` stale dot is gone).
     *(VISION: "item → its claims → its source and provenance → the event → its edit surface")*
 11. **State lives in the URL.** Every filter, sort, and page position is
     bookmarkable and survives the back button — the breakfast view is a link.
-    **Paging is the one exception, in the model that ships today** (Ben's
-    ruling, 2026-09-11): rows the operator has paged in carry no URL — a press
-    changes no address, a reload returns the first server-rendered window, and
-    Back leaves the app (ARCHITECTURE's dated 2026-09-10 amendment, traced to
-    SPEC F14's byte-identical first screen). What stands in for the URL is on
-    the screen: the **window line**, which states which rows are on screen and
-    whether the window filled, and the paging state's **held count**, which
-    states how many rows the surface now holds — so "where am I in this list"
-    is graded against those two, not against the address bar, and a walk states
-    that instead of calling the bar stale. **This clause retires itself the day
-    page position enters the URL**: if a search param naming a position in the
-    list or its window size (`?page=`, `?offset=`, `?cursor=`, `?size=`) ever
-    decides which rows a cold load renders, delete the clause and grade bar 11
-    by its own sentence again. Params that narrow the set without naming a
-    position (`?source_id=`, `?domain=`, `?columns=`) do **not** trigger the
-    retirement — they are filters, which this bar's first sentence already
-    requires in the URL and which the app already puts there.
+    *(The dated 2026-09-11 clause that excepted paging from this bar retired
+    itself on 2026-10-16, as it said it would: page position and window size
+    entered the URL — `?page=`, `?size=` — and decide which rows a cold load
+    renders. Bar 11 is graded by its own sentence again, paging included: a
+    reload, Back and a shared link land on the window the address names.)*
 12. **Both themes, clean console.** Every page renders in light and dark with
     nothing invisible, and every string a person reads to act measures ≥4.5:1
     against the fill behind it — `page`, `surface` or `chrome`; the active nav
@@ -343,7 +335,10 @@ header's `animate-pulse` stale dot is gone).
     renders **above** the list or on **its own surface**, chosen by how
     important it is; never after the last row. Walkable on any list surface:
     name every non-row element and say which side of the rows it is on; one
-    below the rows fails the bar.
+    below the rows fails the bar. **The page-window controls — previous, next
+    and the 20/50/100 size selector — sit above the list on `/claims` and
+    `/browse`, directly under the window line** (2026-10-16); a refusal from a
+    move renders beside them, above the rows too.
     *(Ben's ruling, 2026-09-11, verbatim: "There should not be elements at the
     bottom of a list this long. We should put them at the top or on a different
     page, depending on the importance. The elements that show up at the bottom

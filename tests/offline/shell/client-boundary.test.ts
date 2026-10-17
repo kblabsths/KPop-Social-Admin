@@ -1144,17 +1144,16 @@ describe("the client-boundary PROP guard itself", () => {
     // really does serialize.
     const handed = {
       initial: {
-        rows: [] as unknown[],
-        held: 50,
+        rows: [{ observationId: "01a058f1-0090-7629-9233-c74f92437dfa" }] as unknown[],
+        window: { page: 2, size: 50 },
+        exhausted: false,
         status: "idle",
         refusal: null,
         notes: null,
-        after: "01a058f1-0090-7629-9233-c74f92437dfa",
-        drawnIds: new Set(["01a058f1-0090-7629-9233-c74f92437dfa"]),
-        overlapped: false,
+        screen: "2/50:01a058f1-0090-7629-9233-c74f92437dfa",
       },
-      deps: { route: "/api/admin/claims/rows", params: "tab=open", size: 50, idKey: "observationId" },
-      window: { holds: "claims", limit: 50, held: 689, truncated: true },
+      deps: { route: "/api/admin/claims/rows", path: "/claims", params: "tab=open", idKey: "observationId" },
+      window: { holds: "claims", limit: 50, held: 689, truncated: true, from: 51, drawn: 50 },
     };
     expect(functionPaths(handed)).toEqual([]);
   });

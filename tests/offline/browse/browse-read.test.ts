@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readRecentEvents } from "@/lib/db/browse";
 import { RECENT_EVENTS } from "@/lib/browse/views";
+import { DEFAULT_WINDOW_SIZE } from "@/lib/paging/bounds";
+
+/** The window size a read that names none pages by — and the one these cases page at. */
+const SIZE = DEFAULT_WINDOW_SIZE;
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
@@ -157,7 +161,7 @@ describe("the window read", () => {
     expect(orders[orders.length - 1][1]).toEqual({ ascending: false });
     // The default bound is the FIRST screen: `.range(0, window - 1)` is the
     // `.limit(window)` this read carried before paging (TASK-0068).
-    expect(argsOf(call, "range")[0]).toEqual([0, view.window - 1]);
+    expect(argsOf(call, "range")[0]).toEqual([0, SIZE - 1]);
     expect(argsOf(call, "limit")).toEqual([]);
   });
 
@@ -395,7 +399,7 @@ describe("when a read fails or refuses", () => {
  *
  *  - the offset is optional and defaults to 0, so every caller written before
  *    paging existed issues exactly the query it always did;
- *  - the window is `.range(offset, offset + view.window - 1)` on the view's
+ *  - the window is `.range(offset, offset + SIZE - 1)` on the view's
  *    own total order;
  *  - the three legs run over THIS page's ids and no others, still as COMPLETE
  *    reads, and each still reports its own refusal separately;
@@ -426,11 +430,11 @@ function rangeOf(stub: ReturnType<typeof stubClient>, table: string): unknown[] 
 describe("the window read takes an offset", () => {
   it("reads exactly one window further in at one window's offset", async () => {
     const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     expect(rangeOf(stub, T.events)).toEqual([
-      view.window,
-      view.window * 2 - 1,
+      SIZE,
+      SIZE * 2 - 1,
     ]);
     // The order is the SAME order at every bound — a window that re-sorted
     // itself per page would repeat rows and skip others at the boundary.
@@ -440,7 +444,7 @@ describe("the window read takes an offset", () => {
   });
 
   it("runs the three legs over THIS page's ids and no others", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const ids = rows.map((row) => row.event_id);
     const stub = stubClient(
       fullScript({
@@ -459,7 +463,7 @@ describe("the window read takes an offset", () => {
       }),
     );
 
-    await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     expect(argsOf(callTo(stub, T.eventListings), "in")[0]).toEqual([
       "event_id",
@@ -489,7 +493,7 @@ describe("the window read takes an offset", () => {
  */
 describe("the page's row count is the window read's own count", () => {
   it("keeps a full window when EVERY leg returns nothing at all", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const stub = stubClient({
       [T.events]: { data: rows },
       // No listing row, no provenance row, no source row — the legs fill
@@ -499,10 +503,10 @@ describe("the page's row count is the window read's own count", () => {
       [T.sources]: { data: [], count: 0 },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
     expect(listing.events.data.map((row) => row.event_id)).toEqual(
       rows.map((row) => row.event_id),
     );
@@ -514,7 +518,7 @@ describe("the page's row count is the window read's own count", () => {
   });
 
   it("keeps a full window when rows SHARE a venue or name no source", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const shared = "The Forum";
     const stub = stubClient({
       [T.events]: { data: rows },
@@ -540,10 +544,10 @@ describe("the page's row count is the window read's own count", () => {
       [T.sources]: { data: sources(), count: sources().length },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
     expect(listing.events.data.every((row) => row.venue_name === shared)).toBe(true);
     expect(listing.events.data[0].sources).toEqual(["ticketmaster"]);
     expect(
@@ -552,16 +556,16 @@ describe("the page's row count is the window read's own count", () => {
   });
 
   it("drops no row when a leg REFUSES on a full window", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const stub = stubClient({
       [T.events]: { data: rows },
       [T.eventListings]: { error: permissionDenied(T.eventListings) },
       [T.fieldProvenance]: { error: permissionDenied(T.fieldProvenance) },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
   });
 });

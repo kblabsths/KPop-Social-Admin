@@ -11,6 +11,7 @@ import {
   toggledColumns,
   type BrowseColumnKey,
 } from "@/lib/browse/views";
+import { WINDOW_SIZES } from "@/lib/paging/bounds";
 import {
   arrivalOrder,
   currentDecisions,
@@ -58,11 +59,13 @@ describe("the view definition", () => {
     }
   });
 
-  it("keeps its window inside the id-set chunk the joins are built on", () => {
-    // The window's ids become one `.in(...)` per join leg; `ID_CHUNK` in
+  it("keeps every window size inside the id-set chunk the joins are built on", () => {
+    // A window's ids become one `.in(...)` per join leg; `ID_CHUNK` in
     // lib/db/gauges.ts is the size this codebase already decided is a safe
     // PostgREST URL. Going past it would need chunking that does not exist.
-    expect(view.window).toBeLessThanOrEqual(100);
+    // The size is the operator's choice since page windows (2026-10-16), so
+    // the largest choice is what is bounded.
+    expect(Math.max(...WINDOW_SIZES)).toBeLessThanOrEqual(100);
   });
 });
 

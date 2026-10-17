@@ -1176,12 +1176,13 @@ describe("WindowLine", () => {
    * that moved.
    */
   describe("a count and the population it counted agree", () => {
-    /** A window whose two reads agree and whose set has ENDED — the arm that
-     *  states the count and the rows together, at any size. */
+    /** A windowed surface on an EMPTY later window under a count of `n` — the
+     *  arm that states the count in front of the noun, at any size. */
     const held = (n: number, rest: Partial<DrawnWindow> = {}): DrawnWindow => ({
       ...DRAWN,
       held: n,
-      drawn: n,
+      drawn: 0,
+      from: 51,
       truncated: false,
       continues: true,
       ...rest,
@@ -1207,13 +1208,6 @@ describe("WindowLine", () => {
           `${counted(n, "claim")} ${n === 1 ? "matches" : "match"} these filters`,
         );
       });
-
-      it(`says ${counted(n, "event")} on screen, with a verb that agrees`, () => {
-        const text = textOf(drawn({ of: "catalog", rows: "events" }, held(n)));
-        expect(text, String(n)).toContain(
-          `${counted(n, "event")} ${n === 1 ? "is" : "are"} on screen`,
-        );
-      });
     }
 
     it("puts the narrowing OUTSIDE the noun, so the noun still agrees", () => {
@@ -1235,11 +1229,11 @@ describe("WindowLine", () => {
       // bug `counted`'s doc refuses to write forwards. Both directions in one
       // case (LESSONS 8).
       const irregular = textOf(
-        drawn({ of: "catalog", rows: "entities" }, held(1)),
+        drawn({ of: "matched", lede: "Oldest first.", rows: "entities" }, held(1)),
       );
-      expect(irregular).toContain("1 entities is on screen");
-      const regular = textOf(drawn({ of: "catalog", rows: "events" }, held(1)));
-      expect(regular).toContain("1 event is on screen");
+      expect(irregular).toContain("1 entities in all");
+      const regular = textOf(drawn({ of: "matched", lede: "Oldest first.", rows: "claims" }, held(1)));
+      expect(regular).toContain("1 claim in all");
     });
   });
 
@@ -1479,182 +1473,86 @@ describe("WindowLine", () => {
     { of: "matched", lede: "Oldest first.", rows: "claims" },
   ];
 
-  it("renders the first screen's own sentence, to the byte, until a press appends a row", () => {
-    // SPEC F14's "the first screen does not change": a paged surface is drawn
-    // only on a window that FILLED, so before any press the rows it put on
-    // screen ARE the cap, and every arm must render exactly the markup the
-    // SAME window renders on a surface no press can continue — the sentence,
-    // the hooks and the element.
-    //
-    // The comparison is against the unpaged window rather than against a
-    // window with no `drawn`, because those are now two different facts: the
-    // rows on screen are stated by both surfaces, and only the affordance
-    // differs (admin-window/BUG-0183).
-    for (const shows of EVERY_KIND) {
-      expect(drawn(shows, PAGED), shows.of).toBe(drawn(shows, unpaged(PAGED)));
-      expect(drawn(shows, { ...PAGED, drawn: PAGED.limit }), shows.of).toBe(drawn(shows, PAGED));
-    }
+  /**
+   * A window the operator can MOVE — page windows, 2026-10-16. `from` is
+   * where it starts in the order and `drawn` the rows it holds; the sentences
+   * name the rows by position and never rank a set. The first window keeps
+   * the unpaged line's own words.
+   */
+  const at = (from: number, drawn: number, rest: Partial<DrawnWindow> = {}): DrawnWindow => ({
+    ...PAGED,
+    from,
+    drawn,
+    ...rest,
   });
 
-  it("never says a continued window did not fill, in either direction of its verdict", () => {
-    // The wrapper is only drawn on a window that filled, so "The window did
-    // not fill — 50 of at most 50" is a sentence no state of a paged surface
-    // may reach; the not-truncated case of a continued window is the set being
-    // complete on screen, which is a different sentence (criterion 3).
-    for (const shows of PAGED_ARMS) {
-      for (const truncated of [true, false]) {
-        const text = textOf(drawn(shows, { ...PAGED, truncated, drawn: 120 }));
-        expect(text, `${shows.of} truncated=${truncated}`).not.toContain("did not fill");
-        expect(text, `${shows.of} truncated=${truncated}`).toContain(count(120));
-      }
-      // …and the SAME window on a surface no press can continue still states
-      // its own emptiness the way it always has, so the clause was narrowed
-      // and not deleted.
-      expect(
-        textOf(drawn(shows, { ...unpaged(PAGED), truncated: false, held: 12, drawn: 12 })),
-        shows.of,
-      ).toContain("did not fill");
-    }
+  it("keeps the unpaged sentence on the FIRST window of a catalog, and names the rows by position after a move", () => {
+    const catalog: DrawnSentence = { of: "catalog", rows: "events" };
+    // The first window, whether or not it can be moved: the same words.
+    expect(drawn(catalog, at(1, 50))).toBe(drawn(catalog, unpaged(at(1, 50))));
+    expect(textOf(drawn(catalog, at(1, 12, { truncated: false, held: 12 })))).toContain("did not fill");
+    // A later window names its rows and no cap but the window's own size.
+    const moved = textOf(drawn(catalog, at(51, 50)));
+    expect(moved).toContain("51");
+    expect(moved).toContain("100");
+    expect(moved).not.toContain("did not fill");
+    const last = textOf(drawn(catalog, at(101, 20, { truncated: false, held: 20 })));
+    expect(last).toContain("101");
+    expect(last).toContain("120");
+    expect(last).not.toBe(moved);
+    // An empty window names where the read looked and found nothing.
+    const empty = textOf(drawn(catalog, at(121, 0, { truncated: false, held: 0 })));
+    expect(empty).toContain("121");
+    expect(empty).toContain("170");
+    expect(empty).not.toContain("did not fill");
   });
 
   it("takes the held-back verdict from `truncated` alone, never from the rows beside it", () => {
-    // LESSONS 11. A window continued to 120 rows says rows are held back or
-    // does not, by its own flag — and the same `drawn` renders both, so no arm
-    // is deciding by comparing figures.
+    // LESSONS 11. The same window, both verdicts: the sentences differ and so
+    // do the hooks, and no arm decides by comparing figures.
     for (const shows of PAGED_ARMS) {
-      const held = textOf(drawn(shows, { ...PAGED, held: 877, truncated: true, drawn: 120 }));
-      const complete = textOf(drawn(shows, { ...PAGED, held: 877, truncated: false, drawn: 120 }));
-      expect(held, shows.of).not.toBe(complete);
-      const $held = cheerio.load(drawn(shows, { ...PAGED, truncated: true, drawn: 120 }));
-      const $complete = cheerio.load(drawn(shows, { ...PAGED, truncated: false, drawn: 120 }));
-      expect($held("[data-window]").attr("data-window-truncated"), shows.of).toBe("true");
-      expect($complete("[data-window]").attr("data-window-truncated"), shows.of).toBe("false");
+      const held = drawn(shows, at(51, 50, { held: 877, truncated: true }));
+      const complete = drawn(shows, at(51, 50, { held: 100, truncated: false }));
+      expect(textOf(held), shows.of).not.toBe(textOf(complete));
+      expect(cheerio.load(held)("[data-window]").attr("data-window-truncated"), shows.of).toBe("true");
+      expect(cheerio.load(complete)("[data-window]").attr("data-window-truncated"), shows.of).toBe("false");
+      expect(textOf(held), shows.of).not.toContain("did not fill");
+      expect(textOf(complete), shows.of).not.toContain("did not fill");
     }
   });
 
-  /**
-   * The three defects of one sentence — admin-window/BUG-0174.
-   *
-   * The designer walked a production build against staging and measured, at
-   * 877 claim rows with `[data-paging="exhausted"]` below them: "A window of
-   * at most 50 rows, NOT THE WHOLE VIEW. 877 claims in all; THE 877
-   * LONGEST-WAITING are below". A cap that is the size of one press stated as
-   * the size of the screen; a denial of being the whole set three lines above
-   * a control that says it is; and a superlative over a set with nothing
-   * outside it. `/browse` said the same at 120 events.
-   *
-   * These grade what a sentence may not ASSERT and which fact each number
-   * comes from. No word of product copy is pinned: the two clauses below are
-   * read out of the app's own vocabulary ("at most" is how every arm in this
-   * file spells a cap, "not the whole" how it spells the denial), and every
-   * number is checked against the read that established it.
-   */
-
-  /** The cap clause, in the one spelling every arm of this file uses. */
-  const A_CAP = "at most";
-  /** The denial, in the one spelling the two paged arms used. */
-  const NOT_THE_WHOLE = "not the whole";
-
-  /** Every state a press can leave a paged window in, both paged arms. */
-  const continuedStates: [string, Partial<DrawnWindow>][] = [
-    ["continued, still offering more", { held: 877, truncated: true, drawn: 120 }],
-    ["continued to the end of the set", { held: 120, truncated: false, drawn: 120 }],
-    ["ended with nothing appended", { held: 877, truncated: false, drawn: 50 }],
-  ];
-
-  it("a continued window states no cap of its own", () => {
-    // 50 is the size of ONE press, not a description of a screen holding 120:
-    // the same class admin-window/BUG-0172 fixed for the truncated clause and
-    // left standing in the clause beside it (criterion 1).
-    for (const shows of PAGED_ARMS) {
-      for (const [state, facts] of continuedStates) {
-        const text = textOf(drawn(shows, { ...PAGED, ...facts }));
-        expect(text, `${shows.of} / ${state}`).not.toContain(A_CAP);
-      }
-      // Non-vacuity, and SPEC F14: the FIRST screen still states its cap —
-      // there the cap is what the read carried and what it drew.
-      expect(textOf(drawn(shows, { ...PAGED, drawn: PAGED.limit })), shows.of).toContain(A_CAP);
-    }
-  });
-
-  it("a continued window that is complete on screen denies nothing", () => {
-    for (const shows of PAGED_ARMS) {
-      // The read has said the set has ended, so the line may not go on denying
-      // that this is the whole view — the control below says it is, and one
-      // page does not answer one question twice (criterion 2, LESSONS 11).
-      const ended = textOf(drawn(shows, { ...PAGED, held: 120, truncated: false, drawn: 120 }));
-      expect(ended, shows.of).not.toContain(NOT_THE_WHOLE);
-      // …and it does not RANK a set with nothing outside it: where the rows
-      // below are the whole count, the number is stated once and the sentence
-      // says the set is complete rather than selecting from it (criterion 3).
-      expect(ended.split(count(120)).length - 1, shows.of).toBe(1);
-      expect(ended, shows.of).not.toContain("longest-waiting");
-
-      // Non-vacuity: the same arm still denies being the whole set on the
-      // first screen, where that is true.
-      expect(
-        textOf(drawn(shows, { ...PAGED, drawn: PAGED.limit })),
-        shows.of,
-      ).toContain(NOT_THE_WHOLE);
-      // …and a continued window that is NOT at the end still says rows are
-      // held back, ranking included where a count established the rest.
-      const more = textOf(drawn(shows, { ...PAGED, held: 877, truncated: true, drawn: 120 }));
-      expect(more, shows.of).toContain(count(120));
-      expect(more, shows.of).not.toBe(ended);
-    }
-
-    // The narrowed matched arm obeys the same rule, over its own population.
-    const narrowed = textOf(
-      drawn(
-        { of: "matched", lede: "Oldest first.", rows: "claims" },
-        {
-          ...PAGED,
-          held: 108,
-          truncated: false,
-          drawn: 108,
-          scope: [NARROWED_BY_FILTERS],
-        },
-      ),
-    );
-    expect(narrowed).toContain("match these filters");
-    expect(narrowed).not.toContain(NOT_THE_WHOLE);
-    expect(narrowed).not.toContain("longest-waiting");
-    expect(narrowed.split(count(108)).length - 1).toBe(1);
-  });
-
-  it("names the rows DRAWN for what is on screen, and never the cap", () => {
-    // BUG-0172's residual (b), as a criterion: on a paged surface `drawn` is
-    // always a number and it is the only honest source of "what is on screen".
-    // The fixture is the reachable divergence — a count of 877 over a read
-    // that returned 50 and then said no more — where the arm used to render
-    // the CAP's number as the screen's (criterion 5).
-    for (const shows of PAGED_ARMS) {
-      const zeroAppend = { ...PAGED, held: 877, truncated: false, drawn: 50 };
-      // The same facts under a different CAP render the same sentence: no
-      // clause of a continued or ended window takes its number from `limit`.
-      expect(
-        textOf(drawn(shows, zeroAppend)),
-        shows.of,
-      ).toBe(textOf(drawn(shows, { ...zeroAppend, limit: 10 })));
-      // …and the number it names for the screen follows the rows drawn.
-      expect(textOf(drawn(shows, { ...zeroAppend, drawn: 70 })), shows.of).toContain(count(70));
-    }
-
-    // On the arm that HAS a second read, the divergence is stated as two reads
-    // and the set is never called complete on screen while a larger count is
-    // named: the sentence is a DIFFERENT sentence from the one the same arm
-    // renders where one read established completeness, not the same words with
-    // other numbers (LESSONS 2).
+  it("the matched arm states each read as its own where they disagree, and never ranks a window out of a set", () => {
     const matched: DrawnSentence = { of: "matched", lede: "Oldest first.", rows: "claims" };
-    const shape = (window: DrawnWindow): string =>
-      textOf(drawn(matched, window)).replace(/[\d,]+/g, "#");
-    const diverged = shape({ ...PAGED, held: 877, truncated: false, drawn: 50 });
-    const agreed = shape({ ...PAGED, held: 877, truncated: false, drawn: 877 });
-    expect(diverged).not.toBe(agreed);
-    // Both numbers are still on screen — the divergence is stated, not hidden.
-    const text = textOf(drawn(matched, { ...PAGED, held: 877, truncated: false, drawn: 50 }));
-    expect(text).toContain(count(877));
-    expect(text).toContain(count(50));
+    const shape = (window: DrawnWindow): string => textOf(drawn(matched, window)).replace(/[\d,]+/g, "#");
+    // The reads AGREE that the set ends with this window: the count is the
+    // last row on screen.
+    const agreed = at(851, 27, { held: 877, truncated: false });
+    expect(readsAgree(agreed)).toBe(true);
+    const ended = textOf(drawn(matched, agreed));
+    expect(ended).toContain(count(851));
+    expect(ended).toContain(count(877));
+    expect(ended).not.toContain("longest-waiting");
+    expect(ended.split(count(877)).length - 1).toBe(2);
+    // They DISAGREE: the read ended at row 70 under a count of 877. Both
+    // figures are printed, neither read is credited with the end, and it is
+    // a different sentence, not the same one with other numbers.
+    const diverged = at(51, 20, { held: 877, truncated: false });
+    expect(readsAgree(diverged)).toBe(false);
+    const stated = textOf(drawn(matched, diverged));
+    expect(stated).toContain(count(877));
+    expect(stated).toContain(count(51));
+    expect(stated).toContain(count(70));
+    expect(shape(diverged)).not.toBe(shape(agreed));
+    // Still offering more, and the count is larger than the last row: the
+    // rest is a statement of the count.
+    const more = at(51, 50, { held: 877, truncated: true });
+    expect(readsAgree(more)).toBe(true);
+    expect(shape(more)).not.toBe(shape(agreed));
+    expect(shape(more)).not.toBe(shape(diverged));
+    // The narrowed arm obeys the same rule over its own population.
+    const narrowed = textOf(drawn(matched, at(51, 50, { held: 108, truncated: true, scope: [NARROWED_BY_FILTERS] })));
+    expect(narrowed).toContain("match these filters");
+    expect(narrowed).not.toContain("longest-waiting");
   });
 
   /** Every figure a rendered line prints, in the app's own formatting. */
@@ -1746,15 +1644,21 @@ describe("WindowLine", () => {
     }
   });
 
-  it("publishes no new attribute for it", () => {
-    // The first screen is byte-identical (SPEC F14, ARCHITECTURE.md §5) and an
-    // added attribute is not. `drawn` changes the sentence, and the number
-    // `held` already publishes.
-    const $ = cheerio.load(drawn(PAGED_ARMS[0], { ...PAGED, drawn: 120 }));
-    const published = Object.keys($("[data-window]").attr() ?? {}).filter((name) =>
-      name.startsWith("data-window"),
+  it("publishes the rows it drew and where it starts as hooks, exactly when they are stated", () => {
+    // Page windows (2026-10-16): a reader grades the window off the hooks,
+    // never off the prose, so the two paged facts are published where the
+    // window states them — and NOT on a window that states neither, which
+    // keeps every unpaged line's hook set what it was.
+    const hooksOf = (window: DrawnWindow): string[] =>
+      Object.keys(cheerio.load(drawn(PAGED_ARMS[0], window))("[data-window]").attr() ?? {})
+        .filter((name) => name.startsWith("data-window"))
+        .sort();
+    expect(hooksOf({ ...PAGED, from: 51 })).toEqual(
+      [...HOOKS_EVERY_WINDOW, "data-window-drawn", "data-window-from"].sort(),
     );
-    expect(published.sort()).toEqual([...HOOKS_EVERY_WINDOW].sort());
+    const silent: DrawnWindow = { limit: 50, held: 900, truncated: true, over: "view", oldest: null, scope: null };
+    expect(hooksOf(silent)).toEqual([...HOOKS_EVERY_WINDOW].sort());
+    expect(cheerio.load(drawn(PAGED_ARMS[0], { ...PAGED, from: 51 }))("[data-window]").attr("data-window-from")).toBe("51");
   });
 
   /**
@@ -1913,14 +1817,12 @@ describe("WindowLine", () => {
     // two reads disagree.
     expect(textOf(drawn(matchedRows, drewNone))).toContain(count(900));
 
-    // A press being available changes nothing here: the paged arm cannot reach
-    // the held-back clause on a window that drew no rows (it is not continued
-    // and the read has not ended), so both say the same thing.
-    expect(
-      digitMasked(
-        textOf(drawn(matchedRows, { ...PAGED, held: 900, truncated: true, drawn: 0 })),
-      ),
-    ).toBe(shapeOf(0, 900));
+    // A movable surface's EMPTY window says, beside the count, where the read
+    // looked — a different sentence from the drawn window's, printing only the
+    // cap, the count and the window's own two bounds.
+    const emptyWindow = { ...PAGED, held: 900, truncated: false, drawn: 0, from: 51 };
+    expect(digitMasked(textOf(drawn(matchedRows, emptyWindow)))).not.toBe(shapeOf(37, 900));
+    expect(figuresIn(textOf(drawn(matchedRows, emptyWindow)))).toEqual([count(50), count(900), count(51), count(100)]);
   });
 
   it("is one paragraph carrying one window, whichever kind it is", () => {

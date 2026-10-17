@@ -565,153 +565,146 @@ never reach it.
 > line says where the app looked. The rule is graded once for every surface at
 > once, in `tests/offline/absence/pages.test.ts`, never per page.
 
-**3. Paged window read — the same window, at an explicit offset. AMENDED
-2026-09-10** (architect, M3; SPEC F14, DECISIONS 2026-09-10, Ben's ruling
-*"not being able to load all claims if I want to is a huge oversight"*).
+**3. Page-windowed read — ONE window of the same order, named by the
+address. AMENDED 2026-10-16** (page windows, built outside the factory from
+`tracker/for-human/external-ticket-page-windows.md`; Ben's ruling of
+2026-09-11, *"only show items 1-50 or 51-100 at a time (adjustable as 20, 50,
+and 100)"*; DECISIONS 2026-10-16). It supersedes, in place, the 2026-09-10
+amendment that read *"the same window, at an explicit offset"* and grew a list
+by appending: the operator is now always looking at ONE bounded read.
 
-> **Superseded, in place.** Until 2026-09-10 this paragraph read: *"Paging is
-> not the answer to a cap and none is built: nothing in the spec asks for it,
-> and complete-or-refuse means there is never a partial page to continue. When
-> a table genuinely outgrows `ROW_CAP` the app says so with the real number,
-> and raising the cap or narrowing the filter is then a deliberate decision
-> with evidence behind it."* The spec now asks for it. The half of that
-> sentence that still holds is kept below: a page is never partial, and
-> nothing paging does may turn a window's rows into a total.
+> **Superseded, in place (2026-09-10 → 2026-10-16).** The 2026-09-10 text said
+> the bound on the wire was the OFFSET — "not a page number, not a cursor the
+> client may compose, and not a caller-chosen size" — and that a press
+> appended one window under the first screen. Page windows replace that: the
+> bound is a PAGE NUMBER and a SIZE, both in the URL, and a move REPLACES the
+> window on screen. What that paragraph still holds, kept below: a window is
+> never partial, nothing paging does turns a window's rows into a total, and a
+> bound this app does not serve is refused by name and never clamped.
 
-A paged window read is read kind 2 with one thing added — an **offset into the
-same total order** — and it is the ONLY form of paging this app has. What it
-may do:
+A page-windowed read is read kind 2 with one thing added — **an offset into
+the same total order, derived from a page and a size the ADDRESS names** — and
+it is the ONLY form of paging this app has. What it may do:
 
 - **Two surfaces, named here and nowhere else: `/claims` and `/browse`.** No
   third surface gains paging on the team's initiative, and neither surface
   gains a "load everything" control. This list is amended by a ruling, never by
   a ticket.
-- **One order, and it is the first screen's.** A paged read repeats the first
-  window's `.order()` chain — total, ending in the primary key — and adds
-  `.range(offset, offset + size - 1)`. Nothing re-sorts, re-filters or
-  re-shapes on the way back: the same narrowing function, the same row shaping,
-  the same components. A page that changed any of them would be a different
-  read wearing the first screen's clothes.
-- **The bound is explicit, and it is the OFFSET.** Every request names how many
-  rows of that order the caller already holds. It is not a page number, not a
-  cursor the client may compose, and not a caller-chosen size — the size is the
-  surface's own window, decided on the server. A bound that is not a
-  non-negative integer multiple of that window, or that exceeds
-  `MAX_PAGE_OFFSET`, is **refused with the reason named — never clamped in
-  silence** (LESSONS 8: the guard that counts is on the server).
-- **Exhaustion is an answer, not a refusal.** A page past the end is `ok` with
-  zero rows and says the set is exhausted; the surface then says so and draws
-  no affordance. A refusal is a refusal: `not_provisioned` naming its object,
-  or `error` carrying the database's own words, exactly as every other read
-  here refuses.
-- **Complete-or-refuse holds INSIDE a page.** A page is `ok` with the rows that
-  bound asked for, or it is a refusal — never a half-filled `ok`, and **a
-  refused page never extends the list**: the rendered row count after a refusal
-  equals the row count before it, and the refusal names the object beside the
-  rows it did not add.
-- **Full-or-exhausted, on BOTH sides of the wire** (amended 2026-09-10,
-  architect, from BUG-0168 — the driver half of the bullet above). A page
-  answer is `ok` with **exactly the window's rows** and the set continues, or
-  it is `ok` with **at most the window's rows** and `exhausted` is true. The
-  route derives that flag from its own read (`exhausted === rows.length <
-  size`) and never emits any other combination. The client's driver holds the
-  same contract as an invariant it CHECKS, because what comes over a wire is
-  foreign data: a short page that says the set continues, and a page longer
-  than the window, are **refused out loud** — no rows appended, the bound
-  unmoved, the control retained for a retry — exactly as a body that is not a
-  page answer at all is. The property this buys, and the one a paging surface
-  may rely on: **after any press, either the bound the next press would carry
-  is one this app may serve, or the state is `exhausted`.** The rejected
-  alternative was to let the driver *reinterpret* a short page as the end of
-  the set; it silently converts a truncated or mangled answer into "you have
-  seen everything", which is the false-totality claim this whole section
-  exists to make impossible.
+- **The window is in the URL, and it is a page and a size.** `?page=<n>`
+  (1-based) and `?size=<20|50|100>` name the window; an absent parameter is
+  the first window at the default size (50), a stated default and not a
+  repair. Both pages read them on a cold load and both route handlers read
+  them on a move, through ONE guard (`windowBound`, `lib/paging/bounds.ts`),
+  so a cold load of `/claims?page=3&size=20` and a move to that window are
+  the same bounded read: `.range((page-1)*size, page*size-1)` over the first
+  screen's own `.order()` chain, the same narrowing function, the same row
+  shaping, the same components (LOOK_AND_FEEL bar 11: reload, Back and a
+  shared link land on the window the address names).
+- **A window this app does not serve is refused BY NAME, never clamped.** A
+  non-canonical spelling, a page below 1, a size that is not one of the three,
+  or a window whose first row would sit past `MAX_PAGE_OFFSET` is refused
+  naming the PARAMETER and the rule it broke: the page renders the refusal,
+  reads no list, draws no rows, offers no control and names the first window
+  as the way back (`WindowRefused`); the route answers 400 carrying the
+  `refused` arm with the parameter and the value as sent. The page never
+  echoes the VALUE (`tests/offline/absence/in-window.test.ts`). `?page=999`
+  under the ceiling is NOT refused: whether rows exist there is the READ's to
+  answer, and an empty window is still a window — the surface says the read
+  happened at those rows and found nothing, and offers the way back
+  (LESSONS 8: the guard that counts is on the server, and it is the same
+  guard on both sides).
+- **A move is a bounded client request against the route handler for the
+  window the new address names, and it REPLACES the window on screen.** The
+  control pushes the window's address (the native history API, which Next's
+  router follows and restores on Back), asks the route for that window, and
+  draws what came back; Back and Forward are `popstate`, answered by one rule
+  — the surface draws the window the address names (`windowToDraw`,
+  `lib/paging/machine.ts`) — and a refused window is asked for again only by
+  the operator, never by a render. Nothing is concatenated, de-duplicated or
+  merged: one window is one read at one instant. BUG-0222's overlap was a
+  property of concatenation and is closed by construction; BUG-0221's skip —
+  the population moving between two reads — is still not promised against
+  (no snapshot across moves, below) and is now simply two reads at two
+  instants, each stated as its own.
+- **Full-or-exhausted, on BOTH sides of the wire** (kept from 2026-09-10,
+  BUG-0168). An answer is `ok` with **exactly the window's rows** and the set
+  continues, or `ok` with **at most the window's rows** and `exhausted` is
+  true — `endsWithin(rows, size)`, the ONE derivation, on the route and on
+  the page's first screen alike. The client's driver holds the same contract
+  as an invariant it CHECKS: a short window that says the set continues, a
+  window longer than its size, a window served for a different page or size
+  than asked, and a body that is not a page answer are **refused out loud** —
+  nothing drawn, the window unmoved, the refusal naming the window it asked
+  for. An `ok` answer with ZERO rows is an EMPTY WINDOW and is drawn as one.
+- **The end of the set is ONE derivation, and both the line and the controls
+  read it** (`endsHere`, `components/ui/paging.tsx`; LESSONS 11). The READ
+  ends the set where it came back short. On a surface with a count beside the
+  rows (`/claims`), the COUNT ends it where the last row on screen reaches the
+  count — rows 1–50 under a count of 50 are the whole set, and a "next" there
+  would draw an empty window the count said was empty. The count can end a set;
+  it cannot EXTEND it past a short read, whose "nothing more at this position"
+  is a direct observation. Where the two disagree the line states each read
+  as its own fact and credits neither with the end. A surface with no count
+  (`/browse`) has only the read's answer.
+- **A size change mid-walk keeps the row the operator was reading from**
+  (design question 1): the size chips link to the window at the new size that
+  holds the current window's FIRST row (`containingWindow`) — on rows 51–100
+  at 50, choosing 20 lands on rows 41–60 and choosing 100 on rows 1–100.
 - **The count that grades exhaustion is the READ's own count — nothing drops a
-  row after `.range()`** (amended 2026-09-10, architect, from QA's TASK-0066
-  residual (c)). `exhausted` is decided by how many rows the bounded query
-  returned, so a row removed in TypeScript *after* the range — a filter, a
-  dedupe, a slice — turns a full page into a short one and ends the operator's
-  paging with rows still behind it. Any narrowing a paged read needs is applied
-  IN the query, before the range; code below it may shape, join and label rows
-  but may not remove one. Live example of the shape to avoid, not a defect
-  today: `readClaimWindow` applies `selectClaims` after its `.range()`, and it
-  is harmless only because the query carries the same `neq`. A helper leg that
-  fills columns may never shorten a page either (common violations row 14).
-
-- **The legs that FILL columns travel WITH the page, and an unreadable note is
-  a refusal** (amended 2026-09-10, architect, from QA's TASK-0068 measurement).
-  A surface read by several queries — Browse is four: the events window decides
-  the rows, the venue and provenance legs fill columns over that window's ids —
-  puts each leg's own report on the `ok` arm of its page answer
-  (`NotedPageAnswer`, `lib/paging/bounds.ts`) and the surface renders it beside
-  the rows it arrived with, through the same `StateOf` the first screen uses. A
-  page whose provenance leg refused may not reach the operator as rows with a
-  silently empty column. The notes ride the `ok` arm only: the other three arms
-  have no rows, so no column of theirs went unfilled. Three rules make it hold
-  end to end. (1) **The driver carries them** — `PageState` has a `notes` field
-  and the route's answer reaches it unchanged; a state that cannot hold a note
-  is a note dropped, which is how the first implementation lost them silently.
-  (2) **Foreign notes are refused, not rendered** — `isPageNotes` asks of the
-  field what `isPageAnswer` asks of the body, and an unreadable `notes` refuses
-  the press naming the route, appending nothing; a note is the DATABASE's own
-  `missing` / `reading` and message or it is not shown at all (§4.1, common
-  violations row 15). (3) **Notes MERGE across presses, per leg** — the rows a
-  refused leg left unfilled are still on screen after the next press, so a note
-  that vanished when a later page's legs answered would be the same silent
-  emptiness one press later. A leg the FIRST SCREEN already reported is not
-  reported a second time below the rows: the identity is the OBJECT named, not
-  the leg key.
-
-- **A concatenation is still not a total.** No sentence on either surface may
-  claim that what the operator has paged through is the whole set. The only
-  totality claim on these pages remains what it is today: their own exact
-  `countRead` count, read once, labelled as the count it is (§4.3 kind 1,
-  SPEC F15). The app promises no snapshot across presses either — each page is
-  a bounded read at the instant it was issued, and neither surface says
-  otherwise.
-
-- **The window line of a paged surface states the read the operator NOW
-  HOLDS, and its truncation verdict is the paging state's** (amended
-  2026-09-11, architect, from QA's TASK-0069 measurement — admin-window/BUG-0172).
-  A press is a read on these two surfaces, so the sentence describing it
-  cannot be a server-rendered constant sitting above a client wrapper: after a
-  walk to the end of the set `/browse` published `data-paging="exhausted"`
-  under 120 drawn rows and `data-window-truncated="true"` over them, and
-  `/claims` said "the 50 longest-waiting are below — the rest are not shown"
-  under 616 rows. Three rules, and they hold on both surfaces at once:
-  1. **ONE `[data-window]` element, rendered inside client-land.** A second,
-     continuation line is not a fix — it leaves the false sentence where the
-     operator reads it first, and it breaks the one-element rule
-     `tests/offline/absence/pages.test.ts` and every `stateOf` selector rest
-     on. The surface's paging state is published by a provider that renders no
-     markup of its own (`PagingProvider`, `src/components/ui/paging.tsx`), so
-     the first SERVER render is byte-identical to the unpaged one — which is
-     what makes this compatible with §5's byte-identity amendment rather than
-     an exception to it.
-  2. **`truncated` has ONE derivation and it is the status**
-     (`status !== "exhausted"`), shared with the control below. Nothing
-     re-derives it by counting rows, and no rewording substitutes for it: the
-     contradiction is published in the HOOKS, and copy cannot fix a
-     machine-readable verdict (LESSONS 11, one row one verdict).
-  3. **Each surface's other facts keep their own meaning.** `held` is what the
-     surface's own reads established — the rows on screen where the window read
-     IS the population (`/browse`), the matching COUNT where a count read
-     established it (`/claims`, whose `data-window-held` a live oracle grades
-     the paged walk against). No `data-window-*` attribute is added, because an
-     added attribute is a first-screen change.
-
+  row after `.range()`** (kept from 2026-09-10). Any narrowing a windowed read
+  needs is applied IN the query, before the range; code below it may shape,
+  join and label rows but may not remove one.
+- **The legs that FILL columns travel WITH the window, and an unreadable note
+  is a refusal** (kept from 2026-09-10, TASK-0076; MERGE → REPLACE). Browse's
+  venue and provenance legs put their reports on the `ok` arm of the window
+  answer (`NotedPageAnswer`); the driver carries them (`PageState.notes`), an
+  unreadable `notes` refuses the move naming the route, and a window's notes
+  REPLACE the standing ones — they are about the rows now on screen, and the
+  previous window's rows are not. A leg the FIRST SCREEN already reported is
+  not reported again by the window: the identity is the OBJECT named.
+- **A window is still not a total.** No sentence on either surface may claim
+  that what the operator has walked is the whole set. The only totality claim
+  on these pages remains their own exact `countRead` count, read once,
+  labelled as the count it is (§4.3 kind 1, SPEC F15). The app promises no
+  snapshot across moves: each window is a bounded read at the instant it was
+  issued, and neither surface says otherwise.
+- **The window line of a windowed surface states the window the operator NOW
+  HOLDS** (kept from 2026-09-11, BUG-0172, with the facts a window adds):
+  1. **ONE `[data-window]` element, rendered inside client-land** by the
+     provider that publishes the surface's state (`PagingProvider`, which
+     renders no markup of its own), so the server screen for an address IS
+     what the client draws for it (design question 3: the first screen is no
+     longer byte-identical across addresses — it is the window the address
+     names — and the pin that replaces byte-identity is that the page's
+     server render and the route's answer for one address draw the same rows,
+     `tests/offline/paging/claims-route.test.ts`).
+  2. **`truncated` has ONE derivation and it is `endsHere`**, shared with the
+     controls. Nothing re-derives it by counting rows.
+  3. **Each surface's other facts keep their own meaning.** `held` is the
+     matching COUNT where a count read established it (`/claims`) and the rows
+     on screen where the window read IS the population (`/browse`). The two
+     facts a window adds are PUBLISHED as hooks where stated —
+     `data-window-from` (the 1-based index of the first row on screen) and
+     `data-window-drawn` (the rows on screen) — so a reader grades the window
+     off the hooks and never off the prose; an unpaged line that states
+     neither publishes neither.
   4. **A fact a sentence depends on is STATED by whoever knows it, never
      inferred from another field's size or from whether it is present**
      (promoted at count 2, 2026-09-11, from Common violations row 22 —
-     admin-window/BUG-0174, admin-window/BUG-0183). `DrawnWindow` did both in
-     one week: `held`'s meaning was guessed by asking whether it was bigger
-     than the cap, and `drawn`'s PRESENCE carried both "the rows on screen"
-     and "a press may continue this window", so the unpaged `/claims` line
-     could not state its own row count without inheriting the paged arms and
-     fell back to naming the CAP over screens holding 37, 10 and 49 claims.
-     A renderer that asks `x != null`, or compares a value to a cap, to decide
-     WHICH SENTENCE to say is asking for a fact that has no owner yet: give it
-     one, on the page that knows it.
+     admin-window/BUG-0174, admin-window/BUG-0183). `from` is stated by the
+     paging state that drew the window; `continues` by the page; `heldFrom` by
+     the page. A renderer that asks `x != null`, or compares a value to a cap,
+     to decide WHICH SENTENCE to say is asking for a fact that has no owner
+     yet: give it one, on the page that knows it.
+- **The controls sit ABOVE the list** (LOOK_AND_FEEL bar 14, Ben's ruling of
+  2026-09-11): the move links, the size selector and any refusal render before
+  the first row, inside the list's own surface on `/claims` and as a sibling
+  before the events body on `/browse`, never after the last row. Every control
+  is a real link whose `href` is the window's own address, intercepted on a
+  plain click; a surface on which no move could change the screen (a first
+  window the set ends in, holding no more rows than the smallest size) draws
+  no control at all, and a surface whose backing object is absent draws the
+  clause and nothing else.
 
 What paging may **not** do, stated so it is not inferred: it does not raise
 `ROW_CAP`; it does not turn a window read into a complete read; it does not
