@@ -27,8 +27,8 @@ import {
  * measure per column.
  *
  * **A measure that is `null` is a dash, never a zero.** `QueueWeek.settled` is
- * `null` for every week today — the settle timestamp does not exist until
- * `verdicts` lands — and a column of zeros there would read as "nothing
+ * `null` for every week — the gauge reads `review_items`, which carries no
+ * settle timestamp — and a column of zeros there would read as "nothing
  * settled" instead of "not knowable", which tunes the escalation cutoffs the
  * wrong way (spec §5; `lib/gauges/queue-health.ts`).
  */

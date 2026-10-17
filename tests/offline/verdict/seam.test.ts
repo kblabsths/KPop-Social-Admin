@@ -25,11 +25,10 @@ import {
 /**
  * The settlement seam — campaign admin-window/TASK-0048, `src/lib/db/verdict.ts`.
  *
- * **The ABSENT case is graded first, because it is the normal one.** Neither
- * `verdicts` nor `settle_review_item` exists on staging or in production, and
- * neither will until Ben installs M2's handoff migrations — that is the
- * database `main` deploys against for the whole milestone. So the file opens
- * with what the surfaces will actually meet, and the happy path follows it.
+ * **The ABSENT world is graded first.** The file opens with fixtures that
+ * withhold `verdicts` and `settle_review_item` — which databases are in that
+ * world is ARCHITECTURE.md §9.2's to say, not this file's — and the happy
+ * path follows it.
  *
  * Nothing here asserts a rendered string: the seam returns `DbResult`s and the
  * words an operator reads belong to the surfaces.
@@ -60,7 +59,7 @@ function readinessWith(
   return { stub, run: () => readSettlementReadiness(stub.asSupabaseClient()) };
 }
 
-/* ── absence: the normal case for all of M2 ──────────────────────────────── */
+/* ── absence: the absent world, graded first ─────────────────────────────── */
 
 describe("the function is not installed", () => {
   it("answers not_provisioned naming settle_review_item on PGRST202", async () => {

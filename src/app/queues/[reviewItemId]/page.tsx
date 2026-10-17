@@ -76,8 +76,9 @@ import { factKey } from "@/lib/verdict/decision";
  *  2. **the close** — spec §7's verdict actions, rendered by
  *     `CloseSlot` (`src/components/review/close/slot.tsx`, campaign
  *     admin-window/TASK-0049). What it offers is decided by ONE read,
- *     `readSettlementReadiness`: with the verdict log absent — the normal case
- *     for the whole of M2 — it draws the not-provisioned card naming that
+ *     `readSettlementReadiness`: with the verdict log absent — a graded case,
+ *     never an error; which databases are in that world is ARCHITECTURE.md
+ *     §9.2's to say — it draws the not-provisioned card naming that
  *     object and offers no control at all, and nothing on this page settles
  *     anything. Every action it ever offers becomes one typed decision and one
  *     call to `settle_review_item`, through the route this page never touches
@@ -551,7 +552,7 @@ function settledWith(read: DbResult<ItemVerdict | null> | null): CloseVerdict | 
  *
  *  - the verdict log is absent or refused, so NO control renders at all and a
  *    window nobody can choose from is a round trip nobody asked for. That is
- *    the graded normal case for the whole of M2;
+ *    a graded case, never an error (ARCHITECTURE.md §9.2);
  *  - the item is already settled, so the close offers its verdict instead;
  *  - the item names no whole reference fact — `linkableFact`, the ONE
  *    predicate, imported rather than re-spelled here (common violation 9): an
@@ -689,8 +690,8 @@ export default async function ReviewItemPage({
   // May this surface offer a settlement at all? ONE question, asked through
   // the one helper that owns it (ARCHITECTURE.md §9.2; a page asking it for
   // itself is the hand-copied probe common violation 9 forbids). Its absent
-  // answer is the normal one for the whole of M2 and is what the close slot
-  // renders today.
+  // answer is a graded one, drawn by the close slot as a card; which
+  // databases give it is ARCHITECTURE.md §9.2's to say, not this page's.
   const readiness = await readSettlementReadiness();
 
   // WHICH verdict settled this item — asked only where there is an answer to
@@ -772,8 +773,9 @@ export default async function ReviewItemPage({
           themselves are untouched and keep their own anatomy.
 
           Its ONE question — may a settlement be offered at all — is
-          `readiness`; with the verdict log absent, which is the normal case
-          for the whole of M2, the slot renders that state and offers no
+          `readiness`; with the verdict log absent (a graded case —
+          ARCHITECTURE.md §9.2 says which databases are in that world), the
+          slot renders that state and offers no
           control. The shape's action list comes from the one map
           (`ACTIONS_BY_SHAPE`), never from a shape re-derived here, and its
           companion says what the shape WITHHOLDS and why — today only a

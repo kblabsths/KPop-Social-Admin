@@ -294,6 +294,29 @@ describe("aggregateRejectionStamps", () => {
     expect(values.unnamedSources).toBe(1);
   });
 
+  it("counts a registry row with no ink in its name as unnamed, and a named row as named", () => {
+    // The bug this catches (admin-window/BUG-0236): this gauge spelled
+    // "unnamed" as `source === undefined` — the row is MISSING — while its
+    // twin on the same page asks `isSourceNamed`, which also says no to a row
+    // that came back with a blank name. Same rows, two counts. Both fixtures
+    // (LESSONS 8): the row that must be counted, and the row that must not.
+    const unnamedBy = (name: string) =>
+      aggregateRejectionStamps({
+        rejections: rejections(),
+        sources: [...sources(), sourceRow({ source_id: SOURCE_UNKNOWN, source: name })],
+        window: WINDOW,
+      });
+
+    const blank = unnamedBy("   ");
+    expect(blank.unnamedSources).toBe(1);
+    expect(sourceOf(blank, SOURCE_UNKNOWN)?.source).toBeNull();
+    expect(sourceOf(blank, SOURCE_A)?.source).toBe("ticketmaster");
+
+    const named = unnamedBy("setlistfm");
+    expect(named.unnamedSources).toBe(0);
+    expect(sourceOf(named, SOURCE_UNKNOWN)?.source).toBe("setlistfm");
+  });
+
   it("puts each rejection in the week it happened, zeros included", () => {
     const bandsintown = sourceOf(values, SOURCE_B);
     expect(bandsintown?.weeks.map((week) => week.weekStart)).toEqual([

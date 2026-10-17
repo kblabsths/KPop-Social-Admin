@@ -470,9 +470,9 @@ export type EditDecision =
  *
  * It answers nothing about whether the path is OPEN. A resolver-owned column
  * is allowed here and still refuses at the write when the settlement function
- * is absent, which is the graded normal case of this whole milestone: the
- * surface asks the seam, and the refusal names what is missing rather than
- * this map pretending to know (ARCHITECTURE §9.2).
+ * is absent — a graded case, never an error: the surface asks the seam, and
+ * the refusal names what is missing rather than this map pretending to know
+ * (ARCHITECTURE §9.2, which is also where what is installed where is stated).
  */
 export function decideEdit(table: string, field: string): EditDecision {
   const config = editConfigFor(table);

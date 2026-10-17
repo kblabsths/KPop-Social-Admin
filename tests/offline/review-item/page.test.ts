@@ -138,13 +138,13 @@ async function renderItem(script: Script, id: string): Promise<string> {
 }
 
 /**
- * The close's own read, in the state this database is really in.
+ * The close's own read, in the absent world.
  *
  * `readSettlementReadiness` reads the presence of the verdict log
- * (ARCHITECTURE.md §9.2), which is absent on staging and in production and
- * stays absent for the whole of M2 — so every script below carries that
- * absence by default and the close slot renders its not-provisioned card.
- * `withSettlement` is the other half, for the ready state.
+ * (ARCHITECTURE.md §9.2, which is also where what is installed on which
+ * database is stated). Every script below withholds it by default, so the
+ * close slot renders its not-provisioned card; `withSettlement` is the other
+ * half, for the ready state.
  */
 const SETTLEMENT_ABSENT: Script = {
   [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
@@ -1156,8 +1156,8 @@ describe("the per-shape sweeps grade every Shape the app declares", () => {
 
 describe("the close, with the verdict log absent", () => {
   it("renders no control at all, on any shape", async () => {
-    // The graded-first state and the one `main` deploys against: the function
-    // that settles is not installed, so the slot offers nothing — no verdict
+    // The absent world, graded first: this fixture withholds the function
+    // that settles, so the slot offers nothing — no verdict
     // action, no note field, and no disabled button standing in for one
     // (spec §10's one forbidden move is a workaround; this is the absence of
     // one).
@@ -3081,8 +3081,8 @@ describe("a queues address that is not a review-item id", () => {
       expect(stub.tablesRead(), "the item is read").toContain(T.reviewItems);
       // ...and what came back is rendered as the item, not as any state card.
       // The close is excluded and graded on its own: its state belongs to a
-      // different read (the settlement readiness), which on this database —
-      // and on staging — is the absent one.
+      // different read (the settlement readiness), which this fixture
+      // answers with the absent world.
       const $ = cheerio.load(markup);
       const outsideTheClose = $("[data-state]")
         .toArray()

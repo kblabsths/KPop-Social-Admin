@@ -73,10 +73,10 @@ export interface QueueWeek {
    *
    * `review_items` carries `opened_at` and `last_evidence_at` and no settle
    * timestamp (migration `20260901000002`); when an item settled is a
-   * `verdicts` fact, and `verdicts` does not exist until M2's handoff
-   * migration is installed. A gauge that cannot compute a figure says so
-   * rather than fabricating a zero — a week of "0 settles" and a week whose
-   * settles are unknowable tune the escalation cutoffs in opposite directions.
+   * `verdicts` fact, and this gauge reads `review_items` alone. A gauge that
+   * cannot compute a figure says so rather than fabricating a zero — a week
+   * of "0 settles" and a week whose settles are unknowable tune the
+   * escalation cutoffs in opposite directions.
    */
   settled: number | null;
 }
