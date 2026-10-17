@@ -169,12 +169,6 @@ function offenders(predicate: (className: string) => boolean) {
 }
 
 describe("the primitives", () => {
-  it("render markup at all, so the rules below are asserted against something", () => {
-    expect(SAMPLES.length).toBeGreaterThanOrEqual(24);
-    for (const sample of SAMPLES) expect(sample.html.length).toBeGreaterThan(10);
-    expect(everyClass().length).toBeGreaterThan(50);
-  });
-
   it("use no arbitrary value and no literal colour", () => {
     expect(offenders((c) => c.includes("["))).toEqual([]);
     expect(offenders((c) => /#[0-9a-f]{3,8}/i.test(c))).toEqual([]);

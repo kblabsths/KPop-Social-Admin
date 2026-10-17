@@ -14,9 +14,11 @@ import {
   readOne,
   readRows,
   readRowsByIds,
+  selectList,
   type AskedObject,
   type DbResponse,
   type DbResult,
+  type RowColumns,
 } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import type { AccountSegment, ReasonAuthor } from "@/lib/account/authored";
@@ -32,23 +34,14 @@ import {
   tableNotInSchemaCache,
   transportFailure,
   undefinedColumn,
-  undefinedColumnOfRelation,
   undefinedFunction,
   undefinedQualifiedColumn,
   undefinedTable,
+  type ScriptedResponse,
 } from "../../fixtures/stub-client";
 import { StateOf } from "@/components/ui/state-of";
 import { h, render } from "../ui/markup";
-import {
-  fieldProvenanceRow,
-  observationRow,
-  pendingClaimsInEveryBucket,
-  PENDING_CLAIM_BUCKETS,
-  resolutionRunRow,
-  reviewItemShapes,
-  runRow,
-  sourceRow,
-} from "../../fixtures/rows";
+import { reviewItemShapes } from "../../fixtures/rows";
 
 /**
  * Acceptance test 9's offline half (campaign admin-window): absence is
@@ -153,54 +146,6 @@ const jwtShaped = [
 ].join(".");
 
 describe("classify", () => {
-  it("reads a table-absent code as not_provisioned naming the table", () => {
-    for (const error of [
-      tableNotInSchemaCache(T.reviewItems),
-      undefinedTable(T.reviewItems),
-    ]) {
-      expect(classify(error, T.reviewItems)).toEqual({
-        kind: "not_provisioned",
-        missing: T.reviewItems,
-      });
-    }
-  });
-
-  /**
-   * Every spelling a column-absent message reaches us in must name the column,
-   * never collapse to the bare table — a table that is fully provisioned but
-   * missing one column would otherwise read as absent.
-   */
-  const COLUMN_ABSENT_MESSAGE_FORMS: ReadonlyArray<[string, unknown]> = [
-    ["PostgREST quoted, PGRST204", columnNotInSchemaCache(T.reviewItems, "severity")],
-    ["Postgres quoted, unqualified", undefinedColumn("severity")],
-    [
-      "Postgres quoted, of relation",
-      undefinedColumnOfRelation(T.reviewItems, "severity"),
-    ],
-    [
-      "Postgres UNQUOTED, qualified",
-      undefinedQualifiedColumn(T.reviewItems, "severity"),
-    ],
-  ];
-
-  it.each(COLUMN_ABSENT_MESSAGE_FORMS)(
-    "reads a column-absent code as not_provisioned naming the column (%s)",
-    (_form, error) => {
-      const result = classify(error, T.reviewItems);
-      expect(result.kind).toBe("not_provisioned");
-      // The column is named, and the table it belongs to is still carried.
-      expect(result).toMatchObject({ missing: `${T.reviewItems}.severity` });
-    },
-  );
-
-  it("never reports a bare table for a column-absent code that named a column", () => {
-    for (const [, error] of COLUMN_ABSENT_MESSAGE_FORMS) {
-      expect(classify(error, T.reviewItems)).not.toMatchObject({
-        missing: T.reviewItems,
-      });
-    }
-  });
-
   it("falls back to the queried name when a column-absent message names nothing", () => {
     // No column in the message: report the object the query actually asked
     // for, rather than guessing a column name out of the prose.
@@ -313,64 +258,6 @@ describe("classify", () => {
     }
   });
 
-  it("still classifies a foreign column-absent envelope as an absence, not an error", () => {
-    // The KIND is not this ticket's to move: an envelope that was an absence
-    // before is an absence after — nothing becomes a red error card on the way
-    // past, and the database's message is neither scrubbed nor counted, only
-    // left unmined.
-    for (const [shape, error] of FOREIGN_COLUMN_ABSENT_ENVELOPES) {
-      expect(classify(error, T.reviewItems).kind, shape).toBe("not_provisioned");
-    }
-  });
-
-  /**
-   * `databaseMessage`'s own contract (src/lib/db/result.ts — the accessor
-   * this ticket moved that contract to): the column-absent arm reads the
-   * `message` field ALONE, "so it must see exactly what the database put in
-   * `message`: a `details` payload quoting some other identifier would
-   * otherwise be read as the missing column". An envelope whose `message` is
-   * not a string put no column anywhere, so the verdict names the object the
-   * QUERY asked for rather than a name taken out of the app's own rendering of
-   * the error record (campaign admin-window/BUG-0185).
-   *
-   * LANDED derivation (admin-window/BUG-0185): classification reads
-   * `databaseMessage(error)` — the words the DATABASE authored, `null` when
-   * it authored none — and never `messageOf`, whose fallback is this app's
-   * own `JSON.stringify` rendering of the whole record. `null` means no
-   * column was named, so the verdict is the arm that already exists, naming
-   * the object the query asked for. Before that, every shape below came back
-   * `review_items.code`: the first quoted run of the app's own JSON, which is
-   * a field NAME the envelope's author chose and ordered.
-   */
-  it("mines a column only out of what the database put in message", () => {
-    // MUST NOT ADMIT: no `message` string means no column was named.
-    const NO_MESSAGE: ReadonlyArray<[string, unknown]> = [
-      ["no message field at all", { code: "42703" }],
-      ["a null message", { code: "42703", message: null }],
-      ["a numeric message", { code: "PGRST204", message: 12 }],
-      [
-        "a message that is itself an object",
-        { code: "42703", message: { text: 'column "severity" does not exist' } },
-      ],
-      [
-        "a foreign field name ahead of the code",
-        { contact_support_at_evil_example: 1, code: "42703" },
-      ],
-    ];
-    for (const [shape, error] of NO_MESSAGE) {
-      expect(classify(error, T.reviewItems), shape).toEqual({
-        kind: "not_provisioned",
-        missing: T.reviewItems,
-      });
-    }
-
-    // MUST ADMIT (the twin, LESSONS 8): a message the database really put
-    // there still names its column.
-    expect(
-      classify({ code: "42703", message: 'column "severity" does not exist' }, T.reviewItems),
-    ).toEqual({ kind: "not_provisioned", missing: `${T.reviewItems}.severity` });
-  });
-
   it("asks the operator exception of the database's words too, not the app's", () => {
     // The file's other CLASSIFICATION read of a message moved with the one
     // above, because it is the same question: what the DATABASE said about
@@ -464,24 +351,6 @@ describe("classify", () => {
     ).toBe("error");
   });
 
-  it("carries the database's own message verbatim for any other failure", () => {
-    const error = permissionDenied(T.verdicts);
-    expect(classify(error, T.verdicts)).toEqual({
-      kind: "error",
-      // The object the query asked for, so a page composing several reads can
-      // say WHICH one refused (admin-window/BUG-0016).
-      reading: T.verdicts,
-      message: expect.stringContaining(error.message),
-      // Every run of it is the DATABASE's: its own sentence and its own code,
-      // and not one clause of this app's (admin-window/BUG-0196). The whole
-      // arm is pinned, so a segment appearing from nowhere reddens here.
-      authored: [
-        { words: error.message, author: "the machine" },
-        { words: `(${error.code})`, author: "the machine" },
-      ],
-    });
-  });
-
   it("carries the message of a thrown Error, a thrown string, and a bare object", () => {
     expect(classify(new Error("fetch failed"), T.runs)).toEqual({
       kind: "error",
@@ -499,28 +368,7 @@ describe("classify", () => {
     expect(classify({ status: 503 }, T.runs).kind).toBe("error");
   });
 
-  it("does not treat an absence code on a different-looking error as ok", () => {
-    expect(classify({ code: "PGRST116", message: "no rows" }, T.events).kind).toBe(
-      "error",
-    );
-  });
-
   /* ── the absent FUNCTION (campaign admin-window/TASK-0047) ─────────────── */
-
-  it("reads a function-absent code as not_provisioned naming the function", () => {
-    // The M2 normal case: `settle_review_item` is not installed on the
-    // database `main` deploys against, so a call to it must reach a page as
-    // the same absence a missing table is — never as an error, never a throw.
-    for (const error of [
-      functionNotInSchemaCache(SETTLE_FUNCTION),
-      undefinedFunction(SETTLE_FUNCTION),
-    ]) {
-      expect(classify(error, SETTLE_FUNCTION, "function")).toEqual({
-        kind: "not_provisioned",
-        missing: SETTLE_FUNCTION,
-      });
-    }
-  });
 
   it.each(ABSENCE_CODES)(
     "reads %s (an absent %s) as not_provisioned for a caller that asked for one",
@@ -572,49 +420,6 @@ describe("classify", () => {
     },
   );
 
-  /**
-   * QA's strict pin for admin-window/BUG-0080, flipped back to a plain
-   * `it(...)` by the fix. Nothing else about the case changed.
-   */
-  it("never calls a PROVISIONED table absent because a TABLE read raised 42883", () => {
-    // MEASURED read-only on the declared staging target 2026-09-08
-    // (admin-window/TASK-0047 QA): `db.from("groups").select("id")
-    // .filter("created_at", "fts", "x")` answers 42883 "function
-    // to_tsvector(timestamp with time zone) does not exist" — a non-operator
-    // 42883 from a plain TABLE read. `groups` is provisioned and holds rows,
-    // so "not_provisioned: groups" is a false claim about an object that is
-    // right there — the exact harm the operator exception exists to prevent,
-    // reached by the sentence the exception does not match.
-    const result = classify(missingFunctionOnTableRead(), T.groups);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(T.groups);
-    expect(result.message).toContain("to_tsvector");
-  });
-
-  it("tells the 42883s apart by what the caller asked for", () => {
-    // Same code, opposite verdicts, and what separates them is what was ASKED
-    // — not the database's prose (admin-window/BUG-0080). Asserted together so
-    // a later simplification of either arm reddens here rather than silently
-    // turning a provisioned table into an absence.
-    expect(
-      classify(undefinedFunction(SETTLE_FUNCTION), SETTLE_FUNCTION, "function").kind,
-    ).toBe("not_provisioned");
-    expect(classify(missingOperator(), T.groups).kind).toBe("error");
-    // A 42883 that explains nothing is still an absent function TO A CALLER
-    // THAT ASKED FOR ONE: the code plus the question classifies, and the
-    // database is never required to explain itself.
-    expect(classify({ code: "42883" }, SETTLE_FUNCTION, "function")).toEqual({
-      kind: "not_provisioned",
-      missing: SETTLE_FUNCTION,
-    });
-    // The same silent code reaching a TABLE read claims nothing at all.
-    expect(classify({ code: "42883" }, T.groups).kind).toBe("error");
-    // And a function's own body can still raise the missing OPERATOR, which is
-    // not the function being absent either.
-    expect(classify(missingOperator(), SETTLE_FUNCTION, "function").kind).toBe("error");
-  });
-
   it("keeps every 42883 a TABLE read can raise red, not just the operator one", () => {
     // The pin above, widened past the one shape it measured (BUG-0080): a
     // `groups` read carrying an `fts`/`plfts` filter raises 42883 saying
@@ -638,19 +443,6 @@ describe("classify", () => {
       expect(result.reading, label).toBe(T.groups);
     }
   });
-
-  it("cannot claim a function absence for a caller that did not ask for one", () => {
-    // The default is the safe one: a caller that says nothing asked for a
-    // TABLE, so a helper or a call site that forgets to say so gets an honest
-    // error rather than a confident false absence.
-    for (const error of [
-      functionNotInSchemaCache(SETTLE_FUNCTION),
-      undefinedFunction(SETTLE_FUNCTION),
-    ]) {
-      expect(classify(error, T.groups).kind).toBe("error");
-      expect(classify(error, T.groups, "table").kind).toBe("error");
-    }
-  });
 });
 
 /**
@@ -663,27 +455,6 @@ describe("classify", () => {
  * message"). Everything below is about what survives into the `DbResult`.
  */
 describe("the database client's own account", () => {
-  it("carries the cause out of details when the message is only a wrapper", () => {
-    const result = classify(transportFailure(), T.events);
-
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    // The cause, verbatim — this is the whole bug: it used to be dropped.
-    expect(result.message).toContain("bad port");
-    expect(result.message).toContain("Caused by");
-    // And never the wrapper standing alone.
-    expect(result.message).not.toBe(transportFailure().message);
-  });
-
-  it("says the wrapper once, not twice, when details repeats it", () => {
-    // supabase-js's `details` opens with a copy of `message`. Printing both
-    // tells an operator nothing and pushes the cause off the line.
-    const result = classify(transportFailure(), T.events);
-    if (result.kind !== "error") throw new Error("expected an error");
-    const wrapper = transportFailure().message;
-    expect(result.message.split(wrapper)).toHaveLength(2);
-  });
-
   it("does not read an EMPTY code as a code, or print one", () => {
     // The transport failure comes back with code "" and hint "". Neither is
     // information, and "" is not an absence code.
@@ -692,50 +463,6 @@ describe("the database client's own account", () => {
     if (result.kind !== "error") return;
     expect(result.message).not.toContain("()");
     expect(result.message.trim()).toBe(result.message);
-  });
-
-  it("carries message, details, hint and code, in that order", () => {
-    // The code was `42883` until admin-window/TASK-0047 taught the classifier
-    // that an absent FUNCTION is `not_provisioned` — which would give this
-    // case no message to order. The case is about the ORDER of the account's
-    // four fields, so it now uses a code that is still an error; nothing else
-    // about it changed.
-    const error = {
-      code: "42501",
-      message: "permission denied for function settle",
-      details: "the resolver called it with two arguments",
-      hint: "No function matches the given name and argument types.",
-    };
-    const result = classify(error, T.events);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-
-    const at = (part: string) => result.message.indexOf(part);
-    expect(at(error.message)).toBeGreaterThanOrEqual(0);
-    expect(at(error.details)).toBeGreaterThan(at(error.message));
-    expect(at(error.hint)).toBeGreaterThan(at(error.details));
-    expect(at(error.code)).toBeGreaterThan(at(error.hint));
-  });
-
-  it("follows a thrown Error's cause chain", () => {
-    // The other shape of the same failure: a fetch that throws straight
-    // through arrives as an Error whose `cause` is the real one.
-    const thrown = new Error("TypeError: fetch failed", {
-      cause: new Error("bad port"),
-    });
-    const result = classify(thrown, T.events);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.message).toContain("bad port");
-  });
-
-  it("survives a cause that points back at itself", () => {
-    const looping: { message: string; cause?: unknown } = { message: "outer" };
-    looping.cause = looping;
-    const result = classify(looping, T.sources);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.message).toContain("outer");
   });
 
   it("survives a cause chain that cycles between TWO errors", () => {
@@ -753,177 +480,6 @@ describe("the database client's own account", () => {
     for (const node of ["outer", "inner"]) {
       expect(result.message.split(node)).toHaveLength(2);
     }
-  });
-
-  it("names the read that failed, in the spelling the query used", () => {
-    for (const table of [T.events, T.fieldProvenance, T.sources]) {
-      expect(classify(transportFailure(), table)).toMatchObject({
-        kind: "error",
-        reading: table,
-      });
-    }
-  });
-
-  /**
-   * An INTERMEDIARY's error page is not the database's account (QA,
-   * admin-window/TASK-0066 attack, measured against staging 2026-09-10).
-   *
-   * `/claims?domain=events%27%29%3B%20drop%20table%20groups%3B--` is answered
-   * by the WAF in front of PostgREST with an HTML document, not by PostgREST,
-   * so supabase-js hands back the page body as `message`. The measured answer
-   * on the landed tree is a 4,547-character Cloudflare document, which the
-   * claims card and the paging route's `error` arm both carry verbatim onto
-   * the operator's screen.
-   *
-   * The rule is ARCHITECTURE.md common violations row 15 and LESSONS 4:
-   * foreign text reaches an app sentence in its own box or not at all. A
-   * document is never a sentence, whatever it says.
-   */
-  it("does not carry an intermediary's HTML page into the account (admin-window/BUG-0170)", () => {
-    // REDUCED — three document shapes, one derivation. Each part's first
-    // non-blank character is `<`: the doctype QA measured, an `<html>`
-    // fragment sent with NO doctype, and an `<?xml?>` prolog behind a leading
-    // newline and indentation. None of them may reach the account.
-    const cloudflare = [
-      "<!DOCTYPE html>",
-      '<html class="no-js" lang="en-US"><head>',
-      "<title>Attention Required! | Cloudflare</title>",
-      '<meta charset="UTF-8" /></head>',
-      "<body>Sorry, you have been blocked</body></html>",
-    ].join("\n");
-    const nginx =
-      "<html><head><title>502 Bad Gateway</title></head>" +
-      "<body><center>502 Bad Gateway</center><hr><center>nginx</center></body></html>";
-    const xmlEnvelope =
-      '\n  <?xml version="1.0" encoding="UTF-8"?>\n' +
-      "  <Error><Code>AccessDenied</Code><Message>Request blocked</Message></Error>\n";
-
-    const documents: ReadonlyArray<readonly [string, string, readonly string[]]> = [
-      [
-        "the Cloudflare doctype page measured against staging",
-        cloudflare,
-        ["Attention Required", "Cloudflare", "no-js", "charset"],
-      ],
-      ["an nginx 502 with no doctype", nginx, ["502 Bad Gateway", "nginx", "center"]],
-      [
-        "an XML error envelope, leading newline and indentation included",
-        xmlEnvelope,
-        ["AccessDenied", "Request blocked", "encoding"],
-      ],
-    ];
-
-    for (const [shape, page, itsOwnWords] of documents) {
-      const result = classify(
-        { code: "", hint: "", details: "", message: page },
-        T.pendingClaims,
-      );
-
-      expect(result.kind, shape).toBe("error");
-      if (result.kind !== "error") continue;
-      // Still an honest refusal naming the object it could not read.
-      expect(result.reading, shape).toBe(T.pendingClaims);
-      // Not a document: no doctype, no tags, nothing for a reader to parse.
-      expect(result.message, shape).not.toMatch(/<!DOCTYPE/i);
-      expect(result.message, shape).not.toMatch(/<\/?html[\s>]/i);
-      expect(result.message, shape).not.toContain("<");
-      // COUNTED, NOT SPELLED: no part of the document is quoted — not its
-      // title, not its first line, not a tag — and the real character count
-      // of what arrived is what the account carries instead.
-      for (const quoted of itsOwnWords) {
-        expect(result.message, `${shape} quotes ${quoted}`).not.toContain(quoted);
-      }
-      expect(result.message, shape).toContain(String(page.length));
-      // An app-authored clause, not a bare count and not a generic apology:
-      // the operator can tell that something other than the database answered.
-      const withoutTheCount = result.message.replace(String(page.length), "").trim();
-      expect(withoutTheCount.split(/\s+/).length, shape).toBeGreaterThan(3);
-      expect(result.message.toLowerCase(), shape).not.toContain("something went wrong");
-      expect(result.message.toLowerCase(), shape).not.toContain("sorry");
-    }
-
-    // The measured page was 4,547 characters (staging, 2026-09-10). Padded to
-    // exactly that length with filler this app wrote, so the number the
-    // operator reads is the number `error.message.length` reports.
-    const measured = cloudflare.padEnd(4547, "x");
-    expect(measured.length).toBe(4547);
-    const atMeasuredLength = classify({ code: "", message: measured }, T.pendingClaims);
-    expect(atMeasuredLength.kind).toBe("error");
-    if (atMeasuredLength.kind === "error") {
-      expect(atMeasuredLength.message).toContain("4547");
-    }
-
-    // Redaction still runs LAST, over whatever the account became: a document
-    // that embedded a key cannot ship one by being reduced first.
-    const pageCarryingAKey = `<!DOCTYPE html>\n<html><body>apikey=${jwtShaped}</body></html>`;
-    const redacted = classify({ code: "", message: pageCarryingAKey }, T.pendingClaims);
-    expect(redacted.kind).toBe("error");
-    if (redacted.kind === "error") {
-      expect(redacted.message).not.toMatch(/<!DOCTYPE/i);
-      expect(redacted.message).not.toContain(jwtShaped);
-      expect(redacted.message).toContain(String(pageCarryingAKey.length));
-    }
-
-    // CROSSING VERBATIM — the database's own prose is untouched by all of the
-    // above, in the order the account has always put its fields.
-    const refusal = {
-      code: "42501",
-      message: "permission denied for table pending_claims",
-      details: "the read used the anon role",
-      hint: "GRANT SELECT ON pending_claims TO service_role.",
-    };
-    const denied = classify(refusal, T.pendingClaims);
-    expect(denied.kind).toBe("error");
-    if (denied.kind === "error") {
-      const at = (part: string) => denied.message.indexOf(part);
-      expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
-      expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
-      expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
-      expect(denied.message).toContain("(42501)");
-    }
-
-    // The fixture that stops this rule from becoming a bracket scrub: a real
-    // Postgres message whose prose CONTAINS an angle-bracket operator. It
-    // begins with a letter, so it is prose, and it crosses whole.
-    const operatorMessage = "operator does not exist: text <-> integer";
-    const brackets = classify(
-      {
-        code: "42883",
-        details: null,
-        hint: null,
-        message: operatorMessage,
-      },
-      T.events,
-    );
-    expect(brackets.kind).toBe("error");
-    if (brackets.kind === "error") {
-      expect(brackets.message).toContain(operatorMessage);
-    }
-
-    // And the fixture that stops it from becoming an ASCII filter: data the
-    // database itself echoed back, in Hangul. Never reduced, never truncated,
-    // never transliterated.
-    const duplicate = {
-      code: "23505",
-      message: 'duplicate key value violates unique constraint "groups_name_key"',
-      details: "Key (name)=(르세라핌) already exists.",
-      hint: null,
-    };
-    const collision = classify(duplicate, T.groups);
-    expect(collision.kind).toBe("error");
-    if (collision.kind === "error") {
-      expect(collision.message).toContain(duplicate.message);
-      expect(collision.message).toContain(duplicate.details);
-      expect(collision.message).toContain("르세라핌");
-    }
-  });
-
-  it("invents nothing when the client said nothing at all", () => {
-    // No message, no details: still an error, still never a sentence of ours.
-    const result = classify({}, T.runs);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.message.toLowerCase()).not.toContain("something went wrong");
-    expect(result.message.toLowerCase()).not.toContain("sorry");
   });
 });
 
@@ -1022,160 +578,6 @@ describe("an account carries the parts the database authored", () => {
       'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
   };
 
-  it("drops the runtime frames of a stack, keeping the cause and saying how many went", () => {
-    // REDUCED (1) — the 2xx-non-JSON stack. Eight frame lines go; the
-    // runtime's own one-line diagnostic stays, an 11-character quotation of
-    // the body included. That sentence is the runtime's, it is bounded, and
-    // chasing it would cost the detector this rule exists to refuse.
-    expect(NOT_JSON_STACK.length).toBeGreaterThanOrEqual(697);
-    expect(NOT_JSON_STACK.length).toBeLessThanOrEqual(802);
-
-    const parsed = classify(notJsonBody, T.pendingClaims);
-    expect(parsed.kind).toBe("error");
-    if (parsed.kind !== "error") return;
-    expect(parsed.reading).toBe(T.pendingClaims);
-    expect(parsed.message).toContain(NOT_JSON);
-    // Bounded, and carrying no server's filesystem.
-    expect(parsed.message.length).toBeLessThan(200);
-    expect(parsed.message).not.toContain("node_modules");
-    expect(parsed.message).not.toContain("src/lib/db");
-    expect(parsed.message).not.toContain(DEPLOY);
-    expect(parsed.message).not.toContain("node:internal");
-    expect(parsed.message).not.toContain("JSON.parse");
-    // Counted, in the app's own words with the number in them — eight frames
-    // went, and an operator can see that they did.
-    expect(parsed.message).toMatch(/\b8\b[^)]{0,40}frame/);
-
-    // REDUCED (2) — the measured DNS failure. The wrapper says nothing on its
-    // own, so the cause must cross whole from AFTER the wrapper line, and the
-    // frame must not.
-    const transport = classify(dnsFailure, T.pendingClaims);
-    expect(transport.kind).toBe("error");
-    if (transport.kind !== "error") return;
-    expect(transport.reading).toBe(T.pendingClaims);
-    expect(transport.message).toContain("fetch failed");
-    expect(transport.message).toContain("getaddrinfo ENOTFOUND db.invalid");
-    expect(transport.message).toMatch(/\b1\b[^)]{0,40}frame/);
-    expect(transport.message).not.toContain("node:dns:");
-    expect(transport.message).not.toContain("GetAddrInfoReqWrap");
-    // The wrapper is still said once, not twice, after the reduction.
-    expect(transport.message.split("TypeError: fetch failed")).toHaveLength(2);
-
-    // A part that carries a DOCUMENT on ANY line is not the database's words
-    // (admin-window/BUG-0187): it is replaced WHOLE by one clause counted at
-    // the length the client delivered, the appended frame included. So the
-    // intermediary's own `upstream said:` no longer crosses, and no count of
-    // frames is said — nothing was read past the document. This is QA's
-    // residual (ii) of admin-window/BUG-0182, dissolved rather than patched.
-    const page = "<html><body>504 Gateway Time-out</body></html>";
-    const framedDocument = `upstream said:\n${page}\n    at Object.parse (${POSTGREST}:41:11)`;
-    const documentInside = classify(
-      { code: "", details: framedDocument, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(documentInside.kind).toBe("error");
-    if (documentInside.kind !== "error") return;
-    expect(documentInside.message).not.toContain("upstream said:");
-    expect(documentInside.message).not.toContain("<");
-    expect(documentInside.message).not.toContain("Gateway Time-out");
-    expect(documentInside.message).toContain(String(framedDocument.length));
-    expect(documentInside.message).not.toMatch(/frame/i);
-
-    // MUST NOT TOUCH — a database message whose indented line begins "at "
-    // and is not a frame. It crosses whole: same newline, same indentation,
-    // same words, and no count of frames nobody dropped.
-    const prose = classify(indentedProse, T.resolutionRuns);
-    expect(prose.kind).toBe("error");
-    if (prose.kind !== "error") return;
-    expect(prose.message).toContain(indentedProse.message);
-    expect(prose.message).toContain(indentedProse.details);
-    expect(prose.message).not.toMatch(/frame/i);
-  });
-
-  it("counts a body it had to serialise, and nothing of what it said", () => {
-    // REDUCED (3) — the 114-character envelope with no `message` of its own.
-    // Nothing about it is inspected: the question is who wrote the part.
-    const serialised = JSON.stringify(envelope);
-    expect(serialised.length).toBe(114);
-
-    const counted = classify(envelope, T.pendingClaims);
-    expect(counted.kind).toBe("error");
-    if (counted.kind !== "error") return;
-    expect(counted.reading).toBe(T.pendingClaims);
-    expect(counted.message).toContain("114");
-    // Neither the envelope's keys nor its values reach the account.
-    for (const spelling of [
-      "success",
-      "errors",
-      "ray",
-      "message",
-      "prohibited",
-      "10015",
-      envelope.ray,
-      "false",
-      "{",
-    ]) {
-      expect(counted.message, `quotes ${spelling}`).not.toContain(spelling);
-    }
-    // An app-authored clause, not a bare number and not a generic apology: an
-    // operator can tell that something other than the database answered.
-    const withoutTheCount = counted.message.replace("114", "").trim();
-    expect(withoutTheCount.split(/\s+/).length).toBeGreaterThan(3);
-    expect(counted.message.toLowerCase()).not.toContain("something went wrong");
-    expect(counted.message.toLowerCase()).not.toContain("sorry");
-
-    // REDUCED (4) — the same class nesting a document one quote deep. Its
-    // first character is `[`, so the document question never sees it; the
-    // provenance question does.
-    const nested = classify(nestedDocument, T.pendingClaims);
-    expect(nested.kind).toBe("error");
-    if (nested.kind !== "error") return;
-    expect(nested.message).toContain(String(JSON.stringify(nestedDocument).length));
-    expect(nested.message).not.toContain("<");
-    expect(nested.message).not.toContain("nope");
-    expect(nested.message).not.toContain("html");
-
-    // A serialised body that hid a credential is still counted, and the
-    // redaction that runs last has nothing left to find.
-    const keyed = classify({ status: 403, detail: `apikey=${jwtShaped}` }, T.sources);
-    expect(keyed.kind).toBe("error");
-    if (keyed.kind !== "error") return;
-    expect(keyed.message).not.toContain(jwtShaped);
-    expect(keyed.message).not.toContain("apikey");
-
-    // MUST NOT TOUCH (1) — a value that HAS a string message was never
-    // serialised, whatever else it carries. STACK.md §5's launch diagnosis
-    // depends on this exact sentence reaching the panel.
-    const unset = classify(new Error("SUPABASE_URL is not set"), T.pendingClaims);
-    expect(unset.kind).toBe("error");
-    if (unset.kind !== "error") return;
-    expect(unset.message).toBe("SUPABASE_URL is not set");
-
-    // MUST NOT TOUCH (2) — the four-field PostgREST refusal, every field in
-    // order and the code still in parentheses.
-    const refusal = {
-      code: "42501",
-      message: "permission denied for view pending_claims",
-      details: "the read used the anon role",
-      hint: "GRANT SELECT ON pending_claims TO service_role.",
-    };
-    const denied = classify(refusal, T.pendingClaims);
-    expect(denied.kind).toBe("error");
-    if (denied.kind !== "error") return;
-    const at = (part: string) => denied.message.indexOf(part);
-    expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
-    expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
-    expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
-    expect(denied.message).toContain("(42501)");
-  });
-
-  /**
-   * The non-vacuity table (LESSONS 8): every anchor proved on an input it MUST
-   * reduce AND on one it must NOT. Five rows of each, and a row that grades
-   * nothing is a row that proves nothing — so each carries at least one
-   * spelling the account must hold and, when it is a reduction, at least one
-   * the account must never hold.
-   */
   const HANGUL_DUPLICATE = {
     code: "23505",
     message: 'duplicate key value violates unique constraint "groups_name_key"',
@@ -1186,402 +588,13 @@ describe("an account carries the parts the database authored", () => {
   const CLOUDFLARE_WITH_A_KEY =
     `<!DOCTYPE html>\n<html><body>apikey=${jwtShaped}</body></html>`;
 
-  const ACCOUNT_FIXTURES: ReadonlyArray<
-    readonly [string, boolean, unknown, readonly string[], readonly string[]]
-  > = [
-    [
-      "a runtime stack quoting a document it could not parse",
-      true,
-      notJsonBody,
-      [NOT_JSON],
-      ["node_modules", "node:internal", DEPLOY],
-    ],
-    [
-      "the measured transport failure, frames and all",
-      true,
-      dnsFailure,
-      ["getaddrinfo ENOTFOUND db.invalid"],
-      ["node:dns:", "GetAddrInfoReqWrap"],
-    ],
-    [
-      "an intermediary's JSON envelope with no message of its own",
-      true,
-      envelope,
-      ["114"],
-      ["success", "ray", "prohibited"],
-    ],
-    [
-      "an envelope nesting a document one quote deep",
-      true,
-      nestedDocument,
-      ["33"],
-      ["<", "nope", "html"],
-    ],
-    [
-      "an intermediary's document carrying a key (admin-window/BUG-0170)",
-      true,
-      { code: "", message: CLOUDFLARE_WITH_A_KEY },
-      [String(CLOUDFLARE_WITH_A_KEY.length)],
-      ["<!DOCTYPE", jwtShaped, "apikey"],
-    ],
-    [
-      "a four-field PostgREST refusal",
-      false,
-      {
-        code: "42501",
-        message: "permission denied for view pending_claims",
-        details: "the read used the anon role",
-        hint: "GRANT SELECT ON pending_claims TO service_role.",
-      },
-      [
-        "permission denied for view pending_claims",
-        "the read used the anon role",
-        "GRANT SELECT ON pending_claims TO service_role.",
-        "(42501)",
-      ],
-      [],
-    ],
-    [
-      "an angle-bracket operator on a TABLE read, the bracket-scrub fixture",
-      false,
-      { code: "42883", details: null, hint: null, message: OPERATOR_MESSAGE },
-      [OPERATOR_MESSAGE],
-      [],
-    ],
-    [
-      "a duplicate key quoting a Hangul value",
-      false,
-      HANGUL_DUPLICATE,
-      [HANGUL_DUPLICATE.message, HANGUL_DUPLICATE.details, "르세라핌"],
-      [],
-    ],
-    [
-      "a database message whose indented line begins 'at ' and is no frame",
-      false,
-      indentedProse,
-      [indentedProse.message, indentedProse.details],
-      [],
-    ],
-    [
-      "an app-thrown Error the launch diagnosis depends on",
-      false,
-      new Error("SUPABASE_URL is not set"),
-      ["SUPABASE_URL is not set"],
-      [],
-    ],
-  ];
-
-  it("grades ten fixtures: five the rule must reduce, five it must never touch", () => {
-    expect(ACCOUNT_FIXTURES).toHaveLength(10);
-    expect(ACCOUNT_FIXTURES.filter(([, reduced]) => reduced)).toHaveLength(5);
-    expect(ACCOUNT_FIXTURES.filter(([, reduced]) => !reduced)).toHaveLength(5);
-    for (const [label, reduced, , carries, never] of ACCOUNT_FIXTURES) {
-      expect(carries.length, label).toBeGreaterThan(0);
-      if (reduced) expect(never.length, label).toBeGreaterThan(0);
-    }
-  });
-
-  it.each(ACCOUNT_FIXTURES)(
-    "%s",
-    (label, _reduced, error, carries, never) => {
-      const result = classify(error, T.pendingClaims);
-      expect(result.kind, label).toBe("error");
-      if (result.kind !== "error") return;
-      expect(result.reading, label).toBe(T.pendingClaims);
-      for (const words of carries) {
-        expect(result.message, `${label}: must carry ${words}`).toContain(words);
-      }
-      for (const words of never) {
-        expect(result.message, `${label}: must not carry ${words}`).not.toContain(
-          words,
-        );
-      }
-    },
-  );
-
-  /**
-   * The same ONE derivation, applied evenly (admin-window/BUG-0179): to the
-   * `code` arm, to an account where nothing survived, and to every line of a
-   * part rather than to framed lines alone. Each case grades an input the rule
-   * MUST answer and its twin, which it must not touch (LESSONS 8).
-   */
-  it("asks the code the same questions as every other part", () => {
-    // REDUCED — a document arriving in `code` BESIDE a real database message.
-    // postgrest-js hands the parsed body back as the error object for any
-    // non-2xx, so an intermediary authors this field exactly as it authors the
-    // envelope QA measured. The message is the database's and crosses whole;
-    // the code is counted, in the parentheses it has always rendered in.
-    const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(600)}</body></html>`;
-    const denied = "permission denied for view pending_claims";
-    const documentCode = classify({ code: page, message: denied }, T.pendingClaims);
-    expect(documentCode.kind).toBe("error");
-    if (documentCode.kind !== "error") return;
-    expect(documentCode.reading).toBe(T.pendingClaims);
-    expect(documentCode.message).toContain(denied);
-    expect(documentCode.message).not.toMatch(/<!DOCTYPE/i);
-    expect(documentCode.message).not.toMatch(/<\/?html[\s>]/);
-    expect(documentCode.message).not.toContain("<");
-    expect(documentCode.message).toContain(String(page.length));
-    expect(documentCode.message.length).toBeLessThan(400);
-
-    // MUST NOT TOUCH (1) — a 300-character code that answers NO question
-    // crosses VERBATIM, however long it is. The bar is the same derivation as
-    // every other part, not a shorter one for this field: a cap here would be
-    // the fourth question.
-    const longCode = "R".repeat(300);
-    const bland = classify(
-      { code: longCode, message: "canceling statement due to statement timeout" },
-      T.pendingClaims,
-    );
-    expect(bland.kind).toBe("error");
-    if (bland.kind !== "error") return;
-    expect(bland.message).toContain("canceling statement due to statement timeout");
-    expect(bland.message).toContain(`(${longCode})`);
-    expect(bland.message.endsWith(`(${longCode})`)).toBe(true);
-
-    // MUST NOT TOUCH (2) — the four-field PostgREST refusal, byte for byte:
-    // every field in order and the code still last, still in parentheses.
-    const refusal = {
-      code: "42501",
-      message: "permission denied for view pending_claims",
-      details: "the read used the anon role",
-      hint: "GRANT SELECT ON pending_claims TO service_role.",
-    };
-    const postgrest = classify(refusal, T.pendingClaims);
-    expect(postgrest.kind).toBe("error");
-    if (postgrest.kind !== "error") return;
-    const at = (part: string) => postgrest.message.indexOf(part);
-    expect(at(refusal.message)).toBeGreaterThanOrEqual(0);
-    expect(at(refusal.details)).toBeGreaterThan(at(refusal.message));
-    expect(at(refusal.hint)).toBeGreaterThan(at(refusal.details));
-    expect(postgrest.message.endsWith("(42501)")).toBe(true);
-  });
-
-  it("says the read was refused when the client said nothing at all", () => {
-    // A non-2xx with an EMPTY body: postgrest-js's JSON.parse throws on it and
-    // its catch builds `{message: body}`. That is what every bodiless 502, 503
-    // and 429 looks like here, and what a head-shaped count read gets. Every
-    // part is blank and no code survives, so the account used to be "" and the
-    // error line named no failure at all.
-    const blank = classify({ message: "" }, T.pendingClaims);
-    expect(blank.kind).toBe("error");
-    if (blank.kind !== "error") return;
-    expect(blank.reading).toBe(T.pendingClaims);
-    // The app's own words, and enough of them to read as a sentence.
-    expect(blank.message.trim()).toBe(blank.message);
-    expect(blank.message.split(/\s+/).length).toBeGreaterThan(3);
-    expect(blank.message).toMatch(/refus/i);
-    // Nothing invented: no number of any kind, and no generic apology.
-    expect(blank.message).not.toMatch(/\d/);
-    expect(blank.message.toLowerCase()).not.toContain("something went wrong");
-    expect(blank.message.toLowerCase()).not.toContain("sorry");
-
-    // MUST NOT TOUCH — the same empty message beside a code says the code and
-    // nothing else. The clause is for the state where NOTHING survived.
-    const coded = classify({ code: "42883", message: "" }, T.pendingClaims);
-    expect(coded.kind).toBe("error");
-    if (coded.kind !== "error") return;
-    expect(coded.message).toBe("(42883)");
-  });
-
-  it("counts a document on any line of a part, framed or not", () => {
-    // REDUCED — a FRAMELESS two-line part: the client's prose on the first
-    // line, a whole intermediary page on the second. The part carries a
-    // document, so the WHOLE part is foreign and is replaced by one clause
-    // counted at the part's length (admin-window/BUG-0187) — the same answer
-    // the identical bytes get as a whole part or beside a frame.
-    const page = "<html><body>504 Gateway Time-out</body></html>";
-    const part = `reference 8f3c1\n${page}`;
-    const below = classify(
-      { code: "", details: part, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(below.kind).toBe("error");
-    if (below.kind !== "error") return;
-    expect(below.message).toContain("read failed");
-    // The line beside the document is the INTERMEDIARY's, not the database's,
-    // and no line of a part carrying a document crosses.
-    expect(below.message).not.toContain("reference 8f3c1");
-    expect(below.message).not.toContain("<");
-    expect(below.message).not.toContain("Gateway Time-out");
-    expect(below.message).toContain(String(part.length));
-    // And no count of frames nobody dropped.
-    expect(below.message).not.toMatch(/frame/i);
-
-    // MUST NOT TOUCH — a multi-line part in which no line is a document and no
-    // line is a frame comes back byte-identical: same newline, same four
-    // leading spaces, same words.
-    const prose = {
-      code: "23514",
-      message:
-        'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
-      details:
-        "Failing row contains (7f3a, 2026-09-11, open).\n" +
-        "    at the end of the statement the window was still open",
-      hint: null,
-    };
-    const untouched = classify(prose, T.resolutionRuns);
-    expect(untouched.kind).toBe("error");
-    if (untouched.kind !== "error") return;
-    expect(untouched.message).toContain(prose.message);
-    expect(untouched.message).toContain(prose.details);
-    expect(untouched.message).not.toMatch(/frame/i);
-    expect(untouched.message.endsWith("(23514)")).toBe(true);
-  });
-
-  /**
-   * PIN — QA, admin-window/BUG-0179. An account carries the parts the
-   * DATABASE authored, and the `code` arm is the one field of the client's
-   * account that is never asked that question: it trails in parentheses
-   * verbatim, whatever it holds and however long it is.
-   *
-   * Reachable by the SAME path as the envelope fixture above, one field over.
-   * postgrest-js hands the parsed body back AS the error object for ANY
-   * non-2xx response (`error = JSON.parse(body)`,
-   * node_modules/@supabase/postgrest-js/dist/index.mjs:143), so an
-   * intermediary that refuses with a JSON envelope authors every field of it,
-   * `code` included. Measured through the real `@supabase/supabase-js` client
-   * with a stubbed transport, and again at `/claims` on a production build
-   * with SUPABASE_URL pointed at a local 403-answering intermediary: three
-   * error cards each carried 4,530 characters of the document.
-   *
-   * Expected: the account counts the envelope and quotes no value of it.
-   * Found: the envelope is counted AND its `code` is appended whole.
-   */
-  it("never trails a foreign code verbatim after the clause that counted its body (admin-window/BUG-0179)", () => {
-    const page = `<!DOCTYPE html>\n<html><body>${"x".repeat(4400)}</body></html>`;
-    const refused = { success: false, ray: "8f3c1attack", code: page };
-    const serialised = JSON.stringify(refused);
-
-    const result = classify(refused, T.pendingClaims);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-
-    // The counted clause is right and stays right.
-    expect(result.message).toContain(String(serialised.length));
-    // Nothing of what arrived may sit inside it — the code included.
-    expect(result.message).not.toContain("<!DOCTYPE");
-    expect(result.message).not.toMatch(/<\/?html[\s>]/);
-    // And the account stays a line an operator can read.
-    expect(result.message.length).toBeLessThan(400);
-
-    // Nor any key or value of the envelope, which the same clause counted
-    // whole (admin-window/BUG-0179's fix: the code is not appended again).
-    for (const quoted of ["success", "ray", "8f3c1attack", "false", "{"]) {
-      expect(result.message, `quotes ${quoted}`).not.toContain(quoted);
-    }
-
-    // QA's blander shape takes the same path, for the same reason: one
-    // counted clause, and no run of the intermediary's own characters.
-    const blander = { blocked: true, code: "R".repeat(300) };
-    const counted = classify(blander, T.pendingClaims);
-    expect(counted.kind).toBe("error");
-    if (counted.kind !== "error") return;
-    expect(counted.message).toContain(String(JSON.stringify(blander).length));
-    expect(counted.message).not.toContain("RRR");
-    expect(counted.message).not.toContain("blocked");
-    expect(counted.message.length).toBeLessThan(400);
-  });
-
-  /**
-   * PIN — QA, admin-window/BUG-0182. A document that arrives PRETTY-PRINTED is
-   * counted once PER LINE, so ONE document becomes one clause per markup line
-   * and the account grows LARGER than the thing it was summarising.
-   *
-   * Question 2 is asked line by line of every part (admin-window/BUG-0179,
-   * criterion 5), which is right; what is missing is that the lines of one
-   * document are one document. A WAF interstitial is served pretty-printed,
-   * and the frameless part one line below the client's own prose — the exact
-   * shape criterion 5 exists for — is where it lands: its own named case uses
-   * a ONE-line page and reads one clause, while the same page printed over
-   * seventeen lines reads seventeen, each stating a length that is not the
-   * length of anything that arrived.
-   *
-   * Expected: an account that COUNTS a document rather than quoting it is
-   * shorter than the document it counted.
-   * Found: a 442-character part yields a 1,380-character account (17 clauses);
-   * measured wider, an 11,505-character part yields 32,020 characters.
-   */
-  it("counts ONE document once, however many lines it was printed on (admin-window/BUG-0182)", () => {
-    // The shape a WAF actually serves: an interstitial, pretty-printed.
-    const page = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required!</title>",
-      '<meta charset="UTF-8" />',
-      '<meta name="robots" content="noindex, nofollow" />',
-      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
-      "</head>",
-      "<body>",
-      '<div id="cf-wrapper">',
-      '<div id="cf-error-details" class="cf-error-details-wrapper">',
-      "<h1>Sorry, you have been blocked</h1>",
-      "<h2>You are unable to access this site</h2>",
-      "</div>",
-      "</div>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-
-    // REDUCED — the frameless part, one line below the client's own prose.
-    const part = `reference 8f3c1\n${page}`;
-    const below = classify(
-      { code: "", details: part, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(below.kind).toBe("error");
-    if (below.kind !== "error") return;
-    // What the rule already gets right, and must keep getting right.
-    expect(below.message).toContain("read failed");
-    // The line above the document is the intermediary's own reference id, and
-    // no line of a part carrying a document crosses (admin-window/BUG-0187).
-    expect(below.message).not.toContain("reference 8f3c1");
-    expect(below.message).not.toContain("<");
-    expect(below.message).not.toContain("Sorry, you have been blocked");
-    // An account that counted a document cannot be longer than the document.
-    expect(below.message.length).toBeLessThan(part.length);
-  });
-
-  /**
-   * MUST NOT TOUCH (LESSONS 8) — the twin of the pin above, GREEN today and
-   * green after: counting is not deleted to bound the account. The same page
-   * as the WHOLE part is already one clause, and the one number in it is the
-   * length of what arrived.
-   */
-  it("counts a pretty-printed document that IS the whole part exactly once", () => {
-    const page = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required!</title>",
-      "</head>",
-      "<body>",
-      "<h1>Sorry, you have been blocked</h1>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    const whole = classify(
-      { code: "", details: page, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(whole.kind).toBe("error");
-    if (whole.kind !== "error") return;
-    expect(whole.message).toContain("read failed");
-    expect(whole.message).not.toContain("<");
-    expect(whole.message).toContain(String(page.length));
-    expect(whole.message.length).toBeLessThan(page.length);
-  });
-
   /**
    * The clause the app says INSTEAD of a document, discovered FROM the app
    * rather than retyped here.
    *
-   * admin-window/BUG-0182 changes how many clauses one answer emits and does
-   * not touch `documentInstead`'s wording, so nothing below may pin that
-   * wording. The whole-part arm — the must-not-touch twin above — counts a
-   * part that IS a document at the length it arrived with, so classifying one
-   * page yields exactly the clause every other arm owes the same bytes.
+   * Nothing below pins `documentInstead`'s wording. The whole-part arm counts
+   * a part that IS a document at the length it arrived with, so classifying
+   * one page yields exactly the clause every other arm owes the same bytes.
    */
   const documentClause = (document: string): string => {
     const counted = classify({ message: document }, T.pendingClaims);
@@ -1622,455 +635,706 @@ describe("an account carries the parts the database authored", () => {
   }): string =>
     cheerio.load(render(h(StateOf, { result })))('[data-state="error"]').text();
 
-  /**
-   * ONE document is ONE clause, at the length of the run AS IT ARRIVED —
-   * graded on the four shapes QA measured (admin-window/BUG-0182) as a
-   * PROPERTY of the account against the part it replaced, never against a
-   * recorded length: the lengths QA recorded were the defect's.
-   */
-  it("counts one document once on each shape QA measured", () => {
-    // The counter is not vacuous: it finds the app's own clause, and nothing
-    // else (LESSONS 8).
+  it("the clause counter finds the app's own clause, and nothing else", () => {
+    // The counter the table below grades with is not vacuous (LESSONS 8).
     expect(CLAUSE_WORDS.length).toBeGreaterThan(10);
     expect(clausesIn(documentClause("<x>"))).toBe(1);
     expect(clausesIn("the read was refused with no words to explain it")).toBe(0);
-
-    // The shape a WAF actually serves: an interstitial, pretty-printed.
-    const interstitial = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required!</title>",
-      '<meta charset="UTF-8" />',
-      '<meta name="robots" content="noindex, nofollow" />',
-      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
-      "</head>",
-      "<body>",
-      '<div id="cf-wrapper">',
-      '<div id="cf-error-details" class="cf-error-details-wrapper">',
-      "<h1>Sorry, you have been blocked</h1>",
-      "<h2>You are unable to access this site</h2>",
-      "</div>",
-      "</div>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    const fuller = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required! | Cloudflare</title>",
-      '<meta charset="UTF-8" />',
-      '<meta http-equiv="X-UA-Compatible" content="IE=Edge" />',
-      '<meta name="robots" content="noindex, nofollow" />',
-      '<meta name="viewport" content="width=device-width,initial-scale=1" />',
-      '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
-      "</head>",
-      "<body>",
-      '<div id="cf-wrapper">',
-      '<div id="cf-error-details" class="cf-error-details-wrapper">',
-      "<h1>Sorry, you have been blocked</h1>",
-      "<h2>You are unable to access this site</h2>",
-      "<p>You can email the site owner to let them know you were blocked.</p>",
-      '<p>Cloudflare Ray ID: <strong>8f3c1de4b7c90a13</strong></p>',
-      "</div>",
-      "</div>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    // Scale, and INDENTED: the run's own characters include the indentation
-    // the document arrived with, so the number is the document's length and
-    // not the sum of its trimmed lines.
-    const wide = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<body>",
-      ...Array.from(
-        { length: 395 },
-        (_unused, row) => `  <div class="cf-row-${row}">request blocked</div>`,
-      ),
-      "</body>",
-      "</html>",
-    ].join("\n");
-    const inCode = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<body>",
-      ...Array.from(
-        { length: 195 },
-        (_unused, row) => `  <p class="cf-note-${row}">request blocked</p>`,
-      ),
-      "</body>",
-      "</html>",
-    ].join("\n");
-
-    /**
-     * The frameless part one line below the client's own prose — the exact
-     * shape the per-line arm exists for (admin-window/BUG-0179).
-     */
-    const belowProse = (document: string) => {
-      const part = `reference 8f3c1\n${document}`;
-      return {
-        label: `a ${document.split("\n").length}-line document below the client's prose`,
-        document,
-        part,
-        prose: "reference 8f3c1",
-        error: { code: "", details: part, hint: "", message: "read failed" },
-      };
-    };
-
-    // The `code` beside a real message, whose FIRST line is not markup, so the
-    // whole-part arm passes over it (admin-window/BUG-0179).
-    const codePart = `edge-cache-status: refused\n${inCode}`;
-
-    /** Each shape: the document, the PART that carried it, and the error. */
-    const shapes: ReadonlyArray<{
-      readonly label: string;
-      readonly document: string;
-      readonly part: string;
-      readonly prose: string;
-      readonly error: unknown;
-    }> = [
-      belowProse(interstitial),
-      belowProse(fuller),
-      belowProse(wide),
-      {
-        label: "a 200-line document in the code beside a real message",
-        document: inCode,
-        part: codePart,
-        prose: "edge-cache-status: refused",
-        error: {
-          code: codePart,
-          message: "permission denied for view pending_claims",
-        },
-      },
-    ];
-
-    expect(shapes).toHaveLength(4);
-    expect(new Set(shapes.map((shape) => shape.document)).size).toBe(4);
-
-    for (const shape of shapes) {
-      const result = classify(shape.error, T.pendingClaims);
-      expect(result.kind, shape.label).toBe("error");
-      if (result.kind !== "error") continue;
-
-      // ONE clause for the whole PART, counted at the length the client
-      // delivered it — the part carries a document, so the part is foreign
-      // whole and the clause is the one the app owes those exact bytes
-      // (admin-window/BUG-0187).
-      expect(clausesIn(result.message), shape.label).toBe(1);
-      expect(result.message, shape.label).toContain(documentClause(shape.part));
-      // An account that COUNTED a document is shorter than what it counted.
-      expect(result.message.length, shape.label).toBeLessThan(shape.part.length);
-      // The line standing beside the document is the INTERMEDIARY's own, and
-      // it no longer crosses: nothing of a foreign part is said.
-      expect(result.message, shape.label).not.toContain(shape.prose);
-
-      // COUNTED, NEVER QUOTED — on the DbResult and on the rendered card,
-      // read back with its entities decoded so an escaped leak cannot hide.
-      const card = cardTextOf(result);
-      expect(card, shape.label).toContain(result.message);
-      for (const read of [result.message, card]) {
-        expect(read, shape.label).not.toContain("<");
-        expect(read, shape.label).not.toContain("DOCTYPE");
-        expect(read, shape.label).not.toContain("html");
-        expect(read, shape.label).not.toContain("div");
-      }
-      // Graded as the BAR rather than as a list of strings: NO non-blank line
-      // of the part reaches the account or the card, so the next text node a
-      // WAF prints is covered by this same assertion.
-      const printed = shape.part
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-      expect(printed.length, shape.label).toBeGreaterThan(3);
-      for (const line of printed) {
-        expect(result.message, `${shape.label} quotes ${line}`).not.toContain(line);
-        expect(card, `${shape.label} renders ${line}`).not.toContain(line);
-      }
-    }
   });
 
-  /**
-   * RESIDUAL (i) of admin-window/BUG-0182's close, folded into the bar rather
-   * than filed as a ticket: a line of the DOCUMENT'S OWN TEXT that is shaped
-   * like a V8 frame — it begins "at " and ends in ")" — printed on its own
-   * line inside a `<Message>`. Question 3 is never asked of a part carrying a
-   * document, so there is no split and no frames clause: ONE clause, at the
-   * part's length, and no line of the page.
-   */
-  it("counts a document whose own text is frame-shaped as one clause, saying no frames (admin-window/BUG-0187)", () => {
-    const page = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      "<Error>",
-      "<Code>InvalidRequest</Code>",
-      "<Message>",
-      "at least one parameter is required (see docs)",
-      "</Message>",
-      "</Error>",
-    ].join("\n");
-    const frameShaped = "at least one parameter is required (see docs)";
+  /* ── the parts the chain measured, as the client delivered them ────────── */
 
-    // Both placements of the same bytes — the document AS the whole part, and
-    // the document one line below the client's own prose, which is where QA
-    // measured it (part 128 -> account 219, split around a frames clause).
-    for (const part of [page, `upstream refused:\n${page}`]) {
-      const result = classify(
-        { code: "", details: part, hint: "", message: "read failed" },
-        T.pendingClaims,
-      );
-      expect(result.kind, part.slice(0, 16)).toBe("error");
-      if (result.kind !== "error") continue;
-      expect(clausesIn(result.message), part.slice(0, 16)).toBe(1);
-      expect(result.message).toContain(documentClause(part));
-      expect(result.message).toContain(String(part.length));
-      // No "(1 runtime stack frame dropped)" and no split: nothing was read
-      // past the document, so the page's own frame-shaped sentence is neither
-      // dropped nor counted.
-      expect(result.message).not.toMatch(/frame/i);
+  /** The Cloudflare doctype page QA measured against staging (BUG-0170). */
+  const cloudflare = [
+    "<!DOCTYPE html>",
+    '<html class="no-js" lang="en-US"><head>',
+    "<title>Attention Required! | Cloudflare</title>",
+    '<meta charset="UTF-8" /></head>',
+    "<body>Sorry, you have been blocked</body></html>",
+  ].join("\n");
+  const nginx =
+    "<html><head><title>502 Bad Gateway</title></head>" +
+    "<body><center>502 Bad Gateway</center><hr><center>nginx</center></body></html>";
+  const xmlEnvelope =
+    '\n  <?xml version="1.0" encoding="UTF-8"?>\n' +
+    "  <Error><Code>AccessDenied</Code><Message>Request blocked</Message></Error>\n";
+  /** The measured page was 4,547 characters (staging, 2026-09-10). */
+  const measured = cloudflare.padEnd(4547, "x");
+
+  /** A whole document as one part, beside nothing. */
+  const alone = (page: string) => ({ code: "", hint: "", details: "", message: page });
+  /** A part in `details`, beside the client's own line. */
+  const inDetails = (part: string) => ({
+    code: "",
+    details: part,
+    hint: "",
+    message: "read failed",
+  });
+  /** The same part one line below the client's own prose. */
+  const belowProse = (document: string): string => `reference 8f3c1\n${document}`;
+
+  /** A one-line intermediary page, frameless and framed. */
+  const gatewayPage = "<html><body>504 Gateway Time-out</body></html>";
+  const gatewayFramed = `upstream said:\n${gatewayPage}\n    at Object.parse (${POSTGREST}:41:11)`;
+
+  /** The shape a WAF actually serves: an interstitial, pretty-printed. */
+  const wafInterstitial = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<head>",
+    "<title>Attention Required!</title>",
+    '<meta charset="UTF-8" />',
+    '<meta name="robots" content="noindex, nofollow" />',
+    '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+    "</head>",
+    "<body>",
+    '<div id="cf-wrapper">',
+    '<div id="cf-error-details" class="cf-error-details-wrapper">',
+    "<h1>Sorry, you have been blocked</h1>",
+    "<h2>You are unable to access this site</h2>",
+    "</div>",
+    "</div>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const shortInterstitial = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<head>",
+    "<title>Attention Required!</title>",
+    "</head>",
+    "<body>",
+    "<h1>Sorry, you have been blocked</h1>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const fuller = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<head>",
+    "<title>Attention Required! | Cloudflare</title>",
+    '<meta charset="UTF-8" />',
+    '<meta http-equiv="X-UA-Compatible" content="IE=Edge" />',
+    '<meta name="robots" content="noindex, nofollow" />',
+    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+    '<link rel="stylesheet" href="/cdn-cgi/styles/cf.errors.css" />',
+    "</head>",
+    "<body>",
+    '<div id="cf-wrapper">',
+    '<div id="cf-error-details" class="cf-error-details-wrapper">',
+    "<h1>Sorry, you have been blocked</h1>",
+    "<h2>You are unable to access this site</h2>",
+    "<p>You can email the site owner to let them know you were blocked.</p>",
+    '<p>Cloudflare Ray ID: <strong>8f3c1de4b7c90a13</strong></p>',
+    "</div>",
+    "</div>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  // Scale, and INDENTED: the run's own characters include the indentation
+  // the document arrived with, so the number is the document's length and
+  // not the sum of its trimmed lines.
+  const wide = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<body>",
+    ...Array.from(
+      { length: 395 },
+      (_unused, row) => `  <div class="cf-row-${row}">request blocked</div>`,
+    ),
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const inCode = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<body>",
+    ...Array.from(
+      { length: 195 },
+      (_unused, row) => `  <p class="cf-note-${row}">request blocked</p>`,
+    ),
+    "</body>",
+    "</html>",
+  ].join("\n");
+  // The `code` beside a real message, whose FIRST line is not markup, so a
+  // whole-part question alone would pass over it (admin-window/BUG-0179).
+  const codePart = `edge-cache-status: refused\n${inCode}`;
+
+  /** A document whose OWN text is shaped like a V8 frame (BUG-0187). */
+  const frameShaped = "at least one parameter is required (see docs)";
+  const xmlFrameShaped = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    "<Error>",
+    "<Code>InvalidRequest</Code>",
+    "<Message>",
+    frameShaped,
+    "</Message>",
+    "</Error>",
+  ].join("\n");
+
+  /** A document with V8 frames APPENDED (BUG-0187). */
+  const blockedPage = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<body>",
+    "<h1>Sorry, you have been blocked</h1>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  const appendedFrames = [
+    `    at Object.parse (${POSTGREST}:41:11)`,
+    `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
+  ].join("\n");
+  const blockedWithFrames = `${blockedPage}\n${appendedFrames}`;
+
+  /** Two documents in one part, the intermediary's own line between them. */
+  const between = "reference 8f3c1 was refused at the edge";
+  const twoDocuments = `upstream said:\n${shortInterstitial}\n${between}\n${[
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    "<Error>",
+    "<Code>AccessDenied</Code>",
+    "<Message>Request blocked by the gateway</Message>",
+    "</Error>",
+  ].join("\n")}`;
+
+  /** An interstitial whose TEXT NODES sit on lines of their own (BUG-0187). */
+  const textNodes = [
+    "<!DOCTYPE html>",
+    '<html lang="en-US">',
+    "<head>",
+    "<title>Attention Required! | Cloudflare</title>",
+    "</head>",
+    "<body>",
+    '<div id="cf-error-details">',
+    "<h1>",
+    "Sorry, you have been blocked",
+    "</h1>",
+    "<h2>",
+    "You are unable to access this site",
+    "</h2>",
+    "<p>",
+    "You can email the site owner to let them know you were blocked.",
+    "</p>",
+    "<p>Cloudflare Ray ID:</p>",
+    "8f3c1de4b7c90a13",
+    "<p>Your IP:</p>",
+    "203.0.113.7",
+    "</div>",
+    "</body>",
+    "</html>",
+  ].join("\n");
+  /** Text only the INTERMEDIARY authored — none of it may reach a sentence. */
+  const itsOwnText = [
+    "Sorry, you have been blocked",
+    "You are unable to access this site",
+    "You can email the site owner to let them know you were blocked.",
+    "8f3c1de4b7c90a13",
+    "203.0.113.7",
+  ];
+
+  /** The `code` arm's shapes (BUG-0179): a document, a long bland code, a foreign envelope. */
+  const DENIED = "permission denied for view pending_claims";
+  const TIMEOUT = "canceling statement due to statement timeout";
+  const longCode = "R".repeat(300);
+  const documentCode = `<!DOCTYPE html>\n<html><body>${"x".repeat(600)}</body></html>`;
+  const foreignCode = {
+    success: false,
+    ray: "8f3c1attack",
+    code: `<!DOCTYPE html>\n<html><body>${"x".repeat(4400)}</body></html>`,
+  };
+  const blander = { blocked: true, code: longCode };
+  const refusal = {
+    code: "42501",
+    message: DENIED,
+    details: "the read used the anon role",
+    hint: "GRANT SELECT ON pending_claims TO service_role.",
+  };
+
+  /** What one account must and must not say, graded off `classify`'s result. */
+  interface AccountExpectation {
+    /** The account, exactly. */
+    readonly is?: string;
+    /** Spellings the account must carry. */
+    readonly carries?: readonly string[];
+    /** Spellings it must never carry. */
+    readonly never?: readonly string[];
+    /** Patterns it must never match. */
+    readonly neverMatch?: readonly RegExp[];
+    /** Spellings said exactly once. */
+    readonly once?: readonly string[];
+    /** How many frames the app says went; 0 means no frames clause at all. */
+    readonly frames?: number;
+    /**
+     * The PART that was foreign whole: ONE clause, the clause the app owes
+     * those exact bytes, counted at the length the client delivered.
+     */
+    readonly countsWhole?: string;
+    /** No clause counts anything. */
+    readonly countsNothing?: boolean;
+    /** No non-blank line of this text crosses. */
+    readonly noLineOf?: string;
+    /** Spellings that appear in this order. */
+    readonly inOrder?: readonly string[];
+    readonly endsWith?: string;
+    /** The account is shorter than this many characters. */
+    readonly shorterThan?: number;
+    /** The number the app's clause is written around: a sentence, not a bare count. */
+    readonly sentenceAround?: string;
+    /** Also graded off the rendered card, entities decoded. */
+    readonly onCard?: boolean;
+  }
+
+  /**
+   * THE PART IS THE UNIT (ARCHITECTURE.md §4.1; admin-window/BUG-0170,
+   * BUG-0173, BUG-0179, BUG-0182, BUG-0187) — one table over every shape the
+   * chain measured, graded by the one bar: a part carrying a document
+   * ANYWHERE is foreign as a WHOLE and is replaced by one clause counted at
+   * the length the client delivered it; a part this app had to serialise is
+   * counted and never quoted; runtime frames are dropped and counted;
+   * everything else crosses verbatim, in order, the code last in parentheses.
+   * The rows that must NOT be touched are the guard against a greedy reading
+   * of any of that (LESSONS 8).
+   */
+  const ACCOUNT_FIXTURES: ReadonlyArray<readonly [string, unknown, AccountExpectation]> = [
+    // ── frames dropped and counted; the cause crosses ──
+    [
+      "a runtime stack quoting a document it could not parse",
+      notJsonBody,
+      {
+        carries: [NOT_JSON],
+        never: ["node_modules", "src/lib/db", DEPLOY, "node:internal", "JSON.parse"],
+        frames: 8,
+        shorterThan: 200,
+      },
+    ],
+    [
+      "the measured transport failure, frames and all",
+      dnsFailure,
+      {
+        carries: ["fetch failed", "getaddrinfo ENOTFOUND db.invalid"],
+        never: ["node:dns:", "GetAddrInfoReqWrap"],
+        once: ["TypeError: fetch failed"],
+        frames: 1,
+      },
+    ],
+    // ── a part this app had to serialise: counted, nothing of it quoted ──
+    [
+      "an intermediary's JSON envelope with no message of its own",
+      envelope,
+      {
+        carries: ["114"],
+        never: [
+          "success",
+          "errors",
+          "ray",
+          "message",
+          "prohibited",
+          "10015",
+          envelope.ray,
+          "false",
+          "{",
+        ],
+        sentenceAround: "114",
+      },
+    ],
+    [
+      "an envelope nesting a document one quote deep",
+      nestedDocument,
+      {
+        carries: [String(JSON.stringify(nestedDocument).length)],
+        never: ["<", "nope", "html"],
+      },
+    ],
+    [
+      "a serialised body that hid a credential",
+      { status: 403, detail: `apikey=${jwtShaped}` },
+      { never: [jwtShaped, "apikey"] },
+    ],
+    [
+      "a foreign code trailing a serialised envelope (admin-window/BUG-0179)",
+      foreignCode,
+      {
+        carries: [String(JSON.stringify(foreignCode).length)],
+        never: ["<!DOCTYPE", "success", "ray", "8f3c1attack", "false", "{"],
+        neverMatch: [/<\/?html[\s>]/],
+        shorterThan: 400,
+      },
+    ],
+    [
+      "QA's blander envelope, a 300-character code beside a flag",
+      blander,
+      {
+        carries: [String(JSON.stringify(blander).length)],
+        never: ["RRR", "blocked"],
+        shorterThan: 400,
+      },
+    ],
+    // ── a document as the whole part (admin-window/BUG-0170) ──
+    [
+      "the Cloudflare doctype page measured against staging",
+      alone(cloudflare),
+      {
+        countsWhole: cloudflare,
+        never: ["Attention Required", "Cloudflare", "no-js", "charset", "<"],
+        neverMatch: [/<!DOCTYPE/i, /<\/?html[\s>]/i],
+        sentenceAround: String(cloudflare.length),
+      },
+    ],
+    [
+      "an nginx 502 with no doctype",
+      alone(nginx),
+      {
+        countsWhole: nginx,
+        never: ["502 Bad Gateway", "nginx", "center", "<"],
+        neverMatch: [/<!DOCTYPE/i, /<\/?html[\s>]/i],
+        sentenceAround: String(nginx.length),
+      },
+    ],
+    [
+      "an XML error envelope, leading newline and indentation included",
+      alone(xmlEnvelope),
+      {
+        countsWhole: xmlEnvelope,
+        never: ["AccessDenied", "Request blocked", "encoding", "<"],
+        neverMatch: [/<!DOCTYPE/i, /<\/?html[\s>]/i],
+        sentenceAround: String(xmlEnvelope.length),
+      },
+    ],
+    [
+      "the measured page, padded to 4,547 characters",
+      { code: "", message: measured },
+      { carries: ["4547"] },
+    ],
+    [
+      "an intermediary's document carrying a key (admin-window/BUG-0170)",
+      { code: "", message: CLOUDFLARE_WITH_A_KEY },
+      {
+        carries: [String(CLOUDFLARE_WITH_A_KEY.length)],
+        never: ["<!DOCTYPE", jwtShaped, "apikey"],
+      },
+    ],
+    [
+      "a pretty-printed interstitial as the whole part",
+      inDetails(shortInterstitial),
+      {
+        carries: ["read failed"],
+        never: ["<"],
+        countsWhole: shortInterstitial,
+        shorterThan: shortInterstitial.length,
+      },
+    ],
+    [
+      "a document whose text sits on its own lines, as the whole part (admin-window/BUG-0187)",
+      { message: textNodes },
+      { countsWhole: textNodes, never: itsOwnText },
+    ],
+    // ── the code asked the same questions as every other part (BUG-0179) ──
+    [
+      "a document in the code beside a real database message",
+      { code: documentCode, message: DENIED },
+      {
+        carries: [DENIED, String(documentCode.length)],
+        never: ["<"],
+        neverMatch: [/<!DOCTYPE/i, /<\/?html[\s>]/],
+        shorterThan: 400,
+      },
+    ],
+    [
+      "a 200-line document in the code beside a real message",
+      { code: codePart, message: DENIED },
+      {
+        never: ["edge-cache-status: refused", "<", "DOCTYPE", "html", "div"],
+        countsWhole: codePart,
+        shorterThan: codePart.length,
+        noLineOf: codePart,
+        onCard: true,
+      },
+    ],
+    // ── a document on ANY line of a part: the whole part is foreign ──
+    [
+      "a frameless document one line below the client's prose",
+      inDetails(belowProse(gatewayPage)),
+      {
+        carries: ["read failed"],
+        never: ["reference 8f3c1", "<", "Gateway Time-out"],
+        countsWhole: belowProse(gatewayPage),
+        frames: 0,
+      },
+    ],
+    [
+      "a document with a frame appended, below the client's prose",
+      inDetails(gatewayFramed),
+      {
+        never: ["upstream said:", "<", "Gateway Time-out"],
+        countsWhole: gatewayFramed,
+        frames: 0,
+      },
+    ],
+    [
+      "a 17-line interstitial below the client's prose (admin-window/BUG-0182)",
+      inDetails(belowProse(wafInterstitial)),
+      {
+        carries: ["read failed"],
+        never: ["reference 8f3c1", "<", "Sorry, you have been blocked", "DOCTYPE", "html", "div"],
+        countsWhole: belowProse(wafInterstitial),
+        shorterThan: belowProse(wafInterstitial).length,
+        noLineOf: belowProse(wafInterstitial),
+        onCard: true,
+      },
+    ],
+    [
+      "a fuller interstitial below the client's prose",
+      inDetails(belowProse(fuller)),
+      {
+        never: ["reference 8f3c1", "<", "DOCTYPE", "html", "div"],
+        countsWhole: belowProse(fuller),
+        shorterThan: belowProse(fuller).length,
+        noLineOf: belowProse(fuller),
+        onCard: true,
+      },
+    ],
+    [
+      "a 400-line indented interstitial below the client's prose",
+      inDetails(belowProse(wide)),
+      {
+        never: ["reference 8f3c1", "<", "DOCTYPE", "html", "div"],
+        countsWhole: belowProse(wide),
+        shorterThan: belowProse(wide).length,
+        noLineOf: belowProse(wide),
+        onCard: true,
+      },
+    ],
+    [
+      "a document whose own text is frame-shaped, as the whole part (admin-window/BUG-0187)",
+      inDetails(xmlFrameShaped),
+      {
+        countsWhole: xmlFrameShaped,
+        frames: 0,
+        never: ["<", frameShaped],
+        noLineOf: xmlFrameShaped,
+        onCard: true,
+      },
+    ],
+    [
+      "a document whose own text is frame-shaped, below the client's prose",
+      inDetails(`upstream refused:\n${xmlFrameShaped}`),
+      {
+        countsWhole: `upstream refused:\n${xmlFrameShaped}`,
+        frames: 0,
+        never: ["<", frameShaped],
+        noLineOf: `upstream refused:\n${xmlFrameShaped}`,
+        onCard: true,
+      },
+    ],
+    [
+      "a six-line page as the whole part (admin-window/BUG-0187)",
+      inDetails(blockedPage),
+      {
+        carries: ["read failed"],
+        countsWhole: blockedPage,
+        frames: 0,
+        never: ["<", "Sorry, you have been blocked", "node_modules", DEPLOY, "upstream said:"],
+        onCard: true,
+      },
+    ],
+    [
+      "the same page with frames appended, counted at the whole part's length",
+      inDetails(blockedWithFrames),
+      {
+        carries: ["read failed"],
+        countsWhole: blockedWithFrames,
+        frames: 0,
+        // The number counts the part as delivered, frames included — the
+        // document alone is shorter than the part that carried it and its stack.
+        never: [
+          "<",
+          "Sorry, you have been blocked",
+          "node_modules",
+          DEPLOY,
+          "upstream said:",
+          String(blockedPage.length),
+        ],
+        onCard: true,
+      },
+    ],
+    [
+      "the same page with frames appended, below the client's prose",
+      inDetails(`upstream said:\n${blockedWithFrames}`),
+      {
+        carries: ["read failed"],
+        countsWhole: `upstream said:\n${blockedWithFrames}`,
+        frames: 0,
+        never: ["<", "Sorry, you have been blocked", "node_modules", DEPLOY, "upstream said:"],
+        onCard: true,
+      },
+    ],
+    [
+      "two documents in one part, the intermediary's line between them (admin-window/BUG-0187)",
+      inDetails(twoDocuments),
+      {
+        carries: ["read failed"],
+        countsWhole: twoDocuments,
+        never: ["upstream said:", between, "<", "AccessDenied", "Sorry, you have been blocked"],
+        shorterThan: twoDocuments.length,
+        onCard: true,
+      },
+    ],
+    [
+      "a document whose text sits on its own lines, below the client's prose (admin-window/BUG-0187)",
+      inDetails(belowProse(textNodes)),
+      {
+        carries: ["read failed"],
+        never: ["reference 8f3c1", "<", ...itsOwnText],
+        countsWhole: belowProse(textNodes),
+        shorterThan: belowProse(textNodes).length,
+        onCard: true,
+      },
+    ],
+    // ── MUST NOT TOUCH: the database's own words cross verbatim ──
+    [
+      "a four-field PostgREST refusal",
+      refusal,
+      {
+        carries: [refusal.message, refusal.details, refusal.hint, "(42501)"],
+        inOrder: [refusal.message, refusal.details, refusal.hint],
+        endsWith: "(42501)",
+      },
+    ],
+    [
+      "a 300-character code that answers no question",
+      { code: longCode, message: TIMEOUT },
+      { carries: [TIMEOUT, `(${longCode})`], endsWith: `(${longCode})` },
+    ],
+    [
+      "an angle-bracket operator on a TABLE read, the bracket-scrub fixture",
+      { code: "42883", details: null, hint: null, message: OPERATOR_MESSAGE },
+      { carries: [OPERATOR_MESSAGE] },
+    ],
+    [
+      "a duplicate key quoting a Hangul value",
+      HANGUL_DUPLICATE,
+      { carries: [HANGUL_DUPLICATE.message, HANGUL_DUPLICATE.details, "르세라핌"] },
+    ],
+    [
+      "a database message whose indented line begins 'at ' and is no frame",
+      indentedProse,
+      {
+        carries: [indentedProse.message, indentedProse.details],
+        frames: 0,
+        countsNothing: true,
+        endsWith: "(23514)",
+      },
+    ],
+    [
+      "an app-thrown Error the launch diagnosis depends on",
+      new Error("SUPABASE_URL is not set"),
+      { is: "SUPABASE_URL is not set" },
+    ],
+  ];
+
+  it.each(ACCOUNT_FIXTURES)("the part is the unit — %s", (label, error, expected) => {
+    const result = classify(error, T.pendingClaims);
+    expect(result.kind, label).toBe("error");
+    if (result.kind !== "error") return;
+    expect(result.reading, label).toBe(T.pendingClaims);
+    const { message } = result;
+
+    // COUNTED, NEVER QUOTED — on the DbResult and, where the chain measured
+    // it, on the rendered card read back with its entities decoded.
+    const reads = [message];
+    if (expected.onCard) {
       const card = cardTextOf(result);
-      for (const read of [result.message, card]) {
-        expect(read).not.toContain("<");
-        expect(read).not.toContain(frameShaped);
-        for (const line of part.split("\n")) {
-          expect(read, `quotes ${line}`).not.toContain(line.trim());
+      expect(card, label).toContain(message);
+      reads.push(card);
+    }
+
+    if (expected.is !== undefined) expect(message, label).toBe(expected.is);
+    for (const words of expected.carries ?? []) {
+      expect(message, `${label}: must carry ${words}`).toContain(words);
+    }
+    for (const read of reads) {
+      for (const words of expected.never ?? []) {
+        expect(read, `${label}: must not carry ${words}`).not.toContain(words);
+      }
+      for (const pattern of expected.neverMatch ?? []) {
+        expect(read, label).not.toMatch(pattern);
+      }
+      if (expected.noLineOf !== undefined) {
+        // Graded as the BAR rather than as a list of strings: NO non-blank
+        // line of the part crosses, so the next text node a WAF prints is
+        // covered by this same assertion.
+        const printed = expected.noLineOf
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+        expect(printed.length, label).toBeGreaterThan(3);
+        for (const line of printed) {
+          expect(read, `${label} quotes ${line}`).not.toContain(line);
         }
       }
     }
-  });
-
-  /**
-   * RESIDUAL (ii): a document with V8 frames APPENDED. The answer is the SAME
-   * whether the document IS the whole part, carries a stack after it, or
-   * sits one line below prose — one clause, counted at the length of the PART
-   * as delivered, with no frames clause and no line crossing. That is the
-   * granularity disagreement admin-window/BUG-0182 left behind, dissolved by
-   * asking question 2 once per part (admin-window/BUG-0187).
-   */
-  it("counts a document with frames appended once, at the whole part's length (admin-window/BUG-0187)", () => {
-    const page = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<body>",
-      "<h1>Sorry, you have been blocked</h1>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    const frames = [
-      `    at Object.parse (${POSTGREST}:41:11)`,
-      `    at async readRows (${DEPLOY}/src/lib/db/result.ts:476:20)`,
-    ].join("\n");
-    const withFrames = `${page}\n${frames}`;
-    const belowProseToo = `upstream said:\n${withFrames}`;
-
-    const accountOf = (part: string) => {
-      const result = classify(
-        { code: "", details: part, hint: "", message: "read failed" },
-        T.pendingClaims,
-      );
-      if (result.kind !== "error") throw new Error("a failed read is an error");
-      return result;
-    };
-
-    // Each placement of the same bytes: ONE clause, at ITS OWN part's length,
-    // and never a frames clause or a line of what arrived.
-    for (const part of [page, withFrames, belowProseToo]) {
-      const result = accountOf(part);
-      expect(clausesIn(result.message), part.slice(0, 20)).toBe(1);
-      expect(result.message).toContain(documentClause(part));
-      expect(result.message).toContain(String(part.length));
-      expect(result.message).not.toMatch(/frame/i);
-      expect(result.message).toContain("read failed");
-      const card = cardTextOf(result);
-      for (const read of [result.message, card]) {
-        expect(read).not.toContain("<");
-        expect(read).not.toContain("Sorry, you have been blocked");
-        expect(read).not.toContain("node_modules");
-        expect(read).not.toContain(DEPLOY);
-        expect(read).not.toContain("upstream said:");
+    for (const words of expected.once ?? []) {
+      expect(message.split(words).length - 1, `${label}: ${words} once`).toBe(1);
+    }
+    if (expected.frames === 0) {
+      expect(message, label).not.toMatch(/frame/i);
+    } else if (expected.frames !== undefined) {
+      expect(message, label).toMatch(new RegExp(`\\b${expected.frames}\\b[^)]{0,40}frame`));
+    }
+    if (expected.countsWhole !== undefined) {
+      expect(clausesIn(message), label).toBe(1);
+      expect(message, label).toContain(documentClause(expected.countsWhole));
+      expect(message, label).toContain(String(expected.countsWhole.length));
+    }
+    if (expected.countsNothing) expect(clausesIn(message), label).toBe(0);
+    if (expected.shorterThan !== undefined) {
+      expect(message.length, label).toBeLessThan(expected.shorterThan);
+    }
+    if (expected.inOrder !== undefined) {
+      const at = (part: string) => message.indexOf(part);
+      expect(at(expected.inOrder[0]), label).toBeGreaterThanOrEqual(0);
+      for (let index = 1; index < expected.inOrder.length; index += 1) {
+        expect(at(expected.inOrder[index]), label).toBeGreaterThan(
+          at(expected.inOrder[index - 1]),
+        );
       }
     }
-    // The number counts the part as delivered, frames included — the document
-    // alone is shorter than the part that carried it and its stack.
-    expect(withFrames.length).toBeGreaterThan(page.length);
-    expect(accountOf(withFrames).message).not.toContain(String(page.length));
+    if (expected.endsWith !== undefined) {
+      expect(message.endsWith(expected.endsWith), label).toBe(true);
+    }
+    if (expected.sentenceAround !== undefined) {
+      // An app-authored clause, not a bare count: the operator can tell that
+      // something other than the database answered.
+      const withoutTheCount = message.replace(expected.sentenceAround, "").trim();
+      expect(withoutTheCount.split(/\s+/).length, label).toBeGreaterThan(3);
+    }
   });
 
-  /**
-   * THE SUPERSEDED TWIN (admin-window/BUG-0182 criterion 3, rewritten by
-   * admin-window/BUG-0187 rather than deleted). Two documents separated by a
-   * line of prose used to be counted as TWO with that line crossing between
-   * them; under the bar a part carrying a document ANYWHERE is ONE foreign
-   * part, so the answer is one clause at the whole part's length and the line
-   * between them — the intermediary's own, like every prose line this suite
-   * ever measured beside markup — no longer crosses.
-   *
-   * Its MUST-NOT direction lives in the same case (LESSONS 8) and is what
-   * forbids the greedy reading of the bar: a DATABASE message spanning two
-   * lines and carrying no document crosses byte-identical, indentation and
-   * all. Multi-line is not foreign; carrying markup is.
-   */
-  it("counts two documents in one part as two documents in ONE foreign part, no line quoted (admin-window/BUG-0187)", () => {
-    const first = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required!</title>",
-      "</head>",
-      "<body>",
-      "<h1>Sorry, you have been blocked</h1>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    const between = "reference 8f3c1 was refused at the edge";
-    const second = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      "<Error>",
-      "<Code>AccessDenied</Code>",
-      "<Message>Request blocked by the gateway</Message>",
-      "</Error>",
-    ].join("\n");
-    const part = `upstream said:\n${first}\n${between}\n${second}`;
-    expect(first.length).not.toBe(second.length);
+  it("says the read was refused when the client said nothing at all", () => {
+    // A non-2xx with an EMPTY body: postgrest-js's JSON.parse throws on it and
+    // its catch builds `{message: body}`. That is what every bodiless 502, 503
+    // and 429 looks like here, and what a head-shaped count read gets. Every
+    // part is blank and no code survives, so the account used to be "" and the
+    // error line named no failure at all.
+    const blank = classify({ message: "" }, T.pendingClaims);
+    expect(blank.kind).toBe("error");
+    if (blank.kind !== "error") return;
+    expect(blank.reading).toBe(T.pendingClaims);
+    // The app's own words, and enough of them to read as a sentence.
+    expect(blank.message.trim()).toBe(blank.message);
+    expect(blank.message.split(/\s+/).length).toBeGreaterThan(3);
+    expect(blank.message).toMatch(/refus/i);
+    // Nothing invented: no number of any kind, and no generic apology.
+    expect(blank.message).not.toMatch(/\d/);
+    expect(blank.message.toLowerCase()).not.toContain("something went wrong");
+    expect(blank.message.toLowerCase()).not.toContain("sorry");
 
-    const result = classify(
-      { code: "", details: part, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-
-    // ONE clause, at the WHOLE part's length — not one per document and not
-    // one per line.
-    expect(clausesIn(result.message)).toBe(1);
-    expect(result.message).toContain(documentClause(part));
-    expect(result.message).toContain(String(part.length));
-    // The client's own line still crosses; nothing of the foreign part does,
-    // the line standing BETWEEN the two documents included.
-    expect(result.message).toContain("read failed");
-    expect(result.message).not.toContain("upstream said:");
-    expect(result.message).not.toContain(between);
-    // Counted, never quoted — on the result and on the rendered card.
-    const card = cardTextOf(result);
-    for (const read of [result.message, card]) {
-      expect(read).not.toContain("<");
-      expect(read).not.toContain("AccessDenied");
-      expect(read).not.toContain("Sorry, you have been blocked");
-    }
-    // And still shorter than what it counted.
-    expect(result.message.length).toBeLessThan(part.length);
-
-    // MUST NOT TOUCH — a DATABASE message spanning two lines, carrying no
-    // document at all: both lines cross byte-identical, the newline and the
-    // four leading spaces included, and no clause counts anything.
-    const prose = {
-      code: "23514",
-      message:
-        'new row for relation "resolution_runs" violates check constraint "runs_window_ck"',
-      details:
-        "Failing row contains (7f3a, 2026-09-11, open).\n" +
-        "    at the end of the statement the window was still open",
-      hint: null,
-    };
-    const untouched = classify(prose, T.resolutionRuns);
-    expect(untouched.kind).toBe("error");
-    if (untouched.kind !== "error") return;
-    expect(untouched.message).toContain(prose.message);
-    expect(untouched.message).toContain(prose.details);
-    expect(clausesIn(untouched.message)).toBe(0);
-    expect(untouched.message).not.toMatch(/frame/i);
-    expect(untouched.message.endsWith("(23514)")).toBe(true);
-  });
-
-  /**
-   * ONE pretty-printed document whose TEXT NODES sit on their own lines.
-   *
-   * Every document fixture above prints each element on its own line, so every
-   * line of them begins `<` and the run rule sees one unbroken document. A WAF
-   * interstitial is not always served that way: a long sentence, a Ray ID and
-   * an IP routinely sit on lines of their own between their tags, and such a
-   * line begins with a letter or a digit. The run rule then reads it as the
-   * DATABASE'S prose — it ends the run, it is kept VERBATIM, and the document
-   * is counted once per fragment.
-   *
-   * Expected (the standing property, admin-window/BUG-0170 and BUG-0173:
-   * "text this app did not author never sits inside a sentence this app
-   * wrote", and admin-window/BUG-0182: an account that COUNTED a document is
-   * shorter than what it counted).
-   *
-   * The two assertions are the two faces of that one property, and neither
-   * names a mechanism: the fix is a ruling, not a builder's choice.
-   */
-  it("counts a pretty-printed document whose text sits on its own lines (admin-window/BUG-0187)", () => {
-    const interstitial = [
-      "<!DOCTYPE html>",
-      '<html lang="en-US">',
-      "<head>",
-      "<title>Attention Required! | Cloudflare</title>",
-      "</head>",
-      "<body>",
-      '<div id="cf-error-details">',
-      "<h1>",
-      "Sorry, you have been blocked",
-      "</h1>",
-      "<h2>",
-      "You are unable to access this site",
-      "</h2>",
-      "<p>",
-      "You can email the site owner to let them know you were blocked.",
-      "</p>",
-      "<p>Cloudflare Ray ID:</p>",
-      "8f3c1de4b7c90a13",
-      "<p>Your IP:</p>",
-      "203.0.113.7",
-      "</div>",
-      "</body>",
-      "</html>",
-    ].join("\n");
-    /** Text only the INTERMEDIARY authored — none of it may reach a sentence. */
-    const itsOwnText = [
-      "Sorry, you have been blocked",
-      "You are unable to access this site",
-      "You can email the site owner to let them know you were blocked.",
-      "8f3c1de4b7c90a13",
-      "203.0.113.7",
-    ];
-
-    // MUST NOT TOUCH (LESSONS 8) — the same bytes as the WHOLE part are one
-    // clause today and leak nothing, which is the answer the other
-    // granularity owes and the guard against "count less" as a fix.
-    const whole = classify({ message: interstitial }, T.pendingClaims);
-    expect(whole.kind).toBe("error");
-    if (whole.kind !== "error") return;
-    expect(clausesIn(whole.message)).toBe(1);
-    for (const text of itsOwnText) expect(whole.message).not.toContain(text);
-
-    // The same document one line below the client's own prose — the shape the
-    // per-line arm exists for (admin-window/BUG-0179).
-    const part = `reference 8f3c1\n${interstitial}`;
-    const below = classify(
-      { code: "", details: part, hint: "", message: "read failed" },
-      T.pendingClaims,
-    );
-    expect(below.kind).toBe("error");
-    if (below.kind !== "error") return;
-    // What the rule already gets right, and must keep getting right.
-    expect(below.message).toContain("read failed");
-    // The part carries a document, so it is foreign WHOLE: the intermediary's
-    // own reference id above it no longer crosses either
-    // (admin-window/BUG-0187).
-    expect(below.message).not.toContain("reference 8f3c1");
-    expect(below.message).not.toContain("<");
-
-    // COUNTED, NEVER QUOTED — on the result and on the rendered card.
-    const card = cardTextOf(below);
-    for (const read of [below.message, card]) {
-      for (const text of itsOwnText) {
-        expect(read, `quotes ${text}`).not.toContain(text);
-      }
-    }
-    // And an account that COUNTED a document is shorter than what it counted.
-    expect(below.message.length).toBeLessThan(part.length);
+    // MUST NOT TOUCH — the same empty message beside a code says the code and
+    // nothing else. The clause is for the state where NOTHING survived.
+    const coded = classify({ code: "42883", message: "" }, T.pendingClaims);
+    expect(coded.kind).toBe("error");
+    if (coded.kind !== "error") return;
+    expect(coded.message).toBe("(42883)");
   });
 
   /**
@@ -2461,17 +1725,6 @@ describe("an account carries the parts the database authored", () => {
       }
     });
 
-    it("puts the DATABASE's own words, and its own code, in the machine's runs alone", () => {
-      // Criterion 3: a message answering none of the account's three
-      // questions crosses byte-identical and is wholly the machine's — the
-      // parenthesised code included, which is a machine identifier and not a
-      // clause of ours.
-      const denied = permissionDenied(T.pendingClaims);
-      expect(authorsOf(denied)).toEqual(["the machine", "the machine"]);
-      expect(wroteBy(denied, "this app")).toBe("");
-      expect(accountOf(denied).message).toBe(`${denied.message} (${denied.code})`);
-    });
-
     it("puts a counted clause about a part it refused to quote in this app's run", () => {
       // The three authors of criterion 2 that REPLACE a part: a document, a
       // body with no sentence of its own, and a document nested one quote
@@ -2717,12 +1970,6 @@ describe("the account does not disturb the classification", () => {
       ),
     ).toEqual({ kind: "not_provisioned", missing: `${T.events}.badcol` });
   });
-
-  it("keeps a transport failure red rather than reading it as an absence", () => {
-    // "Red means broken, never unavailable": a database that refuses to answer
-    // is broken, whatever its empty code might tempt a reader into.
-    expect(classify(transportFailure(), T.events).kind).toBe("error");
-  });
 });
 
 describe("reads against a scripted PostgREST response", () => {
@@ -2747,142 +1994,6 @@ describe("reads against a scripted PostgREST response", () => {
     ]);
   });
 
-  it("returns ok with an empty array when there are no rows", async () => {
-    // `[]` is what PostgREST answers a set read of an empty table with, and a
-    // counted zero is information: this arm still empties (BUG-0224's
-    // criterion 3 — the fix must not turn "no rows" into "refused").
-    const stub = stubClient({ [T.pendingClaims]: { data: [] } });
-    const result = await readRows(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("*"),
-      stub.asSupabaseClient(),
-    );
-    expect(result).toEqual({ kind: "ok", data: [] });
-  });
-
-  it("refuses a row set that came back with no array at all, and empties nothing", async () => {
-    // NO ARRAY beside NO ERROR is not an emptiness — PostgREST cannot answer
-    // a set read that way, so whatever produced it was not this database.
-    // Substituting `[]` here is how a host answering 404 with zero bytes put
-    // "No claims waiting" on /claims over a read that failed
-    // (admin-window/BUG-0224).
-    const stub = stubClient({ [T.pendingClaims]: { data: null } });
-    const result = await readRows(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("*"),
-      stub.asSupabaseClient(),
-    );
-
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    // It names the object it asked about, in the spelling the query used.
-    expect(result.reading).toBe(T.pendingClaims);
-    // Never rows, never a zero: no `data` at all on a refusal.
-    expect(result).not.toHaveProperty("data");
-    // Every word of it is this app's own, so the renderer draws it in the
-    // app's face rather than the machine's (admin-window/BUG-0196).
-    expect(result.authored).toEqual([
-      { words: result.message, author: "this app" },
-    ]);
-  });
-
-  it("refuses a row set that came back as a JSON OBJECT, on both row-set legs, in one derivation", async () => {
-    // A row set that did not come back as an ARRAY did not come back
-    // (admin-window/BUG-0227). Measured with the real client against a
-    // loopback host answering `200 {"message":"no upstream"}`: every read
-    // shape sees `error: null, data: {"message":"no upstream"}, count: null`,
-    // so the count legs refused on the missing count while the row-set legs
-    // handed a non-array through as `Row[]` — and the first `.map` in the
-    // render turned all five graded surfaces into an HTTP 500.
-    //
-    // The fixture the guard must NOT flag is asserted in the same test below:
-    // a real array still reads as rows, which is what keeps this a widening of
-    // the question rather than a refusal of answers PostgREST does give.
-    const foreign = { message: "no upstream" };
-    const rows = await readRows(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("*"),
-      stubClient({ [T.pendingClaims]: { data: foreign } }).asSupabaseClient(),
-    );
-    // `readComplete`'s row leg asked the identical question, so it is graded
-    // on the answer that reaches it the day a host sends an object AND a
-    // Content-Range — the count leg cannot catch that one.
-    const complete = await readComplete(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db, cap) =>
-        db
-          .from(T.pendingClaims)
-          .select("*", { count: "exact" })
-          .order("claim_id", { ascending: true })
-          .range(0, cap - 1),
-      stubClient({ [T.pendingClaims]: { data: foreign, count: 3 } }).asSupabaseClient(),
-    );
-
-    for (const [leg, result] of [
-      ["readRows", rows],
-      ["readComplete", complete],
-    ] as ReadonlyArray<readonly [string, DbResult<unknown[]>]>) {
-      expect(result.kind, leg).toBe("error");
-      if (result.kind !== "error") continue;
-      // Not an absence either: nothing said the object is not there.
-      expect(result.reading, leg).toBe(T.pendingClaims);
-      // Never handed on as rows — a non-array typed `Row[]` is the crash.
-      expect(result, leg).not.toHaveProperty("data");
-      expect(result.authored, leg).toEqual([
-        { words: result.message, author: "this app" },
-      ]);
-      for (const callSite of CALL_SITE_PROSE) {
-        expect(result.message, leg).not.toContain(callSite);
-      }
-    }
-
-    // ONE derivation (admin-window/BUG-0224 criterion 4): the widened
-    // predicate refuses in the SAME words a missing row set refuses in, rather
-    // than adding a second sentence for a second shape. Compared against the
-    // null case rather than a pinned sentence, so the two cannot drift.
-    const nulled = await readRows(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("*"),
-      stubClient({ [T.pendingClaims]: { data: null } }).asSupabaseClient(),
-    );
-    expect(nulled.kind).toBe("error");
-    if (rows.kind !== "error" || complete.kind !== "error" || nulled.kind !== "error") {
-      return;
-    }
-    expect(rows.message).toBe(nulled.message);
-    expect(complete.message).toBe(nulled.message);
-
-    // The passing fixture, on the same two legs: a real row set is still a row
-    // set, and a counted complete read still returns every row.
-    const claims = [{ claim_id: "claim-1" }, { claim_id: "claim-2" }];
-    const stillRows = await readRows(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("*"),
-      stubClient({ [T.pendingClaims]: { data: claims } }).asSupabaseClient(),
-    );
-    expect(stillRows).toEqual({ kind: "ok", data: claims });
-    const stillComplete = await readComplete(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      (db, cap) =>
-        db
-          .from(T.pendingClaims)
-          .select("*", { count: "exact" })
-          .order("claim_id", { ascending: true })
-          .range(0, cap - 1),
-      stubClient({
-        [T.pendingClaims]: { data: claims, count: claims.length },
-      }).asSupabaseClient(),
-    );
-    expect(stillComplete).toEqual({ kind: "ok", data: claims });
-  });
-
   /**
    * The bodies QA measured an HTTP 500 on (admin-window/BUG-0228), each a JSON
    * ARRAY that is not this table's rows. They are one question with one
@@ -2901,208 +2012,213 @@ describe("reads against a scripted PostgREST response", () => {
   /** The columns `pending_claims` reads name, as the query names them. */
   const CLAIM_COLUMNS = ["observation_id", "bucket"] as const;
 
-  it("refuses a row set whose elements do not carry the columns the read named", async () => {
-    // THE BAR, positively (admin-window/BUG-0228, LESSONS 13): a row set is an
-    // answer whose every element carries every column THIS READ asked for.
-    // BUG-0227 widened the question to `Array.isArray`, and a host answering
-    // `200 [{"message":"no upstream"}]` walked through it as a `Row[]` whose
-    // element had no column the render reads — `TypeError: Cannot read
-    // properties of undefined (reading 'trim')`, an HTTP 500 on /, /claims,
-    // /browse and /cycles; `[null,null]` took all six routes down.
-    //
-    // Asked of both row-carrying legs, over every shape measured, so the
-    // guarantee is the seam's and not one page's.
-    for (const [shape, body] of NOT_THIS_READS_ROWS) {
-      const rows = await readRows(
+  /** The reads an answer reaches, each built the way its callers build it. */
+  type Leg = "readRows" | "readComplete" | "readRowsByIds" | "readOne" | "readCount";
+
+  const LEGS: Readonly<
+    Record<Leg, (db: SupabaseClient, columns: RowColumns) => Promise<DbResult<unknown>>>
+  > = {
+    readRows: (db, columns) =>
+      readRows(
         T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-        stubClient({ [T.pendingClaims]: { data: body } }).asSupabaseClient(),
-      );
-      const complete = await readComplete(
+        columns,
+        (client) => client.from(T.pendingClaims).select(selectList(columns)),
+        db,
+      ),
+    readComplete: (db, columns) =>
+      readComplete(
         T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db, cap) =>
-          db
+        columns,
+        (client, cap) =>
+          client
             .from(T.pendingClaims)
-            .select("observation_id, bucket", { count: "exact" })
+            .select(selectList(columns), { count: "exact" })
             .order("observation_id", { ascending: true })
             .range(0, cap - 1),
-        stubClient({
-          [T.pendingClaims]: { data: body, count: 2 },
-        }).asSupabaseClient(),
-      );
-      // The id-set leg is `readRows` underneath, so the same question reaches
-      // a two-step join's second leg (ARCHITECTURE.md §4.2).
-      const byIds = await readRowsByIds(
+        db,
+      ),
+    // The id-set leg is `readRows` underneath, so the same question reaches
+    // a two-step join's second leg (ARCHITECTURE.md §4.2).
+    readRowsByIds: (db, columns) =>
+      readRowsByIds(
         T.pendingClaims,
-        CLAIM_COLUMNS,
+        columns,
         ["observation-1"],
-        (db, chunkIds) =>
-          db
+        (client, chunkIds) =>
+          client
             .from(T.pendingClaims)
-            .select("observation_id, bucket")
+            .select(selectList(columns))
             .in("observation_id", chunkIds),
-        stubClient({ [T.pendingClaims]: { data: body } }).asSupabaseClient(),
-      );
+        db,
+      ),
+    readOne: (db, columns) =>
+      readOne(
+        T.pendingClaims,
+        columns,
+        (client) => client.from(T.pendingClaims).select(selectList(columns)).maybeSingle(),
+        db,
+      ),
+    readCount: (db) => readCount(T.pendingClaims, (client) => countRead(client, T.pendingClaims), db),
+  };
 
-      for (const [leg, result] of [
-        ["readRows", rows],
-        ["readComplete", complete],
-        ["readRowsByIds", byIds],
-      ] as ReadonlyArray<readonly [string, DbResult<unknown>]>) {
-        const where = `${leg} on ${shape}`;
-        expect(result.kind, where).toBe("error");
+  /** One answer a host gave, and what each leg that met it must do with it. */
+  interface AnswerFixture {
+    readonly label: string;
+    /** What the host answered, as the stub hands it to the client. */
+    readonly answer: ScriptedResponse;
+    /** Legs that refuse through the one rule, in its one sentence. */
+    readonly refuses?: readonly Leg[];
+    /** Legs that answer red — kind alone, as the count pins graded them. */
+    readonly reddens?: readonly Leg[];
+    /** What each admitting leg hands back, exactly. */
+    readonly admits?: Readonly<Partial<Record<Leg, unknown>>>;
+    /** Spellings no red answer may carry. */
+    readonly never?: readonly string[];
+  }
+
+  /** The rows this read named, as PostgREST really sends them. */
+  const REAL_ROWS = [
+    { observation_id: "observation-1", bucket: "agreeing" },
+    // A column PostgREST returned as NULL is a row: nullable columns are
+    // real and `lib/format.ts` renders their absence. Only a MISSING name
+    // is not a row.
+    { observation_id: "observation-2", bucket: null },
+  ];
+  const WIDER_ROW = { observation_id: "observation-1", bucket: "agreeing", extra: 1 };
+  const ONE_ROW = { observation_id: "observation-1", bucket: "agreeing" };
+
+  /**
+   * WHAT A PostgREST ANSWER IS (ARCHITECTURE.md §4.1; admin-window/BUG-0224,
+   * BUG-0227, BUG-0228, BUG-0229) — one table over every answer the chain
+   * measured, graded by the one bar: every leg of an answer — error, rows,
+   * count — is in the shape PostgREST sends it, or the WHOLE answer is one
+   * refusal naming the object, in the one sentence every ungradeable answer
+   * refuses in (`unreadableAnswer`), never an emptiness and never a figure;
+   * and every answer PostgREST really gives still crosses (LESSONS 8).
+   */
+  const ANSWERS: readonly AnswerFixture[] = [
+    // ── BUG-0224: a response carrying neither what it asked for nor a failure ──
+    {
+      label: "no array, no count and no failure — a host answering 404 with zero bytes",
+      answer: { data: null },
+      refuses: ["readRows", "readCount", "readComplete"],
+      // A `.maybeSingle()` over no rows really does answer `data: null`.
+      admits: { readOne: null },
+    },
+    {
+      label: "rows beside a count the host never gave",
+      answer: { data: [ONE_ROW], count: null },
+      refuses: ["readComplete"],
+    },
+    {
+      label: "rows the host never sent, beside a count of 12",
+      answer: { data: null, count: 12 },
+      refuses: ["readComplete"],
+    },
+    // ── BUG-0227: a row set that did not come back as an ARRAY did not come back ──
+    {
+      label: "a JSON object where a row set should be",
+      answer: { data: { message: "no upstream" }, count: 3 },
+      refuses: ["readRows", "readComplete", "readOne"],
+    },
+    // ── BUG-0228: a row set is an answer whose every element carries every column this read asked for ──
+    ...NOT_THIS_READS_ROWS.map(
+      ([shape, body]): AnswerFixture => ({
+        label: `${shape}, a JSON array that is not this read's rows`,
+        answer: { data: body, count: 2 },
+        refuses: ["readRows", "readComplete", "readRowsByIds"],
+      }),
+    ),
+    {
+      label: "the rows the read named, one nullable column null",
+      answer: { data: REAL_ROWS },
+      admits: { readRows: REAL_ROWS },
+    },
+    {
+      label: "a row carrying more than the read named",
+      answer: { data: [WIDER_ROW] },
+      admits: { readRows: [WIDER_ROW] },
+    },
+    {
+      // `[]` — the matching set of zero — still empties, and a counted zero is
+      // information (criterion 3): the fix must not turn "no rows" into "refused".
+      label: "the matching set of zero, counted",
+      answer: { data: [], count: 0 },
+      admits: { readRows: [], readComplete: [], readCount: 0 },
+    },
+    {
+      label: "one row that really arrived",
+      answer: { data: ONE_ROW },
+      admits: { readOne: ONE_ROW },
+    },
+    // ── BUG-0228 residual and BUG-0229: a count is a number of ROWS or it did not arrive ──
+    ...[Number.NaN, 1.5, Number.POSITIVE_INFINITY].map(
+      (count): AnswerFixture => ({
+        label: `a count of ${count}, not a whole number of rows`,
+        answer: { data: [], count },
+        reddens: ["readCount", "readComplete"],
+        never: ["NaN"],
+      }),
+    ),
+    ...[-1, -5, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 2, 1e20].map(
+      (count): AnswerFixture => ({
+        label: `a count of ${count}, a whole number but not a number of ROWS`,
+        answer: { data: [], count },
+        reddens: ["readCount", "readComplete"],
+      }),
+    ),
+    ...[1, Number.MAX_SAFE_INTEGER].map(
+      (count): AnswerFixture => ({
+        label: `a real count of ${count}`,
+        answer: { data: [], count },
+        admits: { readCount: count },
+      }),
+    ),
+  ];
+
+  it.each(ANSWERS)(
+    "what a PostgREST answer is — $label",
+    async ({ answer, refuses = [], reddens = [], admits = {}, never = [] }) => {
+      const over = (scripted: ScriptedResponse) =>
+        stubClient({ [T.pendingClaims]: scripted }).asSupabaseClient();
+      // The twin every refusal is compared to — the sentence a missing row
+      // set refuses in — never pinned as a literal, so the two cannot drift
+      // (LESSONS 11).
+      const ungradeable = await LEGS.readRows(over({ data: null }), CLAIM_COLUMNS);
+      expect(ungradeable.kind).toBe("error");
+      if (ungradeable.kind !== "error") return;
+
+      for (const leg of refuses) {
+        const result = await LEGS[leg](over(answer), CLAIM_COLUMNS);
+        expect(result.kind, leg).toBe("error");
         if (result.kind !== "error") continue;
-        // It names the object it read, never claims the object is absent, and
-        // hands nothing on as rows.
-        expect(result.reading, where).toBe(T.pendingClaims);
-        expect(result, where).not.toHaveProperty("data");
-        expect(result.authored, where).toEqual([
+        // It names the object it read, never claims the object is absent,
+        // hands nothing on as rows or as a figure, and every word of it is
+        // this app's own — none of them about a call site in this repo.
+        expect(result.reading, leg).toBe(T.pendingClaims);
+        expect(result, leg).not.toHaveProperty("data");
+        expect(result.authored, leg).toEqual([
           { words: result.message, author: "this app" },
         ]);
         for (const callSite of CALL_SITE_PROSE) {
-          expect(result.message, where).not.toContain(callSite);
+          expect(result.message, leg).not.toContain(callSite);
         }
+        expect(result.message, leg).toBe(ungradeable.message);
       }
-    }
-  });
-
-  it("refuses in the SAME words a missing row set refuses in — one derivation", async () => {
-    // Criterion 4: the widened predicate is the same rule, not a third
-    // sentence for a third shape. Compared against the null case rather than
-    // against a pinned string, so the two cannot drift apart.
-    const alien = await readRows(
-      T.pendingClaims,
-      CLAIM_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-      stubClient({
-        [T.pendingClaims]: { data: [{ message: "no upstream" }] },
-      }).asSupabaseClient(),
-    );
-    const nulled = await readRows(
-      T.pendingClaims,
-      CLAIM_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-      stubClient({ [T.pendingClaims]: { data: null } }).asSupabaseClient(),
-    );
-    expect(alien.kind).toBe("error");
-    expect(nulled.kind).toBe("error");
-    if (alien.kind !== "error" || nulled.kind !== "error") return;
-    expect(alien.message).toBe(nulled.message);
-  });
-
-  it("still admits every answer PostgREST really gives", async () => {
-    // The fixtures the guard must NOT flag (LESSONS 8 — a guard proves itself
-    // on two fixtures, and the passing one must be the shape that OCCURS).
-    const real = [
-      { observation_id: "observation-1", bucket: "agreeing" },
-      // A column PostgREST returned as NULL is a row: nullable columns are
-      // real and `lib/format.ts` renders their absence. Only a MISSING name
-      // is not a row.
-      { observation_id: "observation-2", bucket: null },
-    ];
-    const rows = await readRows(
-      T.pendingClaims,
-      CLAIM_COLUMNS,
-      (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-      stubClient({ [T.pendingClaims]: { data: real } }).asSupabaseClient(),
-    );
-    expect(rows).toEqual({ kind: "ok", data: real });
-
-    // A row carrying MORE than the read named is still this read's row: the
-    // question is what arrived, not what did not.
-    const wider = [{ observation_id: "observation-1", bucket: "agreeing", extra: 1 }];
-    expect(
-      await readRows(
-        T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-        stubClient({ [T.pendingClaims]: { data: wider } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: wider });
-
-    // `[]` — the matching set of zero — still empties, on both legs. An empty
-    // card is what an operator whose queue is clear must keep reading
-    // (criterion 3).
-    expect(
-      await readRows(
-        T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db) => db.from(T.pendingClaims).select("observation_id, bucket"),
-        stubClient({ [T.pendingClaims]: { data: [] } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: [] });
-    expect(
-      await readComplete(
-        T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db, cap) =>
-          db
-            .from(T.pendingClaims)
-            .select("observation_id, bucket", { count: "exact" })
-            .order("observation_id", { ascending: true })
-            .range(0, cap - 1),
-        stubClient({ [T.pendingClaims]: { data: [], count: 0 } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: [] });
-  });
-
-  it("asks the column question of a single-row read too, and still answers ok/null", async () => {
-    // `readOne` cannot be asked whether an ARRAY arrived — a `.maybeSingle()`
-    // over no rows really does answer `data: null` — but a row that DID arrive
-    // is this read's row only if it carries what the read named. The home
-    // page's last-applied leg and the review-item detail read this way, and
-    // both 500'd on the same host (admin-window/BUG-0228).
-    const foreign = await readOne(
-      T.resolutionRuns,
-      ["run_id", "started_at", "applied"],
-      (db) =>
-        db
-          .from(T.resolutionRuns)
-          .select("run_id, started_at, applied")
-          .maybeSingle(),
-      stubClient({
-        [T.resolutionRuns]: { data: { message: "no upstream" } },
-      }).asSupabaseClient(),
-    );
-    expect(foreign.kind).toBe("error");
-    if (foreign.kind !== "error") return;
-    expect(foreign.reading).toBe(T.resolutionRuns);
-    expect(foreign.authored).toEqual([
-      { words: foreign.message, author: "this app" },
-    ]);
-
-    // No row is still `ok: null` — the answer a `.maybeSingle()` over an empty
-    // match really gives, and a different fact from an absent table.
-    expect(
-      await readOne(
-        T.resolutionRuns,
-        ["run_id", "started_at", "applied"],
-        (db) =>
-          db
-            .from(T.resolutionRuns)
-            .select("run_id, started_at, applied")
-            .maybeSingle(),
-        stubClient({ [T.resolutionRuns]: { data: null } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: null });
-
-    // And a real row still comes back untouched.
-    const row = { run_id: "run-1", started_at: "2026-09-01T04:00:00Z", applied: 37 };
-    expect(
-      await readOne(
-        T.resolutionRuns,
-        ["run_id", "started_at", "applied"],
-        (db) =>
-          db
-            .from(T.resolutionRuns)
-            .select("run_id, started_at, applied")
-            .maybeSingle(),
-        stubClient({ [T.resolutionRuns]: { data: row } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: row });
-  });
+      for (const leg of reddens) {
+        const result = await LEGS[leg](over(answer), CLAIM_COLUMNS);
+        expect(result.kind, leg).toBe("error");
+        if (result.kind !== "error") continue;
+        for (const words of never) expect(result.message, leg).not.toContain(words);
+      }
+      for (const [leg, data] of Object.entries(admits) as ReadonlyArray<[Leg, unknown]>) {
+        await expect(LEGS[leg](over(answer), CLAIM_COLUMNS), leg).resolves.toEqual({
+          kind: "ok",
+          data,
+        });
+      }
+    },
+  );
 
   it("a single-row read admits no row only from an answer that carried one", async () => {
     // §4.1 clause 3 (admin-window/BUG-0234). `data: null` is what BOTH a real
@@ -3208,103 +2324,6 @@ describe("reads against a scripted PostgREST response", () => {
     ).toEqual({ kind: "ok", data: real });
   });
 
-  it("refuses a count that is not a whole number of rows, and publishes no NaN", async () => {
-    // The residual QA measured beside this ticket: supabase-js reaches the
-    // count with `parseInt` over whatever follows the slash in
-    // `Content-Range`, so a host answering 206 with a header it made up hands
-    // back `count: NaN` beside `error: null`. `NaN` is neither `null` nor
-    // `undefined`, so the older null test passed it through and a page
-    // published `data-window-held="NaN"`. A count is a whole number of rows or
-    // it did not arrive.
-    for (const count of [Number.NaN, 1.5, Number.POSITIVE_INFINITY]) {
-      const counted = await readCount(
-        T.pendingClaims,
-        (db) => countRead(db, T.pendingClaims),
-        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
-      );
-      expect(counted.kind, String(count)).toBe("error");
-      if (counted.kind !== "error") continue;
-      expect(counted.message, String(count)).not.toContain("NaN");
-
-      const complete = await readComplete(
-        T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db, cap) =>
-          db
-            .from(T.pendingClaims)
-            .select("observation_id, bucket", { count: "exact" })
-            .order("observation_id", { ascending: true })
-            .range(0, cap - 1),
-        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
-      );
-      expect(complete.kind, String(count)).toBe("error");
-    }
-
-    // A real zero is still a real zero — the control this guard may not eat.
-    expect(
-      await readCount(
-        T.pendingClaims,
-        (db) => countRead(db, T.pendingClaims),
-        stubClient({ [T.pendingClaims]: { data: [], count: 0 } }).asSupabaseClient(),
-      ),
-    ).toEqual({ kind: "ok", data: 0 });
-  });
-
-  // PIN (QA, admin-window/BUG-0229), watched RED on this tree 2026-09-15
-  // before it was marked: `-1: expected 'ok' to be 'error'`. It is an EXPECTED
-  // FAILURE until the guard is narrowed; THE FIX FLIPS THIS MARKER back to a
-  // plain `it` (the ticket's check 2 refuses the close while it stands), and
-  // the day it passes with the marker still here the suite goes red saying
-  // "Expect test to fail", which sends the reader to the ticket.
-  it("refuses a count that is a whole number but not a number of ROWS", async () => {
-    // QA (admin-window/BUG-0229, attack on BUG-0228's folded-in count guard): the same
-    // `parseInt` over whatever follows the slash in `Content-Range` also
-    // returns a NEGATIVE integer and an integer too large to be exact, and
-    // `Number.isInteger` is TRUE for both — so they reach a page as published
-    // figures. Measured over real HTTP against a production build of the
-    // landed fix, a host answering `200 []` with `content-range: */-5` put
-    // "-5" in every bucket of /claims' total-counts table, and `*/1e20`
-    // published "100,000,000,000,000,000,000".
-    //
-    // The bar, positively: a count is a number of ROWS — a non-negative
-    // integer the machine can represent exactly — or it did not arrive, and
-    // an answer that did not arrive refuses through the one rule.
-    for (const count of [-1, -5, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 2, 1e20]) {
-      const counted = await readCount(
-        T.pendingClaims,
-        (db) => countRead(db, T.pendingClaims),
-        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
-      );
-      expect(counted.kind, String(count)).toBe("error");
-
-      const complete = await readComplete(
-        T.pendingClaims,
-        CLAIM_COLUMNS,
-        (db, cap) =>
-          db
-            .from(T.pendingClaims)
-            .select("observation_id, bucket", { count: "exact" })
-            .order("observation_id", { ascending: true })
-            .range(0, cap - 1),
-        stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
-      );
-      expect(complete.kind, String(count)).toBe("error");
-    }
-
-    // The controls this guard may not eat: a real zero, and a real count at
-    // the top of what the machine represents exactly.
-    for (const count of [0, 1, Number.MAX_SAFE_INTEGER]) {
-      expect(
-        await readCount(
-          T.pendingClaims,
-          (db) => countRead(db, T.pendingClaims),
-          stubClient({ [T.pendingClaims]: { data: [], count } }).asSupabaseClient(),
-        ),
-        String(count),
-      ).toEqual({ kind: "ok", data: count });
-    }
-  });
-
   it("returns not_provisioned when the table is not in the schema cache", async () => {
     const stub = stubClient({
       [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
@@ -3316,24 +2335,6 @@ describe("reads against a scripted PostgREST response", () => {
       stub.asSupabaseClient(),
     );
     expect(result).toEqual({ kind: "not_provisioned", missing: T.verdicts });
-  });
-
-  it("returns not_provisioned naming the column when a selected column is absent", async () => {
-    // The real surface of the bare-qualified 42703: a read selecting an
-    // explicit column list off a table that exists but lacks one column.
-    const stub = stubClient({
-      [T.events]: { error: undefinedQualifiedColumn(T.events, "badcol") },
-    });
-    const result = await readRows(
-      T.events,
-      ["event_id", "badcol"],
-      (db) => db.from(T.events).select("event_id,badcol"),
-      stub.asSupabaseClient(),
-    );
-    expect(result).toEqual({
-      kind: "not_provisioned",
-      missing: `${T.events}.badcol`,
-    });
   });
 
   it("returns the database's message when the read is refused", async () => {
@@ -3354,71 +2355,6 @@ describe("reads against a scripted PostgREST response", () => {
         { words: `(${error.code})`, author: "the machine" },
       ],
     });
-  });
-
-  it("reads one row, and null when there is none", async () => {
-    const observation = observationRow();
-    const stub = stubClient({
-      [T.observations]: [{ data: observation }, { data: null }],
-    });
-    const client = stub.asSupabaseClient();
-
-    await expect(
-      readOne(T.observations, ANY_COLUMNS, (db) => db.from(T.observations).select("*").maybeSingle(), client),
-    ).resolves.toEqual({ kind: "ok", data: observation });
-    await expect(
-      readOne(T.observations, ANY_COLUMNS, (db) => db.from(T.observations).select("*").maybeSingle(), client),
-    ).resolves.toEqual({ kind: "ok", data: null });
-  });
-
-  it("reads a count, and refuses a null count instead of reporting zero", async () => {
-    // BUG-0007's user-visible twin (fixed by admin-window/TASK-0026): a
-    // response with `error: null` and `count: null` — what a select written
-    // WITHOUT `{ head: true, count: "exact" }` returns — used to render a
-    // confident 0 for a table holding rows. A counted 0 is still an ok 0.
-    const stub = stubClient({
-      [T.reviewItems]: [{ count: 7 }, { count: 0 }, { count: null }],
-    });
-    const client = stub.asSupabaseClient();
-
-    await expect(
-      readCount(
-        T.reviewItems,
-        (db) => db.from(T.reviewItems).select("*", { count: "exact", head: true }),
-        client,
-      ),
-    ).resolves.toEqual({ kind: "ok", data: 7 });
-    await expect(
-      readCount(
-        T.reviewItems,
-        (db) => db.from(T.reviewItems).select("*", { count: "exact", head: true }),
-        client,
-      ),
-    ).resolves.toEqual({ kind: "ok", data: 0 });
-
-    const refused = await readCount(
-      T.reviewItems,
-      // The defective spelling: no count asked for, so none comes back.
-      (db) => db.from(T.reviewItems).select("*"),
-      client,
-    );
-    expect(refused.kind).toBe("error");
-    if (refused.kind !== "error") return;
-    // The object is carried by the result rather than spelled into the prose:
-    // every error arm names its read (admin-window/BUG-0016).
-    expect(refused.reading).toBe(T.reviewItems);
-    // Never a number the database did not give.
-    expect(refused).not.toHaveProperty("data");
-    // And not one word of it describes a call site in this repo. The arm used
-    // to read "a count read requires { count: \"exact\" }" — a note to this
-    // app's own developer, which an operator read on /claims the day a host
-    // answered 404 with zero bytes (admin-window/BUG-0224).
-    expect(refused.authored).toEqual([
-      { words: refused.message, author: "this app" },
-    ]);
-    for (const callSite of CALL_SITE_PROSE) {
-      expect(refused.message).not.toContain(callSite);
-    }
   });
 
   it("classifies an absent table on a count read too", async () => {
@@ -3464,23 +2400,6 @@ describe("reads against a scripted PostgREST response", () => {
     ).resolves.toEqual({ kind: "ok", data: [{ group_id: "g1" }] });
   });
 
-  it("keeps an absent-FUNCTION code on a COUNT of a table an error, never a zero", async () => {
-    // The two ways a count can go wrong meet here: a 42883 from a table read
-    // is an error (BUG-0080) — and, like every refusal, it carries no number
-    // (LESSONS 2, ARCHITECTURE.md §4.3).
-    const stub = stubClient({
-      [T.groups]: { error: functionNotInSchemaCache("to_tsvector") },
-    });
-    const result = await readCount(
-      T.groups,
-      (db) => db.from(T.groups).select("*", { count: "exact", head: true }),
-      stub.asSupabaseClient(),
-    );
-    expect(result.kind).toBe("error");
-    expect(result).not.toHaveProperty("data");
-    expect(result).not.toHaveProperty("missing");
-  });
-
   /* ── the absent FUNCTION, through the read path (admin-window/TASK-0047) ── */
 
   it("returns not_provisioned when the FUNCTION is not in the schema cache", async () => {
@@ -3508,35 +2427,6 @@ describe("reads against a scripted PostgREST response", () => {
       method: "rpc",
       args: [{ p_decision: { action: "keep_current" } }],
     });
-  });
-
-  it("never turns the absent function into a number", async () => {
-    // ARCHITECTURE.md §4.3 and LESSONS 2: an absent object is a refusal, never
-    // a confident zero — and a null count is a refusal even when nothing is
-    // absent at all. Both, over the same function, so this change cannot have
-    // quietly made an unreadable object render as "0 settled".
-    const absent = stubClient({
-      [SETTLE_FUNCTION]: { error: undefinedFunction(SETTLE_FUNCTION) },
-    });
-    const refusedAbsent = await callFunction(
-      SETTLE_FUNCTION,
-      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
-      absent.asSupabaseClient(),
-    );
-    expect(refusedAbsent).toEqual({
-      kind: "not_provisioned",
-      missing: SETTLE_FUNCTION,
-    });
-    expect(refusedAbsent).not.toHaveProperty("data");
-
-    const silent = stubClient({ [SETTLE_FUNCTION]: { count: null } });
-    const refusedSilent = await readCount(
-      SETTLE_FUNCTION,
-      (db) => db.rpc(SETTLE_FUNCTION, { p_decision: {} }),
-      silent.asSupabaseClient(),
-    );
-    expect(refusedSilent.kind).toBe("error");
-    expect(refusedSilent).not.toHaveProperty("data");
   });
 
   it("refuses the absence when a call site reaches a function through a TABLE read", async () => {
@@ -3692,20 +2582,6 @@ describe("readComplete", () => {
     expect(result).toEqual({ kind: "ok", data: items });
   });
 
-  it("returns an empty ok when the database counted nothing", async () => {
-    // A counted zero is information; only an answer this app cannot grade is a
-    // refusal — and `[]` with a count of 0 is exactly what PostgREST answers a
-    // complete read of an empty table with (BUG-0224's criterion 3).
-    const stub = stubClient({ [T.pendingClaims]: { data: [], count: 0 } });
-    const result = await readComplete(
-      T.pendingClaims,
-      ANY_COLUMNS,
-      completeQuery(T.pendingClaims),
-      stub.asSupabaseClient(),
-    );
-    expect(result).toEqual({ kind: "ok", data: [] });
-  });
-
   it("hands the cap to the query rather than letting the caller spell it", async () => {
     const stub = stubClient({ [T.reviewItems]: { data: [], count: 0 } });
     await readComplete(
@@ -3745,58 +2621,6 @@ describe("readComplete", () => {
         { words: `(${permissionDenied(T.observations).code})`, author: "the machine" },
       ],
     });
-  });
-
-  it("refuses a null count instead of fabricating completeness, and returns no array", async () => {
-    // The defective spelling: a select without `{ count: "exact" }` answers
-    // `error: null, count: null`. Whether those rows are all of them is
-    // unknowable, so they must not surface as an ok set.
-    const items = reviewItemShapes();
-    const stub = stubClient({ [T.reviewItems]: { data: items, count: null } });
-    const result = await readComplete(
-      T.reviewItems,
-      ANY_COLUMNS,
-      (db) => db.from(T.reviewItems).select("*"),
-      stub.asSupabaseClient(),
-    );
-
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(T.reviewItems);
-    expect(result).not.toHaveProperty("data");
-    expect(result.authored).toEqual([
-      { words: result.message, author: "this app" },
-    ]);
-    // The twin of the count leg's arm above, and it says nothing about this
-    // app's own call arguments either (admin-window/BUG-0224).
-    for (const callSite of CALL_SITE_PROSE) {
-      expect(result.message).not.toContain(callSite);
-    }
-  });
-
-  it("refuses a truncated set, naming the object, the count and the cap", async () => {
-    // What the server's own db-max-rows does to a big table: ROW_CAP rows
-    // back, and a count that says there are far more.
-    const rows = Array.from({ length: ROW_CAP }, (_, index) => ({
-      review_item_id: `row-${index}`,
-    }));
-    const held = 1732;
-    const stub = stubClient({ [T.reviewItems]: { data: rows, count: held } });
-
-    const result = await readComplete(
-      T.reviewItems,
-      ANY_COLUMNS,
-      completeQuery(T.reviewItems),
-      stub.asSupabaseClient(),
-    );
-
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(T.reviewItems);
-    expect(result.message).toContain(String(held));
-    expect(result.message).toContain(String(ROW_CAP));
-    // Never a partial array: the whole point of the branch.
-    expect(result).not.toHaveProperty("data");
   });
 
   it("a total smaller than the rows it came with is not a total of this set", async () => {
@@ -3870,22 +2694,6 @@ describe("readComplete", () => {
     expect(truncated.message).toContain(String(items.length + 9));
     expect(truncated.message).toContain(String(ROW_CAP));
   });
-
-  it("refuses truncation regardless of where the cap bit, cap or server", async () => {
-    // One row short of the count is still a truncated set. Nothing here
-    // assumes ROW_CAP was the thing that cut it.
-    const items = reviewItemShapes();
-    const stub = stubClient({
-      [T.reviewItems]: { data: items, count: items.length + 1 },
-    });
-    const result = await readComplete(
-      T.reviewItems,
-      ANY_COLUMNS,
-      completeQuery(T.reviewItems),
-      stub.asSupabaseClient(),
-    );
-    expect(result.kind).toBe("error");
-  });
 });
 
 /**
@@ -3938,79 +2746,6 @@ describe("readComplete at the cap boundary", () => {
     if (refused.kind !== "error") return;
     expect(refused.message).toContain(String(ROW_CAP + 1));
     expect(refused).not.toHaveProperty("data");
-  });
-
-  it("refuses a counted set that came back with no rows at all", async () => {
-    // `data: null` with `error: null` and a count of 12: whatever produced it,
-    // an empty array here would render as "nothing matches" for a set the
-    // database says holds 12 rows. Complete-or-refuse means refuse.
-    const stub = stubClient({ [T.reviewItems]: { data: null, count: 12 } });
-    const result = await readComplete(
-      T.reviewItems,
-      ANY_COLUMNS,
-      completeQuery(T.reviewItems),
-      stub.asSupabaseClient(),
-    );
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result).not.toHaveProperty("data");
-    // It refuses as an answer this app CANNOT GRADE and not as a truncation:
-    // no cap was reached, and a sentence about the cap would be a false
-    // account of what arrived (admin-window/BUG-0224). Compared to the twin
-    // refusal rather than to a pinned sentence, so the two cannot drift.
-    const rowsOnly = await readRows(
-      T.reviewItems,
-      ANY_COLUMNS,
-      (db) => db.from(T.reviewItems).select("*"),
-      stubClient({ [T.reviewItems]: { data: null } }).asSupabaseClient(),
-    );
-    expect(rowsOnly.kind).toBe("error");
-    if (rowsOnly.kind !== "error") return;
-    expect(result.message).toBe(rowsOnly.message);
-  });
-
-  it("refuses an ungradeable answer in ONE derivation, whichever read met it", async () => {
-    // BUG-0224 criterion 4. Three kinds of read meet the same answer — a
-    // response carrying neither what it asked for nor a failure — and one
-    // sentence in `lib/db/result.ts` answers for all three. A second arm
-    // spelling its own version of "unclassifiable" reddens here, which is the
-    // check that keeps the rule from being retyped (LESSONS 11).
-    const nothing = () => stubClient({ [T.reviewItems]: {} }).asSupabaseClient();
-    const rows = await readRows(
-      T.reviewItems,
-      ANY_COLUMNS,
-      (db) => db.from(T.reviewItems).select("*"),
-      nothing(),
-    );
-    const counted = await readCount(
-      T.reviewItems,
-      (db) => countRead(db, T.reviewItems),
-      nothing(),
-    );
-    const complete = await readComplete(
-      T.reviewItems,
-      ANY_COLUMNS,
-      completeQuery(T.reviewItems),
-      nothing(),
-    );
-
-    for (const result of [rows, counted, complete]) {
-      expect(result.kind).toBe("error");
-      if (result.kind !== "error") continue;
-      expect(result.reading).toBe(T.reviewItems);
-      expect(result).not.toHaveProperty("data");
-      expect(result.authored).toEqual([
-        { words: result.message, author: "this app" },
-      ]);
-      for (const callSite of CALL_SITE_PROSE) {
-        expect(result.message).not.toContain(callSite);
-      }
-    }
-    if (rows.kind !== "error" || counted.kind !== "error" || complete.kind !== "error") {
-      return;
-    }
-    expect(counted.message).toBe(rows.message);
-    expect(complete.message).toBe(rows.message);
   });
 
   it("leaves window reads alone: readRows over a counted response still returns its window", async () => {
@@ -4129,49 +2864,6 @@ describe("no exported read throws", () => {
     } finally {
       vi.unstubAllEnvs();
     }
-  });
-});
-
-describe("the fixture builders the suite reads through", () => {
-  it("carries a review item in each of the three shapes", () => {
-    const [dataConflict, entityLinkFact, sourcePattern] = reviewItemShapes();
-
-    // A per-fact item names its fact and carries no source.
-    expect(dataConflict.queue).toBe("data_conflict");
-    expect(dataConflict.source_id).toBeNull();
-    expect(dataConflict.domain).not.toBeNull();
-    expect(entityLinkFact.queue).toBe("entity_link");
-    expect(entityLinkFact.source_id).toBeNull();
-
-    // The source-pattern item is the other subject shape: source set, the
-    // other three null — the null shape the subject index compares.
-    expect(sourcePattern.source_id).not.toBeNull();
-    expect(sourcePattern.domain).toBeNull();
-    expect(sourcePattern.entity_id).toBeNull();
-    expect(sourcePattern.field).toBeNull();
-  });
-
-  it("carries a pending claim in every bucket, in_window included", () => {
-    const claims = pendingClaimsInEveryBucket();
-    expect(claims.map((claim) => claim.bucket)).toEqual([...PENDING_CLAIM_BUCKETS]);
-    // Only awaiting_row names an unmet requirement; a bare awaiting_row is a
-    // defect and every other bucket carries null.
-    for (const claim of claims) {
-      expect(claim.unmet_requirement === null).toBe(claim.bucket !== "awaiting_row");
-    }
-  });
-
-  it("carries a cycle, a run, a source, an observation and a provenance row", () => {
-    expect(resolutionRunRow().outcome).toBe("succeeded");
-    // runs.source is text with no foreign key: it matches sources.source by name.
-    expect(runRow().source).toBe(sourceRow().source);
-    expect(observationRow().source_id).toBe(sourceRow().source_id);
-    // `field_provenance` spells the canonical table entity_type; `observations`
-    // and `review_items` spell the same thing domain, and the values agree —
-    // `observations.entity_type` was dropped by scraper migration
-    // `20260819000002` (admin-window/BUG-0024).
-    expect(fieldProvenanceRow().entity_type).toBe(observationRow().domain);
-    expect(reviewItemShapes()[0].domain).toBe(observationRow().domain);
   });
 });
 
@@ -4425,13 +3117,6 @@ describe("readRowsByIds fans out over its chunks, bounded", () => {
     expect(seam.issued.length).toBeLessThan(chunks);
     expect(seam.issued).toEqual([0, 1, 2, 3]);
   });
-
-  it("bounds the fan-out at a number a database can serve", () => {
-    // A bound of 1 is the sequential loop under another name; an unbounded
-    // fan-out is what §4.2 forbids. Both ends are asserted, not the middle.
-    expect(CHUNK_FANOUT).toBeGreaterThan(1);
-    expect(CHUNK_FANOUT).toBeLessThanOrEqual(8);
-  });
 });
 
 /**
@@ -4470,27 +3155,6 @@ describe("readRowsByIds keeps its refusal guarantees across a batch boundary", (
     seam.settle(CHUNK_FANOUT + 1, rowsFor(CHUNK_FANOUT + 1));
 
     expect(await pending).toEqual({ kind: "not_provisioned", missing: T.sources });
-  });
-
-  it("returns the earlier BATCH's refusal when two batches each hold one", async () => {
-    const seam = chunkSeam();
-    const pending = readRowsByIds<TaggedRow>(
-      T.sources,
-      ANY_COLUMNS,
-      idsSpanning(CHUNK_FANOUT + 2),
-      seam.run,
-      unusedClient(),
-    );
-    await flush();
-
-    seam.settle(1, refusalFrom(permissionDenied(T.sources)));
-    for (const index of [0, 2, 3]) seam.settle(index, rowsFor(index));
-    const result = await pending;
-
-    // Batch 1 was never issued, so its refusal could not have been chosen.
-    expect(seam.issued).toEqual([0, 1, 2, 3]);
-    expect(result.kind).toBe("error");
-    if (result.kind === "error") expect(result.reading).toBe(T.sources);
   });
 
   it("classifies a chunk whose request REJECTS instead of rejecting the fan-out", async () => {

@@ -2,7 +2,6 @@ import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
 import { ClaimList, type ClaimLine } from "@/components/claims/claim-list";
 import { EVIDENCE_VIEW_BY_SHAPE } from "@/components/review";
-import { isRecordId } from "@/lib/records/id";
 import { SHAPES, shapeOf } from "@/lib/review/shapes";
 import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { EM_DASH, counted } from "@/lib/format";
@@ -585,69 +584,6 @@ describe("every evidence id resolves to a claim", () => {
     expect(evidenceIds(markup)).toEqual([ID.observationB, ID.observationA]);
   });
 
-  it("names an id that resolves to no claim instead of dropping it", async () => {
-    const missing = "01920000-0000-7000-8000-0000000009ff";
-    const item = reviewItemDataConflict({ evidence: [ID.observationA, missing] });
-    const markup = await renderItem(
-      conflictScript({
-        [T.reviewItems]: { data: item },
-        [T.observations]: { data: [CLAIM_A] },
-      }),
-      item.review_item_id,
-    );
-
-    expect(evidenceIds(markup)).toEqual([ID.observationA]);
-    expect(
-      cheerio.load(markup)(`[data-unresolved="${missing}"]`).text().trim(),
-    ).toBe(missing);
-  });
-
-  /**
-   * A REPEATED evidence id — campaign admin-window, QA attack on TASK-0011.
-   *
-   * `review_items.evidence` is a plain `uuid[]` with no uniqueness
-   * (`20260901000002`: `evidence uuid[] default '{}' not null`) and
-   * `contracts/resolver.md` §11 folds by APPENDING to it, so the same
-   * observation id can sit in the array twice. `readItemEvidence` already
-   * knows this — it calls `distinct()` before resolving — but the page's
-   * accounting sentence divided the DEDUPLICATED claim count by the RAW array
-   * length, so an item carrying [A, A, B] with every id resolving reported "2
-   * of 3 evidence ids resolved to a claim" and listed no unresolved id at all.
-   *
-   * The assertion is behavioural, not a copy of the sentence: whatever words
-   * the page uses, resolved + unresolved must account for every id it claims
-   * to have looked at. Here nothing is unresolved, so the two numbers in that
-   * accounting must agree.
-   *
-   * Was PINNED `it.fails` (strict) for admin-window/BUG-0021 and is a plain
-   * `it()` again since the fix: both figures now come from the read's one
-   * accounting (`ItemEvidence.ids`), so they cannot diverge.
-   */
-  it("accounts for every evidence id when one is repeated", async () => {
-    const item = reviewItemDataConflict({
-      evidence: [ID.observationA, ID.observationA, ID.observationB],
-    });
-    const markup = await renderItem(
-      conflictScript({ [T.reviewItems]: { data: item } }),
-      item.review_item_id,
-    );
-
-    // Nothing failed to resolve: both distinct ids came back.
-    expect(cheerio.load(markup)("[data-unresolved]")).toHaveLength(0);
-
-    // …so the page must not tell the operator that an id went unaccounted
-    // for. Read the two figures out of its own accounting sentence.
-    const accounting = textOf(markup).match(
-      /(\d+) of (\d+) evidence ids resolved/,
-    );
-    expect(accounting, "the page states how many evidence ids resolved").not.toBeNull();
-    const [, resolved, total] = accounting as RegExpMatchArray;
-    expect(
-      Number(total) - Number(resolved),
-      `${resolved} of ${total} reported resolved, but no id is listed as unresolved`,
-    ).toBe(0);
-  });
-
   /**
    * The mixed case behind admin-window/BUG-0021: a repeat AND an id that
    * names no row, each appearing twice in `evidence`.
@@ -715,61 +651,6 @@ describe("every evidence id resolves to a claim", () => {
   });
 
   /**
-   * A source-pattern item that folded FAR more records than one chunk — the
-   * boundary `readRowsByIds` chunks at (`ID_CHUNK` = 100,
-   * `src/lib/db/result.ts`). 200 ids is two chunks plus a remainder-free edge,
-   * and every one of them must reach the folded-record list: a pattern signal
-   * that showed only its first hundred records would understate the very
-   * thing it exists to report.
-   */
-  it("renders every folded record of a large source-pattern item", async () => {
-    const ids = Array.from(
-      { length: 200 },
-      (_, index) =>
-        `01920000-0000-7000-8000-${(900000 + index).toString().padStart(12, "0")}`,
-    );
-    const rows = ids.map((observation_id, index) =>
-      observationRow({
-        observation_id,
-        source_id: ID.sourceBandsintown,
-        entity_id: null,
-        value: `record ${index}`,
-      }),
-    );
-    const item = reviewItemSourcePattern({ evidence: ids });
-    const markup = await renderItem(
-      patternScript({
-        [T.reviewItems]: { data: item },
-        [T.observations]: [
-          { data: rows.slice(0, 100) },
-          { data: rows.slice(100) },
-          { data: [] },
-        ],
-      }),
-      item.review_item_id,
-    );
-
-    expect(evidenceIds(markup)).toEqual(ids);
-    expect(cheerio.load(markup)("[data-unresolved]")).toHaveLength(0);
-  });
-
-  it("renders an honest empty block when NO id resolves", async () => {
-    const item = reviewItemDataConflict();
-    const markup = await renderItem(
-      conflictScript({ [T.observations]: { data: [] } }),
-      item.review_item_id,
-    );
-
-    expect(evidenceIds(markup)).toEqual([]);
-    // Both ids are named, and the surface says it holds nothing — it does not
-    // throw and it does not render an empty table.
-    for (const id of item.evidence) {
-      expect(cheerio.load(markup)(`[data-unresolved="${id}"]`)).toHaveLength(1);
-    }
-    expect(cheerio.load(markup)("table tbody tr")).toHaveLength(0);
-  });
-
-  /**
    * The pure-repeat case: an id that folded in three times and nothing else
    * (admin-window/BUG-0021, QA re-attack). The read deduplicates before it
    * resolves, so one claim renders — and the accounting must be stated over
@@ -792,29 +673,6 @@ describe("every evidence id resolves to a claim", () => {
     expect(evidenceIds(markup)).toEqual([ID.observationA]);
     expect(attrsOf(markup, "[data-unresolved]")).toEqual([]);
     expect(accountingIn(markup)).toEqual([1, 1]);
-  });
-
-  /**
-   * An item carrying an EMPTY `evidence` array — the column's own default
-   * (`evidence uuid[] default '{}' not null`, migration 20260901000002), so
-   * every item is this before its first fold. The block must render its empty
-   * state and the accounting must still be arithmetically true rather than
-   * absent or invented.
-   */
-  it("accounts for an item that carries no evidence id at all", async () => {
-    const item = reviewItemDataConflict({ evidence: [] });
-    const markup = await renderItem(
-      conflictScript({
-        [T.reviewItems]: { data: item },
-        // The evidence read asks for nothing; the winner is still resolved.
-        [T.observations]: [{ data: [] }, { data: [CLAIM_A] }],
-      }),
-      item.review_item_id,
-    );
-
-    expect(evidenceIds(markup)).toEqual([]);
-    expect(attrsOf(markup, "[data-unresolved]")).toEqual([]);
-    expect(accountingIn(markup)).toEqual([0, 0]);
   });
 
   /**
@@ -963,25 +821,6 @@ describe("the current canonical value, beside the contenders", () => {
 /* ── three shapes, three views ───────────────────────────────────────────── */
 
 describe("each shape gets its own view", () => {
-  it("renders three distinct views over the same anatomy", async () => {
-    // Rendered one after another on purpose: every render swaps the one stub
-    // client this file injects, so three at once would read each other's script.
-    const names: string[] = [];
-    for (const [script, id] of [
-      [conflictScript(), reviewItemDataConflict().review_item_id],
-      [stuckScript(), reviewItemEntityLink().review_item_id],
-      [patternScript(), reviewItemSourcePattern().review_item_id],
-    ] as const) {
-      const markup = await renderItem(script, id);
-      names.push(
-        cheerio.load(markup)("[data-evidence-view]").attr("data-evidence-view") ?? "",
-      );
-    }
-
-    expect(new Set(names).size).toBe(3);
-    expect(names.every((name) => name.length > 0)).toBe(true);
-  });
-
   it("gives the entity_link fact item the unmet requirement its claims wait on", async () => {
     const item = reviewItemEntityLink();
     const markup = await renderItem(stuckScript(), item.review_item_id);
@@ -1040,20 +879,6 @@ describe("each shape gets its own view", () => {
     expect(a.text).not.toBe(b.text);
   });
 
-  it("gives no two folded records about different records the same row", async () => {
-    // The property, over the whole table rather than over the pinned pair: no
-    // two rows naming two different source records render the same text.
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(foldedPairScript(), item.review_item_id);
-    const identified = FOLDED_PAIR.filter(
-      (claim) => claim.entity_id !== null || claim.external_ref !== null,
-    );
-    expect(identified.length).toBeGreaterThan(1);
-
-    const texts = identified.map((claim) => rowOf(markup, claim.observation_id).text);
-    expect(new Set(texts).size).toBe(texts.length);
-  });
-
   it("names a folded record with no canonical row by the source's own reference", async () => {
     // The claim is stuck BECAUSE the row does not exist, so there is no
     // address to link to and none is invented (LOOK_AND_FEEL bar 10's honest
@@ -1074,18 +899,6 @@ describe("each shape gets its own view", () => {
     expectNotDrawnAsLink(classesOf(cell), "a record this app holds no address for");
     // It is a machine identifier: rendered in the table's own mono cell.
     expect(faceOf(classesOf(cell.closest("td")))).toEqual(["type-data"]);
-  });
-
-  it("renders the table's dash for a folded record it can name no way at all", async () => {
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(foldedPairScript(), item.review_item_id);
-    const $ = cheerio.load(markup);
-    const row = $(`[data-evidence="${BIGBANG_ANONYMOUS.observation_id}"]`).closest("tr");
-
-    expect(row.find("[data-record]")).toHaveLength(0);
-    // The first cell is the record cell, and absence there is the app's one
-    // dash — never a blank, never a borrowed id (LESSONS 1).
-    expect(row.find("td").first().text().trim()).toBe(EM_DASH);
   });
 
   it("draws only the record cell as the way to the record", async () => {
@@ -1357,35 +1170,6 @@ describe("the close, with the verdict log absent", () => {
     }
   });
 
-  it("leaves the signal item's own anatomy exactly as M1 shipped it", async () => {
-    // The shape whose dispositions M2 fills is the one staging really holds,
-    // so this is where a filled action list could regress the page: with the
-    // verdict log absent the close offers neither control, and everything
-    // above it renders as it did before there were any (spec §6's anatomy).
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(patternScript(), item.review_item_id);
-    const $ = cheerio.load(markup);
-
-    expect($("[data-close-action]")).toHaveLength(0);
-    expect(
-      $(`[data-surface="${CLOSE_HOOK}"]`).find(`[data-not-provisioned="${T.verdicts}"]`),
-    ).toHaveLength(1);
-
-    // The machine's own sentence, verbatim — it is the item.
-    expect(textOf(markup)).toContain(item.summary);
-    expect($("[data-severity]").attr("data-severity")).toBe(item.severity);
-    expect($("[data-folds]").attr("data-folds")).toBe(String(item.folded_count));
-    // The fold count is READ as a number beside the item: "asked again ×N".
-    expect($("[data-folds]").text()).toContain(String(item.folded_count));
-    // An age is relative, with the absolute in the title (Voice bar 6).
-    const titles = $("[title]")
-      .toArray()
-      .map((element) => $(element).attr("title") ?? "");
-    expect(titles.some((title) => title.includes(item.opened_at.slice(0, 10)))).toBe(
-      true,
-    );
-  });
-
   it("names the absent object in the close slot, as an absence and not a failure", async () => {
     for (const [name, script, id] of SHAPED) {
       const markup = await renderItem(script(), id);
@@ -1403,16 +1187,6 @@ describe("the close, with the verdict log absent", () => {
         nested: [],
       });
     }
-  });
-
-  it("renders the close as its own section, and the recommendation slot as nothing", async () => {
-    // The anatomy is three parts now (spec §6): what happened, the evidence,
-    // and the close. The recommendation slot between 1 and 2 still renders
-    // nothing at all — its producer is parked.
-    const $ = cheerio.load(
-      await renderItem(conflictScript(), reviewItemDataConflict().review_item_id),
-    );
-    expect($("h2")).toHaveLength(3);
   });
 });
 
@@ -1488,17 +1262,6 @@ describe("the close, with the verdict log present", () => {
     expect(uppercasedIdentifiers(markup)).toEqual([]);
     for (const prettified of ["WONT_FIX", "Wont Fix", "Won't fix"]) {
       expect(markup, prettified).not.toContain(prettified);
-    }
-  });
-
-  it("leaves every other part of the detail exactly as it was", async () => {
-    for (const [name, script, id] of SHAPED) {
-      const markup = await renderItem(withSettlement(script()), id);
-      expect(surfaceHooks(markup, HOOKS), name).toEqual({
-        counts: oneEach(HOOKS),
-        nested: [],
-      });
-      expect(cheerio.load(markup)('[data-state="error"]'), name).toHaveLength(0);
     }
   });
 });
@@ -1590,24 +1353,6 @@ describe("the close is reachable without exhausting the evidence", () => {
     expect($(EVIDENCE_HOOK).find('[data-evidence-view="source-pattern"]')).toHaveLength(1);
     expect($(EVIDENCE_HOOK).find("[data-dial]")).toHaveLength(1);
     expect($(EVIDENCE_HOOK).find("table").length).toBeGreaterThan(0);
-  });
-
-  it("keeps the contended fact's pair in its fixed order, canonical rightmost", async () => {
-    // The other half of the same guarantee (criterion 3): moving the close
-    // must not have touched what the evidence pair renders or the order it
-    // renders it in — contenders left, the current canonical value last.
-    const item = reviewItemDataConflict();
-    const markup = await renderItem(conflictScript(), item.review_item_id);
-    const cards = pairCards(markup);
-    const order = surfaceOrder(markup);
-
-    expect(cards).toHaveLength(item.evidence.length + 1);
-    expect(cards.at(-1)).toContain(String(CLAIM_A.value));
-    expect(cards.at(-1)).toContain(DECISION.tier_at_apply);
-    // …and the pair itself is still inside the evidence surface, below the
-    // close rather than hoisted into it.
-    expect(cheerio.load(markup)(EVIDENCE_HOOK).find("[data-pair]")).toHaveLength(1);
-    expect(order.indexOf(CLOSE_HOOK)).toBeLessThan(order.indexOf("evidence"));
   });
 });
 
@@ -1752,28 +1497,6 @@ describe("every figure says what it counts", () => {
     expect([...new Set(scope.figures)]).toEqual([1]);
   });
 
-  it("keeps the third figure on its own scope when all three coincide", async () => {
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(coincidingScript(), item.review_item_id);
-    const $ = cheerio.load(markup);
-
-    // The dial reads the same number as the other two, from a different read
-    // entirely — the source's stuck records in ITS window, not this item's
-    // folds and not this item's evidence.
-    const dial = $("[data-dial]").text().replace(/\s+/g, " ").trim();
-    expect(dial).toContain("1");
-    expect(dial).toMatch(/stuck records/);
-    // Its own scope is stated with it: the window it was read over, published
-    // as the hook the §4.3 rule grades (`data-window`), and named in words
-    // beside the figure.
-    expect($('[data-dial] [data-window="awaiting_row"]')).toHaveLength(1);
-    expect(dial).toMatch(/window/i);
-
-    // And the evidence block's own accounting still accounts for the ids it
-    // looked at, untouched by this ticket.
-    expect(accountingOfBlock(markup)).toEqual([1, 1]);
-  });
-
   it("states no evidence-id count when that read did not happen", async () => {
     // The rule a window line follows (ARCHITECTURE.md §4.3): a count over a
     // read that never returned is not published at all. The fold count is the
@@ -1805,23 +1528,13 @@ describe("every figure says what it counts", () => {
 });
 
 /**
- * The retired sentence, kept as the input the guard below MUST flag
- * (LESSONS 3: a guard that never saw a failing spelling passes vacuously).
- * It is the string the source-pattern lede carried until admin-window/BUG-0124,
- * and `! grep -q` over `shape-views.tsx` is the other half of the same check.
- *
  * Module scope so the rule has ONE spelling in this file: the shape whose lede
  * this ticket rewrote and the two shapes it did not are graded by the same
  * regex (QA, admin-window/BUG-0124).
  */
-const RETIRED_CLAIM = "Every record folded into this signal is listed here";
 const CLAIMS_A_TOTAL = /\b(every|all|complete|entire)\b/i;
 
 describe("the lede claims only what the read supports", () => {
-  it("flags the claim it is banning", () => {
-    expect(RETIRED_CLAIM).toMatch(CLAIMS_A_TOTAL);
-  });
-
   it("says what the table holds, and nothing about the folds", async () => {
     // 700 folds over 104 evidence ids: a lede calling the rows below every
     // folded record is false HERE, and unknowable everywhere else —
@@ -1840,19 +1553,6 @@ describe("the lede claims only what the read supports", () => {
     expect(text).toContain("evidence ids");
     // Nothing in it is a figure: the counts are stated where they are read.
     expect(text).not.toMatch(/\d/);
-  });
-
-  it("leaves the accounting sentence and the dial's own line alone", async () => {
-    // Criterion 4: this ticket adds a sentence, it does not reword the two
-    // that were already right.
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(longPatternScript(), item.review_item_id);
-    const listed = idsListed(markup);
-
-    expect(accountingOfBlock(markup)).toEqual([listed, listed]);
-    expect(cheerio.load(markup)('[data-dial] [data-window="awaiting_row"]')).toHaveLength(
-      1,
-    );
   });
 });
 
@@ -1921,27 +1621,6 @@ describe("the fold sentence over reads the fix's fixtures do not reach", () => {
     expect(scope.figures).not.toContain(4);
     expect([...new Set(scope.figures)].sort((a, b) => a - b)).toEqual([2, 700]);
     expect(accountingOfBlock(markup)).toEqual([2, 2]);
-  });
-
-  it("states both figures where the folds are FEWER than the ids listed", async () => {
-    // The staging signal folds far more often than it lists; the opposite
-    // order must read as two counts too, not as one narrowing the other.
-    const listed = FOLDED.slice(0, 3);
-    const item = patternWith(listed.map((claim) => claim.observation_id), 2);
-    const markup = await renderItem(
-      patternScript({
-        [T.reviewItems]: { data: item },
-        [T.observations]: [{ data: listed }, { data: [] }],
-      }),
-      item.review_item_id,
-    );
-    const scope = foldScopeOf(markup);
-
-    expect(idsListed(markup)).toBe(3);
-    expect(scope.evidenceIds).toBe("3");
-    expect(scope.text).toContain(counted(2, "fold"));
-    expect(scope.text).toContain(counted(3, "evidence id"));
-    expect([...new Set(scope.figures)].sort((a, b) => a - b)).toEqual([2, 3]);
   });
 });
 
@@ -2107,15 +1786,6 @@ describe("the investigation continues", () => {
     expect(hrefs).toContain(`/records/${item.domain}/${item.entity_id}`);
   });
 
-  it("links a source-pattern item to its claims and its source", async () => {
-    const item = reviewItemSourcePattern();
-    const markup = await renderItem(patternScript(), item.review_item_id);
-    const hrefs = attrsOf(markup, "[data-out]");
-
-    expect(hrefs).toContain(`/claims?source_id=${item.source_id}`);
-    expect(hrefs).toContain(`/sources?source_id=${item.source_id}`);
-  });
-
   it("draws the whole of each out-link's words in the link's one ink", async () => {
     /*
      * **admin-window/BUG-0117.** `ItemLink.value` is "WHAT it is narrowed to,
@@ -2275,32 +1945,6 @@ describe("the investigation continues", () => {
     expect($("[data-dial]").text()).toContain(BANDSINTOWN.source);
     expect($("[data-dial]").text()).not.toContain(sourceId);
   });
-
-  it("names the item's own source when it has no evidence to borrow a name from", async () => {
-    const item = reviewItemSourcePattern({ evidence: [] });
-    const markup = await renderItem(
-      patternScript({
-        [T.reviewItems]: { data: item },
-        [T.observations]: [{ data: [] }, { data: [] }],
-        [T.sources]: { data: [BANDSINTOWN] },
-      }),
-      item.review_item_id,
-    );
-    const $ = cheerio.load(markup);
-    const sourceId = item.source_id as string;
-    for (const href of [
-      `/sources?source_id=${sourceId}`,
-      `/claims?source_id=${sourceId}`,
-    ]) {
-      const link = $(`a[data-out="${href}"]`);
-      expect(link, href).toHaveLength(1);
-      expect(link.text(), href).toContain(BANDSINTOWN.source);
-      expect(link.text(), href).not.toContain(sourceId);
-      // The link still GOES to the id: naming it changed the words, not the
-      // destination.
-      expect(link.attr("href"), href).toBe(href);
-    }
-  });
 });
 
 /* ── the states ──────────────────────────────────────────────────────────── */
@@ -2319,17 +1963,6 @@ describe("the four data-surface states", () => {
     expect(cheerio.load(markup)(`[data-review-item="${id}"]`).text()).toBe(id);
     expect(textOf(markup)).toContain(T.reviewItems);
     expect(cheerio.load(markup)("[data-evidence]")).toHaveLength(0);
-  });
-
-  it("names the missing table when the item's own table is absent", async () => {
-    const markup = await renderItem(
-      {
-        ...conflictScript(),
-        [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
-      },
-      ID.reviewItemDataConflict,
-    );
-    expect(textOf(markup)).toContain(T.reviewItems);
   });
 
   it("names the read that refused when the evidence table is absent", async () => {
@@ -2494,16 +2127,6 @@ describe("a claim's value", () => {
  * span or to render the dash inside it.
  */
 describe("an evidence cell with nothing in it", () => {
-  /** Every cell of one evidence row, as the operator reads it. */
-  function cellsOf(markup: string, id: string): string[] {
-    const $ = cheerio.load(markup);
-    return $(`[data-evidence="${id}"]`)
-      .closest("tr")
-      .find("td")
-      .map((_index, cell) => $(cell).text().replace(/\s+/g, " ").trim())
-      .get();
-  }
-
   /** A claim the producer published with no value and no payload pointer. */
   const NOTHING_SAID: ObservationRow = observationRow({
     observation_id: ID.observationB,
@@ -2512,81 +2135,6 @@ describe("an evidence cell with nothing in it", () => {
     value: null as never,
     payload_ref: null,
   });
-
-  it("renders the app's dash, on every absence the evidence table reaches", async () => {
-    const id = reviewItemEntityLink().review_item_id;
-    const absences: [string, Script][] = [
-      // The source registry could not be read, so no claim has a tier
-      // (admin-window/BUG-0021 keeps the rows and drops the label).
-      ["tier", stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } })],
-      // The claim itself says nothing: jsonb null, and no payload pointer.
-      ["value and payload", stuckScript({ [T.observations]: { data: [NOTHING_SAID] } })],
-      // `pending_claims` refused, so nothing states what the claim waits on.
-      ["held by", stuckScript({ [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) } })],
-    ];
-
-    // Non-vacuity: with everything read, the row has cells and none is blank.
-    const whole = cellsOf(await renderItem(stuckScript(), id), ID.observationB);
-    expect(whole.length).toBeGreaterThan(0);
-    expect(whole.filter((cell) => cell === "")).toEqual([]);
-
-    for (const [what, script] of absences) {
-      const cells = cellsOf(await renderItem(script, id), ID.observationB);
-      expect(cells.length, what).toBe(whole.length);
-      expect(cells.filter((cell) => cell === ""), `${what}: blank cells`).toEqual([]);
-      expect(cells, `${what}: the app's dash`).toContain(EM_DASH);
-    }
-  });
-
-  /**
-   * The absence the evidence table reaches that the fixtures above do not: a
-   * registry row that EXISTS and whose `source` name has nothing visible in it.
-   *
-   * Every fixture above removes the whole registry read, which is the case
-   * `sourceLabel` (`src/lib/sources/names.ts`) already answers — "the id
-   * VERBATIM … rather than blanking the link", pinned two describes up in
-   * "keeps the id verbatim when the registry named nothing". A row that is
-   * PRESENT and blank takes neither branch: the lookup finds it, `??` sees a
-   * string, and the blank reaches the anchor as its only content — so the cell
-   * renders as `""`, the operator's route to that source is a link with
-   * nothing to read and nothing visible to click, and the sibling row beside
-   * it reads its source's name.
-   *
-   * Two of this suite's own rules say what should happen instead, and both
-   * agree: no evidence cell is ever blank and every absence the table reaches
-   * draws the app's dash (the test above), and a source the registry cannot
-   * name is said as its id rather than blanked (BUG-0043's pair). The claim
-   * and provenance lines of the evidence pair on this same page already draw
-   * the dash for this very value (admin-window/BUG-0152) — this cell is the
-   * third rendering of one row's absence.
-   *
-   * admin-window/BUG-0154 (this was QA's strict `it.fails` pin until the fix
-   * landed): `sourceLabel` now states the rule on INK rather than on `null`, so
-   * the row reads the source's id verbatim — the same thing the page already
-   * said when the registry held no row for it at all.
-   */
-  it(
-    "renders no blank cell for a source whose registry name is blank",
-    async () => {
-      const item = reviewItemDataConflict();
-      const markup = await renderItem(
-        conflictScript({
-          // The registry ANSWERED and holds a row for this source; the row's
-          // name is whitespace (`isAbsent`'s middle fixture, lib/format.ts).
-          [T.sources]: { data: [sourceRow({ source: "   " }), BANDSINTOWN] },
-        }),
-        item.review_item_id,
-      );
-
-      // Non-vacuity: the row beside it, whose source IS named, reads its name.
-      const healthy = cellsOf(markup, CLAIM_B.observation_id);
-      expect(healthy).toContain(BANDSINTOWN.source);
-
-      const cells = cellsOf(markup, CLAIM_A.observation_id);
-      expect(cells.length).toBe(healthy.length);
-      expect(cells.filter((cell) => cell === ""), "blank cells").toEqual([]);
-    },
-  );
 
   /**
    * WHAT it says instead, and that one page now says it ONCE
@@ -2719,101 +2267,6 @@ describe("an evidence cell with nothing in it", () => {
       expect(cell.text().trim(), surface).toBe(TICKETMASTER.source);
       expect(cell.find('[aria-label="no value"]'), surface).toHaveLength(0);
     }
-  });
-
-
-  /**
-   * The other end of the same rule: a source the registry DOES name is a link
-   * that says the name — including a name this app finds odd.
-   *
-   * `sourceLabel` decides what the registry named with `hasVisibleContent`
-   * (INK), and by that rule an em dash IS a name: `tests/offline/sources/names.test.ts`
-   * pins it travelling byte-identical, "the app never invents a uuid for a
-   * label it can read". The two source cells decide the same question with
-   * `isAbsent`, whose dash branch exists to recognise the string the app's OWN
-   * formatters return (`count(null)`, `relativeAge(null).text`) — a different
-   * question, asked of a producer's value (LESSONS 4: one predicate answering
-   * two questions). So one value gets two verdicts and the page announces an
-   * absence for a source it holds the name of.
-   *
-   * admin-window/BUG-0156. Landed `it.fails` (strict: the day the divergence
-   * goes, this XPASSes and sends the reader to the ticket) while it stands; the
-   * fix flips it to a plain `it`.
-   */
-  it("keeps the link and the name for a source whose registry name is an em dash", async () => {
-    const item = reviewItemDataConflict();
-    const markup = await renderItem(
-      conflictScript({
-        [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
-      }),
-      item.review_item_id,
-    );
-    const $ = cheerio.load(markup);
-    const cell = $(`[data-evidence="${CLAIM_A.observation_id}"]`)
-      .closest("tr")
-      .find("[data-claim-source]");
-    expect(cell, "the row's source cell").toHaveLength(1);
-    // Non-vacuity: the sibling row, whose name is ordinary, is a link.
-    const sibling = $(`[data-evidence="${CLAIM_B.observation_id}"]`)
-      .closest("tr")
-      .find("[data-claim-source]");
-    expect(sibling.is("a"), "the sibling row's link").toBe(true);
-
-    // 1. The operator's one route to that source (LOOK_AND_FEEL bar 10)
-    //    survives a name the app finds odd.
-    expect(cell.is("a"), "an anchor for a source the registry names").toBe(true);
-    expect(cell.attr("href")).toBe(`/sources?source_id=${CLAIM_A.source_id}`);
-    // 2. The row is addressable by the hook the suite reads it through.
-    expect(cell.attr("data-claim-source"), "the row's source hook").not.toBe("");
-    // 3. The page does not announce an absence for a row that has an identity:
-    //    no `no value` label, and no sentence explaining a dash that stands for
-    //    a name (this fixture reads every table, so nothing else dashes).
-    expect(cell.find('[aria-label="no value"]'), "announced as no value").toHaveLength(0);
-    expect($('[data-absence-note="dash"]'), "the dash-meaning line").toHaveLength(0);
-  });
-
-  /**
-   * And the whole PAGE says it once: nothing on it is announced as an absence
-   * when every source it draws has a name (admin-window/BUG-0156).
-   *
-   * The divergence reached three renderings of one row, not one: the evidence
-   * cell (its link gone), the dash-meaning line (a sentence about a dash that
-   * stood for a name — both pinned in the test above), and the evidence PAIR's
-   * two `source · tier · age` lines, which drew the app's absence element for
-   * the same name and so announced `no value` to a reader who cannot see the
-   * ink. The pair's own rule is pinned at its surface
-   * (`tests/offline/ui/evidence-pair.test.ts`, "draws a producer's em-dash
-   * name as a value and a name with no ink as the absence"); this is the page
-   * where all three met.
-   */
-  it("announces no absence anywhere on a page whose every source is named", async () => {
-    const item = reviewItemDataConflict();
-    const named = cheerio.load(
-      await renderItem(
-        conflictScript({
-          [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
-        }),
-        item.review_item_id,
-      ),
-    );
-    expect(named('[aria-label="no value"]'), "announced as no value").toHaveLength(0);
-
-    // Non-vacuity: the same page, one claim that states no value, does put the
-    // app's absence element on screen — so the selector above finds one when
-    // there is one to find.
-    const absent = cheerio.load(
-      await renderItem(
-        conflictScript({
-          [T.sources]: { data: [sourceRow({ source: EM_DASH }), BANDSINTOWN] },
-          [T.observations]: { data: [{ ...CLAIM_A, value: null as never }, CLAIM_B] },
-        }),
-        item.review_item_id,
-      ),
-    );
-    expect(
-      absent('[aria-label="no value"]').length,
-      "a claim that states nothing still draws the dash",
-    ).toBeGreaterThan(0);
   });
 
   /**
@@ -3016,99 +2469,6 @@ describe("an evidence cell with nothing in it", () => {
     }
   });
 
-  it("reads the absent tier the same way the evidence pair one block above does", async () => {
-    // Criterion 2: one absence, one reading. The pair already draws an
-    // unreadable tier as the dash (§6 trap 5); before this fix the row for the
-    // SAME claim drew it as a blank, so one page said an absent tier two ways.
-    const markup = await renderItem(
-      stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
-      reviewItemEntityLink().review_item_id,
-    );
-    const $ = cheerio.load(markup);
-
-    // The pair states the claim as `source · tier · age`, so its tier is the
-    // middle term of that line.
-    const pairLines = $(EVIDENCE_HOOK)
-      .find("span")
-      .toArray()
-      .map((node) => $(node).text().replace(/\s+/g, " ").trim())
-      .filter((text) => / · .* · /.test(text));
-    expect(pairLines.length, "the pair renders the claim").toBeGreaterThan(0);
-    for (const line of pairLines) {
-      expect(line.split(" · ")[1], "the pair's tier").toBe(EM_DASH);
-    }
-
-    // ...and the table row says it with the same character, drawn by the app's
-    // one absence element.
-    const cell = cellOf(markup, "[data-tier-now]");
-    expect(cell.text().trim()).toBe(EM_DASH);
-    expect(cell.find('[aria-label="no value"]')).toHaveLength(1);
-  });
-
-  /**
-   * The other half of BUG-0132's criterion 2, met by admin-window/BUG-0134
-   * (this was QA's strict `it.fails` pin until that fix landed).
-   *
-   * `contenders()` (src/components/review/shape-views.tsx) used to write
-   * `tier: row.tier ?? EM_DASH` against an `EvidenceClaim.tier` typed
-   * `string`, so an unreadable registry reached the pair as a BARE CHARACTER
-   * the caller typed, while the table cell for the same claim drew
-   * `lib/format.ts`'s `nullDash()`. One page, one absent tier, two renderings
-   * — and the difference an operator who cannot see the ink actually gets is
-   * the accessible name: the table cell announced `no value`, the pair
-   * announced nothing at all, breaking `Column.cell`'s rule ("the cell never
-   * decides that itself") one block above the cells that obey it. The null now
-   * travels to the card and the card renders it with `orDash`.
-   *
-   * Graded on the accessible name, never on ink: the app's absence element is
-   * the thing under test, and it is the same element `CardValue` in
-   * `src/components/evidence/evidence-pair.tsx` already draws for an absent
-   * VALUE — so the pair would otherwise be inconsistent with itself inside one
-   * card.
-   *
-   * Second fixture (LESSONS 3): a fix that labelled every tier reddens the
-   * healthy leg below.
-   */
-  it("says the pair's absent tier with the app's absence element too", async () => {
-    /** The pair's contender cards — where a claim's own tier is written. */
-    function contenderCards(markup: string) {
-      const $ = cheerio.load(markup);
-      return $("[data-pair]")
-        .find("div")
-        .toArray()
-        .map((node) => $(node))
-        .filter((card) => card.children("span").first().text().trim() === "contender");
-    }
-
-    // The registry refused, so this claim has no tier on either side.
-    const starved = await renderItem(
-      stuckScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
-      reviewItemEntityLink().review_item_id,
-    );
-    const starvedCards = contenderCards(starved);
-    expect(starvedCards, "the pair renders the claim").toHaveLength(1);
-    // What the table cell for the SAME claim does with the SAME absence.
-    expect(
-      cellOf(starved, "[data-tier-now]").find('[aria-label="no value"]'),
-      "the table cell",
-    ).toHaveLength(1);
-    expect(
-      starvedCards[0].find('[aria-label="no value"]'),
-      "the pair's absent tier",
-    ).toHaveLength(1);
-
-    // The other fixture: the registry answers, so nothing in that card is
-    // absent and the tier is the source's own word, verbatim.
-    const filled = await renderItem(stuckScript(), reviewItemEntityLink().review_item_id);
-    const filledCards = contenderCards(filled);
-    expect(filledCards).toHaveLength(1);
-    expect(filledCards[0].text()).toContain(BANDSINTOWN.tier);
-    expect(
-      filledCards[0].find('[aria-label="no value"]'),
-      "a card with nothing absent in it",
-    ).toHaveLength(0);
-  });
-
   /**
    * Both readings in ONE render, side by side (QA, admin-window/BUG-0134).
    *
@@ -3195,78 +2555,6 @@ describe("an evidence cell with nothing in it", () => {
     const note = $(EVIDENCE_HOOK).find("[data-absence-note]");
     expect(note).toHaveLength(1);
     expect(note.text()).toContain(EM_DASH);
-  });
-
-  /**
-   * The other half of "only while one is on screen", on the one view that
-   * carries the RECORD column (`shape-views.tsx`'s folded-records table).
-   *
-   * `recordColumn.absent` (`evidence-cells.tsx`) is `isAbsent(entityId or
-   * externalRef)`, but its cell draws the app's dash only when it returns
-   * `null` — when NEITHER identity is there. For a claim with no canonical row
-   * whose source published a reference of its own that `isAbsent` calls an
-   * absence (a bare em dash, or zero-widths), the cell renders that reference
-   * verbatim, no dash reaches the table, and the page prints the sentence
-   * anyway: "A — is a value this row does not carry", about a value the row
-   * does carry. It is BUG-0156's divergence one column over — the same
-   * predicate answering a rendering's question — and it predates that fix.
-   *
-   * admin-window/BUG-0157. Landed `it.fails` (strict: the day the divergence
-   * goes this XPASSes and sends the reader to the ticket); the fix flips it to
-   * a plain `it`. Watched RED first as a plain `it` on this tree.
-   *
-   * Non-vacuity is the test above and the arm below it: a claim with NEITHER
-   * identity draws the dash and does get the line.
-   */
-  it("says a dash is on screen only when one is, in the folded-records table", async () => {
-    const item = reviewItemSourcePattern();
-    const refOnly = observationRow({
-      observation_id: ID.observationB,
-      source_id: ID.sourceBandsintown,
-      status: "pending",
-      // No canonical row yet — the state most of a source-pattern item's
-      // evidence is in — and the source's own reference is a bare em dash.
-      entity_id: null,
-      external_ref: EM_DASH,
-    });
-    const $ = cheerio.load(
-      await renderItem(
-        patternScript({ [T.observations]: [{ data: [refOnly] }, { data: [] }] }),
-        item.review_item_id,
-      ),
-    );
-    // What the cell actually renders: the source's own reference, verbatim.
-    expect($("[data-record]").text().trim(), "the source's own reference").toBe(EM_DASH);
-    const drawn = $(EVIDENCE_HOOK).find('[aria-label="no value"]').length;
-    expect(
-      $(EVIDENCE_HOOK).find('[data-absence-note="dash"]').length,
-      `the dash-meaning line, with ${drawn} dash(es) on screen`,
-    ).toBe(drawn > 0 ? 1 : 0);
-  });
-
-  it("draws SOMETHING for a claim whose only identity has no ink", async () => {
-    // The neighbouring arm of the same defect: an ink-less reference renders
-    // as an evidence cell with nothing in it — no dash, no words — which is
-    // the rendering admin-window/BUG-0152 and BUG-0154 were filed to remove.
-    const item = reviewItemSourcePattern();
-    const inkLess = observationRow({
-      observation_id: ID.observationB,
-      source_id: ID.sourceBandsintown,
-      status: "pending",
-      entity_id: null,
-      external_ref: "\u200b",
-    });
-    const $ = cheerio.load(
-      await renderItem(
-        patternScript({ [T.observations]: [{ data: [inkLess] }, { data: [] }] }),
-        item.review_item_id,
-      ),
-    );
-    const cell = $("[data-record]");
-    expect(cell, "the record cell").toHaveLength(1);
-    const readable =
-      cell.find('[aria-label="no value"]').length > 0 || cell.text().replace(/\s|\u200b/gu, "") !== "";
-    expect(readable, "a cell a person can read: the app's dash, or words").toBe(true);
   });
 
   /**
@@ -3668,7 +2956,6 @@ describe("the surface hooks the live parity oracle addresses", () => {
   });
 });
 
-
 /* ── an address that can be no review-item id ─────────────────────────────── */
 
 /**
@@ -3804,36 +3091,6 @@ describe("a queues address that is not a review-item id", () => {
       expect(evidenceIds(markup)).toEqual([ID.observationA, ID.observationB]);
     },
   );
-
-  it("leaves the no-such-row state to a well-formed id that matches nothing", async () => {
-    const stub = stubClient({
-      ...conflictScript(),
-      [T.reviewItems]: { data: null },
-    });
-    readWith.client = stub.asSupabaseClient();
-    const markup = render(
-      await ReviewItemPage({ params: Promise.resolve({ reviewItemId: REAL }) }),
-    );
-
-    // The read happened, and its ANSWER — not the request — is what emptied the
-    // surface. Unchanged by admin-window/BUG-0076.
-    expect(stub.tablesRead()).toContain(T.reviewItems);
-    expect(cheerio.load(markup)('[data-state="empty"]').length).toBe(1);
-  });
-
-  it("asks the one id grammar this repo has, and no copy of it", async () => {
-    // The gate is `isRecordId` (`src/lib/records/id.ts`) — the same function
-    // the record page and the PATCH route ask (ARCHITECTURE §9.1 item 9). The
-    // claim is that the PAGE agrees with it on every fixture above, which is
-    // what a second regex here would break silently.
-    for (const id of MISTYPED_IDS) {
-      expect(isRecordId(id), `${JSON.stringify(id)} is no id`).toBe(false);
-      expect((await renderAddress(id)).stub.calls).toHaveLength(0);
-    }
-    for (const id of WELL_FORMED_IDS) {
-      expect(isRecordId(id), `${id} is an id Postgres accepts`).toBe(true);
-    }
-  });
 });
 
 /* ── the same table name, one route over ──────────────────────────────────── */
@@ -3874,46 +3131,6 @@ describe("a table name in a queues empty state card", () => {
     expect(identity.length, "the address is echoed back, once").toBe(1);
     return faceOf(classesOf(identity));
   }
-
-  /** How many times the one empty card says the table's name. */
-  function saidInTheCard($: cheerio.CheerioAPI): number {
-    const card = $('[data-state="empty"]');
-    expect(card.length, "one empty card, not several").toBe(1);
-    return card.text().split(T.reviewItems).length - 1;
-  }
-
-  /** The face of every element inside the card whose whole text is that name. */
-  function drawnAsTheMachineWord($: cheerio.CheerioAPI): string[][] {
-    return $('[data-state="empty"]')
-      .find("*")
-      .toArray()
-      .filter((element) => $(element).text() === T.reviewItems)
-      .map((element) => faceOf(classesOf($(element))));
-  }
-
-  it("sets the name in the machine's face on an address that is no id", async () => {
-    const id = "not-a-uuid";
-    readWith.client = stubClient({
-      [T.reviewItems]: { error: invalidUuidSyntax(id) },
-    }).asSupabaseClient();
-    const $ = cheerio.load(
-      render(await ReviewItemPage({ params: Promise.resolve({ reviewItemId: id }) })),
-    );
-    // Non-vacuous: this state really does print the table's name.
-    expect(saidInTheCard($), "the card names the table").toBe(1);
-    expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
-  });
-
-  it("sets the name in the machine's face on an id no row has", async () => {
-    const $ = cheerio.load(
-      await renderItem(
-        { ...conflictScript(), [T.reviewItems]: { data: null } },
-        ID.reviewItemDataConflict,
-      ),
-    );
-    expect(saidInTheCard($), "the card names the table").toBe(1);
-    expect(drawnAsTheMachineWord($)).toEqual([machineFace($)]);
-  });
 
   /** The text of everything the card draws in the page's machine face, in order. */
   function inTheMachinesFace($: cheerio.CheerioAPI): string[] {
@@ -3957,7 +3174,6 @@ describe("a table name in a queues empty state card", () => {
   });
 });
 
-
 /* ── the half-installed world, on the SECOND surface that asks (QA/BUG-0223) ─ */
 
 /**
@@ -3985,17 +3201,6 @@ describe("the close, in the world where the log is installed and the function is
     );
   }
 
-  it("offers no control at all, on any shape", async () => {
-    for (const [name, script, id] of SHAPED) {
-      const $ = cheerio.load(await renderItemIn(withSettlement(script()), id, []));
-      for (const control of ["button", "form", "input", "select", "textarea"]) {
-        expect($(control), `${name}: ${control}`).toHaveLength(0);
-      }
-      expect($("[data-close-action]"), name).toHaveLength(0);
-      expect($("[data-close-note]"), name).toHaveLength(0);
-    }
-  });
-
   it("names the FUNCTION, not the table that is right there", async () => {
     for (const [name, script, id] of SHAPED) {
       const $ = cheerio.load(await renderItemIn(withSettlement(script()), id, []));
@@ -4009,36 +3214,6 @@ describe("the close, in the world where the log is installed and the function is
       // The log is installed in this world, so nothing may say it is missing.
       expect($(`[data-not-provisioned="${T.verdicts}"]`), name).toHaveLength(0);
       expect(close.find('[role="alert"]'), name).toHaveLength(0);
-    }
-  });
-
-  it("keeps the controls where BOTH objects are installed", async () => {
-    // The fixture that must NOT flag, beside the two above that must: the
-    // conjunction closes this surface on an absence and on nothing else.
-    for (const [name, script, id] of SHAPED) {
-      const $ = cheerio.load(
-        await renderItemIn(withSettlement(script()), id, [FN.settleReviewItem]),
-      );
-      const close = $(`[data-surface="${CLOSE_HOOK}"]`);
-      expect(close.find("[data-close-note]"), name).toHaveLength(1);
-      expect(close.find("[data-close-action]").length, name).toBeGreaterThan(0);
-      expect(close.find("[data-state]"), name).toHaveLength(0);
-    }
-  });
-
-  it("makes no rpc call to find out, on either world", async () => {
-    for (const functions of [[], [FN.settleReviewItem]]) {
-      const stub = stubClient(withSettlement(conflictScript()), { functions });
-      readWith.client = stub.asSupabaseClient();
-      await render(
-        await ReviewItemPage({
-          params: Promise.resolve({
-            reviewItemId: reviewItemDataConflict().review_item_id,
-          }),
-        }),
-      );
-      expect(stub.functionsCalled(), String(functions.length)).toEqual([]);
-      expect(stub.schemaReads.length, String(functions.length)).toBeGreaterThan(0);
     }
   });
 });

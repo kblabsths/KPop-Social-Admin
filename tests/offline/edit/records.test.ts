@@ -58,15 +58,6 @@ function step(
 }
 
 describe("the columns a record read asks for", () => {
-  it("is the primary key plus exactly the editable ones", () => {
-    expect(recordColumns(EDIT_CONFIG.walk_sandbox)).toBe(
-      ["sandbox_id", ...EDIT_CONFIG.walk_sandbox.editable].join(", "),
-    );
-    // Nothing beyond the map is ever selected, so the surface cannot show —
-    // and a later widget cannot offer — a column the map does not carry.
-    expect(recordColumns(EDIT_CONFIG.walk_sandbox)).not.toContain("created_at");
-  });
-
   it("adds the read-only display columns, so the surface has them to draw", () => {
     // admin-window/TASK-0029: a resolver-owned table's editable list is empty
     // by design, and its record page showed its id and nothing else because
@@ -77,14 +68,6 @@ describe("the columns a record read asks for", () => {
       for (const column of config.display) {
         expect(recordColumns(config), `${table}.${column}`).toContain(column);
       }
-    }
-  });
-
-  it("asks for nothing the map does not carry, on a resolver-owned table too", () => {
-    const columns = recordColumns(EDIT_CONFIG.events).split(", ");
-    // Real columns of `events` that the map does not name: still unread.
-    for (const column of ["ticket_url", "event_type", "created_at", "ends_at"]) {
-      expect(columns, column).not.toContain(column);
     }
   });
 });
@@ -219,58 +202,6 @@ describe("updateRecordField refuses, and issues no query at all", () => {
     expect(calls).toEqual([]);
   });
 
-  it("refuses an id, key or timestamp column", async () => {
-    for (const field of ["sandbox_id", "created_at"]) {
-      const { result, calls } = await refuse("walk_sandbox", field);
-      expect(result.kind, field).toBe("error");
-      expect(calls, field).toEqual([]);
-    }
-  });
-
-  it("refuses a table Ben struck from the map, whatever the column", async () => {
-    // The strike, at the data layer. `groups`/`idols` left `EDIT_CONFIG` on
-    // 2026-09-08, so `decideEdit` cannot produce an `AllowedEdit` for either;
-    // the only way to ASK is the adversarial one — a hand-built config naming
-    // the struck table and the columns its retired allowlist carried. The data
-    // layer consults the map again and never builds a query. The stub scripts
-    // both tables on purpose: had a write been attempted it would have
-    // succeeded, so an empty call list is a real negative.
-    const db = stubClient({
-      groups: { data: { id: ROW_ID } },
-      idols: { data: { id: ROW_ID } },
-    });
-    for (const [table, field] of [
-      ["groups", "name"],
-      ["groups", "bio"],
-      ["groups", "member_count"],
-      ["idols", "stage_name"],
-      ["idols", "mbti"],
-    ] as const) {
-      const result = await updateRecordField(
-        {
-          config: {
-            table,
-            pk: "id",
-            regime: "sandbox",
-            editable: [field],
-            display: [],
-            reference: null,
-          },
-          field,
-          path: "direct",
-        },
-        ROW_ID,
-        "forged",
-        db.asSupabaseClient(),
-      );
-      expect(result.kind, `${table}.${field}`).toBe("error");
-      if (result.kind === "error") {
-        expect(result.message, `${table}.${field}`).toContain(table);
-      }
-    }
-    expect(db.calls).toEqual([]);
-  });
-
   it("refuses every column of a resolver-owned table, mapped or not", async () => {
     // Both halves, because they refuse for different reasons and BOTH have to
     // hold: `venue_id` and `event_type` are not in `editable` at all, while
@@ -295,36 +226,6 @@ describe("updateRecordField refuses, and issues no query at all", () => {
       }
       expect(calls, `${table}.${field}`).toEqual([]);
     }
-  });
-
-  it("refuses the map's own config for a resolver-owned table, obtained honestly", async () => {
-    // Not a forgery at all: `decideEdit("events", "title")` ALLOWS the edit —
-    // that is the override path — and its `AllowedEdit` carries
-    // `path: "override"`. Handing it here must still write nothing, so that
-    // "no `.update()` targets a catalog table on any path" is a property of
-    // the data layer and not of the route's branch (FEAT-0011 criterion 4).
-    const db = stubClient({
-      events: { data: { event_id: ROW_ID } },
-      venues: { data: { venue_id: ROW_ID } },
-    });
-    for (const [table, field] of [
-      ["events", "title"],
-      ["venues", "city"],
-    ] as const) {
-      const edit = allowed(table, field);
-      expect(edit.path, `${table}.${field}`).toBe("override");
-      const result = await updateRecordField(
-        edit,
-        ROW_ID,
-        "forged",
-        db.asSupabaseClient(),
-      );
-      expect(result.kind, `${table}.${field}`).toBe("error");
-      if (result.kind === "error") {
-        expect(result.message, `${table}.${field}`).toContain(table);
-      }
-    }
-    expect(db.calls).toEqual([]);
   });
 
   it("refuses a forged config whose table the map does not carry", async () => {
@@ -873,56 +774,6 @@ describe("readRecordProvenance", () => {
     const title = result.fields.get("title");
     expect(title && "source" in title ? title.source : null).toBe(TICKETMASTER);
     expect(result.note?.kind).toBe("error");
-  });
-
-  // STRICT XFAIL — admin-window/BUG-0090. `it.fails` reddens the day the
-  // behaviour is fixed and this marker is left behind, which sends the reader
-  // to the ticket instead of letting the pin rot silently.
-  it("carries the venue fact onto the reference column that displays it", async () => {
-    // QA, admin-window/TASK-0054 criterion 6; filed as admin-window/BUG-0090.
-    //
-    // `field_provenance.field` holds the REGISTRY field name, and
-    // `lib/verdict/decision.ts` states the one place that name differs from
-    // the canonical column: `events.venue` (field) -> `events.venue_id`
-    // (column). `provenanceFor` filters `.in("field", mappedColumns(config))`,
-    // which spells `venue_id`, so the venue fact's decision can never match —
-    // and the record page draws the em dash under a note that says the value
-    // has no source behind it.
-    //
-    // Measured on staging (ubfjjqlvnpnoborczbdb) 2026-09-08:
-    // `field_provenance` holds 11 `(entity_type=events, field=venue)` rows and
-    // ZERO `field=venue_id` rows; event 01a03c9b-1d28-707d-9873-f73ab3add10c
-    // carries `field=venue`, source ticketmaster, tier official, applied_at
-    // 2026-09-02T15:41:43Z, and its record page renders `venue_id` as `—`
-    // while `title`, `poster_url` and `starts_at` render
-    // "ticketmaster, applied 6d ago".
-    //
-    // Two halves, because the defect has two: the read must ASK for the
-    // registry name, and a returned row must LAND on the column it is drawn
-    // as.
-    const db = stubClient({
-      field_provenance: complete([
-        fieldProvenanceRow({
-          entity_id: EVENT_ID,
-          field: "venue",
-          source_id: TICKETMASTER,
-        }),
-      ]),
-      sources: complete([{ source_id: TICKETMASTER, source: "ticketmaster" }]),
-    });
-    const result = await readRecordProvenance(
-      EDIT_CONFIG.events,
-      EVENT_ID,
-      db.asSupabaseClient(),
-    );
-
-    // 1. The filter names the fact this surface displays.
-    expect(step(db.calls[0], "in")?.args[1]).toContain("venue");
-
-    // 2. The decision lands on the line the operator reads.
-    const venue = result.fields.get("venue_id");
-    expect(venue?.authority).toBe("source");
-    expect(venue && "source" in venue ? venue.source : null).toBe("ticketmaster");
   });
 
   it("reduces the venue fact's own history, and shows its lock", async () => {

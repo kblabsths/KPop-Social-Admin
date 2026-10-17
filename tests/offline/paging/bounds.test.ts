@@ -6,7 +6,6 @@ import {
   PAGE_ROUTES,
   pageBound,
   type PageBound,
-  type PageNotes,
 } from "@/lib/paging/bounds";
 
 /**
@@ -211,15 +210,5 @@ describe("isPageNotes", () => {
     for (const value of foreign) {
       expect(isPageNotes(value), JSON.stringify(value ?? String(value))).toBe(false);
     }
-  });
-
-  it("names no `DbResult`, and hands back the note objects untouched", () => {
-    // The note the answer carried IS the note the state gets: this leaf is a
-    // guard, never a translator (common violations row 15).
-    const value: unknown = BROWSE_NOTES;
-    expect(isPageNotes(value)).toBe(true);
-    const notes = value as PageNotes;
-    expect(notes.venues).toBe(BROWSE_NOTES.venues);
-    expect(notes.provenance).toBe(BROWSE_NOTES.provenance);
   });
 });

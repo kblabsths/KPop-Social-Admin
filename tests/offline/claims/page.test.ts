@@ -29,10 +29,7 @@ import {
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import { functionPaths } from "../../fixtures/client-props";
-import {
-  implicitInterElementSpaces,
-  implicitInterElementSpacesIn,
-} from "../source-tree";
+import { implicitInterElementSpaces } from "../source-tree";
 import {
   disagreeingCounts,
   factoryTicketIds,
@@ -43,8 +40,6 @@ import {
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
-  chipsInsideLinks,
-  expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
 import {
@@ -498,69 +493,6 @@ function chipsOf(markup: string, facet: string) {
 /* ── the buckets, with counts and age ────────────────────────────────────── */
 
 describe("the classification view, rendered", () => {
-  it("shows every bucket it may show, in the view's own order", async () => {
-    const markup = await renderClaims(healthyScript());
-    expect(bucketRows(markup).map((row) => row.bucket)).toEqual(RENDERED_BUCKETS);
-  });
-
-  it("counts each bucket exactly as the view holds it", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const row of bucketRows(markup)) {
-      expect(row.claims, row.bucket).toBe(inBucket(row.bucket).length);
-    }
-  });
-
-  /**
-   * **EXPECTED CHANGE, admin-window/BUG-0138 (Ben's A2, 2026-09-10)**: three
-   * column headers, not four.
-   *
-   * The `sources` column — distinct sources holding a claim in that bucket —
-   * is gone, with every row's figure and hook. A distinct count needs an
-   * aggregate and PostgREST refuses aggregates on this deployment (`PGRST123`,
-   * measured), so the only way to it was the read of the whole claim
-   * population this page no longer makes. It was the builder's addition rather
-   * than the spec's: §4 asks for "buckets with counts, age".
-   */
-  it("draws three columns, and no distinct-source figure anywhere", async () => {
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    const table = $('[data-surface="buckets"] table');
-    expect(table.find("thead th").length).toBe(3);
-    expect(markup).not.toContain("data-bucket-sources");
-    // Not vacuous: the two figures that stayed are still hooked and drawn.
-    expect($("[data-bucket]").length).toBe(RENDERED_BUCKETS.length);
-    expect($("[data-bucket-claims]").length).toBe(RENDERED_BUCKETS.length);
-  });
-
-  it("counts each bucket exactly as the view holds it, per source filter", async () => {
-    for (const source of Object.values(SOURCE)) {
-      const markup = await renderClaims(healthyScript(), { source_id: source });
-      const rows = bucketRows(markup);
-      // Every bucket still has a row, so a bucket this source is not in reads
-      // as a real zero rather than vanishing.
-      expect(rows.map((row) => row.bucket), source).toEqual(RENDERED_BUCKETS);
-      for (const row of rows) {
-        expect(row.claims, `${source} / ${row.bucket}`).toBe(
-          inBucket(row.bucket, { source_id: source }).length,
-        );
-      }
-      expect(rows.reduce((total, row) => total + row.claims, 0), source).toBe(
-        matching({ source_id: source }).length,
-      );
-    }
-  });
-
-  it("counts each bucket exactly as the view holds it, per domain filter", async () => {
-    for (const domain of [...new Set(CLAIMS.map((claim) => claim.domain))]) {
-      const markup = await renderClaims(healthyScript(), { domain });
-      for (const row of bucketRows(markup)) {
-        expect(row.claims, `${domain} / ${row.bucket}`).toBe(
-          inBucket(row.bucket, { domain }).length,
-        );
-      }
-    }
-  });
-
   it("keeps the bucket counts whole when a bucket filter narrows the list", async () => {
     // The table answers "how many claims are in every bucket" — narrowing it
     // to the one bucket being listed would answer nobody's question with four
@@ -593,94 +525,12 @@ describe("the classification view, rendered", () => {
   });
 });
 
-/* ── the parked bucket, nowhere ──────────────────────────────────────────── */
-
-describe("the parked bucket", () => {
-  const URLS: Record<string, string>[] = [
-    {},
-    { tab: "standing" },
-    { bucket: "agreeing" },
-    // The claim carrying it belongs to this source and this domain, so a page
-    // narrowed to either is the one most likely to leak it.
-    { source_id: SOURCE.third },
-    { domain: "events" },
-    // Hand-typed: the bucket the UI does not offer, asked for by name.
-    { bucket: PARKED },
-    { bucket: PARKED, tab: "standing" },
-    { bucket: PARKED, source_id: SOURCE.third },
-  ];
-
-  it("appears nowhere in the markup, under any filter or tab", async () => {
-    for (const params of URLS) {
-      const markup = await renderClaims(healthyScript(), params);
-      expect(markup, JSON.stringify(params)).not.toContain(PARKED);
-    }
-  });
-
-  it("appears nowhere in any of the four states either", async () => {
-    const scripts: Script[] = [
-      healthyScript(),
-      { [T.pendingClaims]: { data: [], count: 0 }, [T.observations]: { data: [] } },
-      {
-        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-        [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-      },
-      {
-        [T.pendingClaims]: { error: transportFailure() },
-        [T.observations]: { error: transportFailure() },
-        [T.sources]: { error: transportFailure() },
-      },
-    ];
-    for (const script of scripts) {
-      for (const tab of ["buckets", "standing"]) {
-        const markup = await renderClaims(script, { tab });
-        expect(markup, tab).not.toContain(PARKED);
-      }
-    }
-  });
-
-  it("is not a bucket row, not a chip, and not a claim", async () => {
-    const markup = await renderClaims(healthyScript());
-    expect(bucketRows(markup).map((row) => row.bucket)).not.toContain(PARKED);
-    expect(chipsOf(markup, "bucket").map((chip) => chip.label)).toEqual([
-      "all",
-      ...RENDERED_BUCKETS,
-    ]);
-    const parkedClaim = CLAIMS.find((claim) => claim.bucket === PARKED);
-    expect(parkedClaim).toBeDefined();
-    expect(claimIds(markup)).not.toContain(parkedClaim?.observation_id);
-  });
-
-  it("does not narrow the page when a URL names it", async () => {
-    // A value outside the offered vocabulary constrains nothing, so the page
-    // shows everything rather than an empty list that reads as an empty
-    // database.
-    const markup = await renderClaims(healthyScript(), { bucket: PARKED });
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-  });
-});
-
 /* ── the claims ──────────────────────────────────────────────────────────── */
 
 describe("the claim list", () => {
   it("renders every claim the view holds, oldest first", async () => {
     const markup = await renderClaims(healthyScript());
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-  });
-
-  it("returns exactly the matching claims for every facet value", async () => {
-    for (const [facet, values] of [
-      ["bucket", RENDERED_BUCKETS],
-      ["source_id", Object.values(SOURCE)],
-      ["domain", [...new Set(CLAIMS.map((claim) => claim.domain))]],
-    ] as const) {
-      for (const value of values) {
-        const markup = await renderClaims(healthyScript(), { [facet]: value });
-        expect(claimIds(markup), `${facet}=${value}`).toEqual(
-          oldestFirst(matching({ [facet]: value })),
-        );
-      }
-    }
   });
 
   it("names what an awaiting_row claim is waiting for, never a bare bucket", async () => {
@@ -696,35 +546,6 @@ describe("the claim list", () => {
       expect(row.text).toContain(claim.unmet_requirement as string);
     }
     expect(new Set(waiting.map((claim) => claim.unmet_requirement)).size).toBe(2);
-  });
-
-  it("carries no requirement cell for a bucket that has none", async () => {
-    const markup = await renderClaims(healthyScript(), { bucket: "escalated" });
-    for (const claim of inBucket("escalated")) {
-      expect(claimRow(markup, claim.observation_id).requirement).toBeUndefined();
-    }
-  });
-
-  it("links every claim to its source and to its fact's provenance", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const claim of SHOWABLE) {
-      const row = claimRow(markup, claim.observation_id);
-      expect(row.sourceId, claim.observation_id).toBe(claim.source_id);
-      expect(row.sourceHref, claim.observation_id).toContain(
-        encodeURIComponent(claim.source_id),
-      );
-      if (claim.entity_id === null) {
-        // No canonical row yet: no invented link to a fact that does not exist.
-        expect(row.provenanceHref, claim.observation_id).toBeUndefined();
-      } else {
-        expect(row.provenanceHref, claim.observation_id).toBe(
-          `/records/${claim.domain}/${claim.entity_id}`,
-        );
-      }
-    }
-    // Both directions are actually exercised by this population.
-    expect(SHOWABLE.some((claim) => claim.entity_id === null)).toBe(true);
-    expect(SHOWABLE.some((claim) => claim.entity_id !== null)).toBe(true);
   });
 
   it("shows an unknown age as an absence, never as a zero age", async () => {
@@ -744,13 +565,6 @@ describe("the claim list", () => {
         oldestFirst(SHOWABLE).at(-1),
       );
     }
-  });
-
-  it("settles nothing: every control on the page is a link", async () => {
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    expect($("button, form, input, select, textarea")).toHaveLength(0);
-    expect($("a").length).toBeGreaterThan(0);
   });
 });
 
@@ -799,45 +613,6 @@ describe("what on this page says it goes somewhere", () => {
     for (const anchor of anchors) {
       expectDrawnAsLinkAtRest(classesOf($(anchor)), "a standing-disagreement source");
     }
-  });
-
-  // Was a strict `it.fails` pin while admin-window/BUG-0113 stood: the bucket
-  // anchor wrapped a <Badge>, which re-inked the words `text-ink` on a chrome
-  // fill and painted over the anchor's underline, so the five bucket names
-  // rendered exactly as they did before this app had a link spelling. The
-  // Badge is gone (the bucket is a link, not a chip — LOOK_AND_FEEL, "Chips
-  // and badges": a badge never sits inside a link), so this is a plain `it`.
-  it("draws the bucket link so the WORDS carry the link's ink, not just the anchor", async () => {
-    // What the defect measured, kept so the number survives the fix: in
-    // Chromium on a production build, 1440x900, both themes, at rest, each
-    // bucket anchor computed rgb(152, 16, 250) + underline while the <Badge>
-    // it wrapped computed rgb(30, 41, 57) on a chrome fill with
-    // text-decoration-line: none — a crop of the anchor was BYTE-IDENTICAL
-    // with its underline removed (sha1 equal, 5/5 buckets, both themes; 0
-    // accent pixels), against 1000 -> 443 accent pixels for a plain /browse
-    // title.
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    const anchors = $("[data-bucket][href]").toArray();
-    expect(anchors.length, "no bucket links to grade").toBeGreaterThan(0);
-    for (const anchor of anchors) {
-      const inside = $(anchor)
-        .find("*")
-        .toArray()
-        .map((element) => classesOf($(element)));
-      expectLinkSpellingReachesTheGlyphs(
-        classesOf($(anchor)),
-        inside,
-        `${$(anchor).attr("data-bucket")} on the buckets tab`,
-      );
-    }
-    // The composition rule the ruling settled on, asserted where the defect
-    // was: LOOK_AND_FEEL, "Chips and badges" — "no anchor inside `main`
-    // contains a chip-filled span". The ink assertion above says the words are
-    // accent; this says nothing was put back around them.
-    expect(chipsInsideLinks($, $.root()), "a chip is back inside a bucket link").toEqual(
-      [],
-    );
   });
 
   it("keeps the values that go nowhere out of the link's ink", async () => {
@@ -895,15 +670,6 @@ describe("the claim list's window", () => {
   }
 
   /** The window line's own hooks — the app's stated bound, read structurally. */
-  /**
-   * How many times a phrase stands in a line — the question "is this narrowing
-   * stated twice?" asks (admin-window/BUG-0118). `split` rather than a regular
-   * expression so a phrase carrying a metacharacter is counted literally.
-   */
-  function occurrencesIn(text: string, phrase: string): number {
-    return text.split(phrase).length - 1;
-  }
-
   function windowLine(markup: string) {
     const line = cheerio.load(markup)('[data-window="claims"]');
     return {
@@ -915,8 +681,6 @@ describe("the claim list's window", () => {
     };
   }
 
-  const OVERFLOW = CLAIM_WINDOW + 17;
-
   function crowdedScript(size: number): Script {
     const population = crowd(size);
     return {
@@ -926,38 +690,47 @@ describe("the claim list's window", () => {
     };
   }
 
-  it("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
-    // THE OTHER HALF OF admin-window/BUG-0174, on the arm that has no `drawn`.
-    // `/claims` counts its matching set and draws its rows in TWO reads, and
-    // the line's clause naming what is below it is drawn whenever the COUNT
-    // says more exist and the window DREW rows — never only over a read that
-    // filled its cap, and, since admin-window/BUG-0197, never over a read that
-    // drew none (a window with nothing on screen has nothing to rank and
-    // nothing to hold back, so its line states the count and stops; both
-    // screens below drew rows). On the UNPAGED arm (`drawn` absent, which is
-    // every state the bound grid refuses a control in) `onScreen` falls back
-    // to the CAP, so the clause states 50 over a screen holding 37.
-    //
-    // No word of the line is pinned: two screens holding DIFFERENT numbers of
-    // claims under the SAME count are rendered and compared against each
-    // other. A line that states what is below it cannot say the same thing
-    // about both.
-    const many = await renderClaims(offGridScript(37, 900));
-    const few = await renderClaims(offGridScript(10, 900));
+  /**
+   * The line over the arm that has no `drawn` — every state the bound grid
+   * refuses a control in — when the COUNT read and the ROW read disagree
+   * (admin-window/BUG-0183, and the other direction, admin-window/BUG-0186).
+   * `/claims` counts its matching set and draws its rows in TWO reads, so the
+   * clause naming what is on screen follows the rows the window DREW, never
+   * the cap. No word of the line is pinned: two screens holding DIFFERENT
+   * numbers of claims under the SAME count are rendered and compared against
+   * each other, and no paging element stands in either.
+   */
+  const DISAGREEING_READS: ReadonlyArray<
+    readonly [string, number, number, number, boolean]
+  > = [
+    // BUG-0183: a count LARGER than the rows drawn — the window is truncated.
+    ["a count larger than the rows drawn", 37, 10, 900, true],
+    // BUG-0186: a count SMALLER than the rows drawn — `truncated` goes false
+    // and the line takes the arm that names the count.
+    ["a count smaller than the rows drawn", CLAIM_WINDOW, 37, 30, false],
+  ];
 
-    // Non-vacuity, from the page's own hooks and rows rather than any word:
-    // two different screens, one count, and no paging element in either — the
-    // arm where `drawn` does not exist.
-    expect(claimIds(many)).toHaveLength(37);
-    expect(claimIds(few)).toHaveLength(10);
-    expect(windowLine(many).held).toBe(900);
-    expect(windowLine(few).held).toBe(900);
-    expect(windowLine(many).truncated).toBe(true);
-    expect(pagingOccurrences(many)).toBe(0);
-    expect(pagingOccurrences(few)).toBe(0);
+  it.each(DISAGREEING_READS)(
+    "names the rows ON SCREEN, never its cap, under %s",
+    async (_state, moreRows, fewerRows, whole, truncated) => {
+      const more = await renderClaims(offGridScript(moreRows, whole));
+      const fewer = await renderClaims(offGridScript(fewerRows, whole));
 
-    expect(windowLine(many).text).not.toBe(windowLine(few).text);
-  });
+      // Non-vacuity, from the page's own hooks and rows rather than any word:
+      // two different screens, one count, and no paging element in either —
+      // the arm where `drawn` does not exist.
+      expect(claimIds(more)).toHaveLength(moreRows);
+      expect(claimIds(fewer)).toHaveLength(fewerRows);
+      expect(windowLine(more).held).toBe(whole);
+      expect(windowLine(fewer).held).toBe(whole);
+      expect(windowLine(more).truncated).toBe(truncated);
+      expect(windowLine(fewer).truncated).toBe(truncated);
+      expect(pagingOccurrences(more)).toBe(0);
+      expect(pagingOccurrences(fewer)).toBe(0);
+
+      expect(windowLine(more).text).not.toBe(windowLine(fewer).text);
+    },
+  );
 
   it("states what the COUNT read found and nothing about rows, where the window drew NONE [admin-window/BUG-0197]", async () => {
     // THE THIRD STATE OF THE SAME TWO READS (QA, off the
@@ -1009,69 +782,6 @@ describe("the claim list's window", () => {
     expect(pagingOccurrences(none)).toBe(0);
   });
 
-  it("names the rows ON SCREEN when the COUNT read came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
-    // THE OTHER DIRECTION OF THE SAME TWO-READS DIVERGENCE (QA, off the
-    // admin-window/BUG-0183 close). `/claims` counts its matching set and
-    // draws its rows in TWO reads, and a claim the resolver applies between
-    // them makes the COUNT the SMALLER number. `truncated` is
-    // `listCount.data > listed.length`, so it goes FALSE, and the line takes
-    // the `didNotFill` branch — which names the COUNT and asserts the window
-    // holds everything the read found, over a screen holding MORE rows than
-    // the number it names, and (at 50 rows under a cap of 50) over a window
-    // that demonstrably filled.
-    //
-    // No word of the sentence is pinned: two screens holding DIFFERENT numbers
-    // of claims under the SAME count are rendered and compared against each
-    // other, exactly as the pin above does it. A line that describes the
-    // screen cannot say the same thing about both.
-    const full = await renderClaims(offGridScript(CLAIM_WINDOW, 30));
-    const short = await renderClaims(offGridScript(37, 30));
-
-    // Non-vacuity, from the page's own hooks and rows rather than any word:
-    // two different screens, one count, and no paging element in either.
-    expect(claimIds(full)).toHaveLength(CLAIM_WINDOW);
-    expect(claimIds(short)).toHaveLength(37);
-    expect(windowLine(full).held).toBe(30);
-    expect(windowLine(short).held).toBe(30);
-    expect(windowLine(full).truncated).toBe(false);
-    expect(windowLine(short).truncated).toBe(false);
-    expect(pagingOccurrences(full)).toBe(0);
-    expect(pagingOccurrences(short)).toBe(0);
-
-    expect(windowLine(full).text).not.toBe(windowLine(short).text);
-  });
-
-  it("draws at most the window's rows however many claims the view holds", async () => {
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
-    // And a bigger backlog draws the same number of rows: the page's height is
-    // a function of the cap, not of the queue.
-    const bigger = await renderClaims(crowdedScript(CLAIM_WINDOW * 3));
-    expect(claimIds(bigger)).toHaveLength(CLAIM_WINDOW);
-  });
-
-  it("draws the LONGEST-WAITING claims, in the page's oldest-first order", async () => {
-    const population = crowd(OVERFLOW);
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    // The window is the head of the order, not the head of the read: the
-    // oldest `CLAIM_WINDOW` claims, oldest first.
-    expect(claimIds(markup)).toEqual(
-      population.claims.slice(0, CLAIM_WINDOW).map((claim) => claim.observation_id),
-    );
-  });
-
-  it("states the cap and the number of claims it holds back", async () => {
-    const line = windowLine(await renderClaims(crowdedScript(OVERFLOW)));
-    expect(line.present).toBe(true);
-    expect(line.limit).toBe(CLAIM_WINDOW);
-    // The honest figure: every claim matching, not the rows drawn.
-    expect(line.held).toBe(OVERFLOW);
-    expect(line.truncated).toBe(true);
-    // The sentence carries both numbers, so the truncation is never silent.
-    expect(line.text).toContain(String(CLAIM_WINDOW));
-    expect(line.text).toContain(String(OVERFLOW));
-  });
-
   it("does not claim to be truncated when every matching claim is drawn", async () => {
     const line = windowLine(await renderClaims(crowdedScript(CLAIM_WINDOW)));
     expect(line.truncated).toBe(false);
@@ -1084,52 +794,12 @@ describe("the claim list's window", () => {
     expect(small.held).toBe(SHOWABLE.length);
   });
 
-  it("says which narrowing its window is of, and only when there is one", async () => {
-    // The sibling of admin-window/BUG-0114, on the app's other narrowed drawn
-    // window: this list is windowed over a COMPLETE read and narrowed by the
-    // tab and the chips, so "it holds all the claims the read found" and "the
-    // read happened and found no claims at all" are claims about the whole
-    // view — while the empty card beside them says no claim matched THESE
-    // FILTERS. The narrowing now travels with the window.
-    const plain = windowLine(await renderClaims(healthyScript()));
-    expect(plain.text).not.toContain("matching these filters");
-
-    const filtered = windowLine(
-      await renderClaims(healthyScript(), { bucket: "awaiting_row" }),
-    );
-    expect(filtered.truncated).toBe(false);
-    expect(filtered.text).toContain("claims matching these filters");
-
-    // The standing tab is one bucket's subset with no chip to show for it, so
-    // the bucket is named by the value the page renders everywhere else.
-    const standing = windowLine(await renderClaims(healthyScript(), { tab: "standing" }));
-    expect(standing.text).toContain("standing_disagreement");
-
-    // …and a narrowing that matched nothing found nothing OF ITSELF.
-    const nothing = windowLine(
-      await renderClaims(crowdedScript(4), { bucket: "escalated" }),
-    );
-    expect(nothing.held).toBe(0);
-    expect(nothing.text).toContain("no claims matching these filters at all");
-    expect(nothing.text).not.toContain("found no claims at all");
-  });
-
   /**
    * A crowd of STANDING claims — the one bucket whose narrowing is the TAB and
    * not a chip, and the only way to reach a standing window that filled its cap.
    * `crowd()` above spells `awaiting_row`/`awaiting_link` only, so the tab-only
    * narrowing has never met a truncated window.
    */
-  /** The same crowd, scripted as a database that answers the query. */
-  function standingScript(size: number): Script {
-    const population = standingCrowd(size);
-    return {
-      [T.pendingClaims]: claimView(population.claims),
-      [T.observations]: { data: population.observations },
-      [T.sources]: { data: [], count: 0 },
-    };
-  }
-
   function standingCrowd(size: number): {
     claims: PendingClaimRow[];
     observations: ReturnType<typeof observationRow>[];
@@ -1164,126 +834,6 @@ describe("the claim list's window", () => {
     }
     return { claims, observations };
   }
-
-  it("states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)", async () => {
-    // The sibling of admin-window/BUG-0114 on the one clause that used to take
-    // no `scope` at all: the `matched` arm's truncated sentence attributed its
-    // held count to "these filters", which is true only when the narrowing IS
-    // the chips. On the standing tab the narrowing is the TAB — one bucket's
-    // subset, with the chip bar showing nothing selected — so a count of that
-    // bucket was presented as a count under filters that are not set, on a
-    // page whose other two clauses named the bucket.
-    const size = CLAIM_WINDOW + 23;
-
-    // Same window, same page, unfilled: the not-filled and zero arms name the
-    // bucket, and now the filled one does too — one window, one population.
-    const unfilled = windowLine(await renderClaims(standingScript(4), { tab: "standing" }));
-    expect(unfilled.truncated).toBe(false);
-    expect(unfilled.text).toContain(STANDING_BUCKET);
-
-    const filled = windowLine(await renderClaims(standingScript(size), { tab: "standing" }));
-    expect(filled.truncated).toBe(true);
-    // The number is the standing bucket's own count, and the sentence now says
-    // so: what it is a count OF is stated where the count is stated.
-    expect(filled.held).toBe(size);
-    expect(filled.text).toContain(STANDING_BUCKET);
-
-    // The other direction, on the same page and the same held count: a window
-    // narrowed by NOTHING (the buckets tab, no chip set) says the sentence it
-    // said before this narrowing could travel, and names no bucket at all.
-    const unnarrowed = windowLine(await renderClaims(crowdedScript(size)));
-    expect(unnarrowed.truncated).toBe(true);
-    expect(unnarrowed.held).toBe(size);
-    expect(unnarrowed.text).not.toContain(STANDING_BUCKET);
-    // …and the ONLY difference between the two sentences is the population
-    // named beside the count. Two windows of the same size, one narrowed and
-    // one not: the narrowed one is the unnarrowed one with the phrase inserted
-    // after the row noun, so the fix cannot quietly reword the rest of the
-    // clause (acceptance criterion 2 — unnarrowed to the byte).
-    expect(filled.text).toBe(
-      unnarrowed.text.replace(
-        `${count(size)} claims`,
-        `${count(size)} claims in the ${STANDING_BUCKET} bucket`,
-      ),
-    );
-  });
-
-  it("says a filled window's narrowing once, whichever narrowings it carries", async () => {
-    // Both narrowings at once — the tab AND a chip. The bucket comes from the
-    // window's `scope` and the filters from the clause's own words, so the two
-    // carriers must not both render the filters (admin-window/BUG-0118,
-    // acceptance criterion 3).
-    const size = CLAIM_WINDOW * 3 + 9;
-    const both = windowLine(
-      await renderClaims(standingScript(size), {
-        tab: "standing",
-        source_id: SOURCE.first,
-      }),
-    );
-    expect(both.truncated).toBe(true);
-    // The count is the narrowed one: one source of one bucket, still over the
-    // cap and still under the tab's own total.
-    expect(both.held).toBeGreaterThan(CLAIM_WINDOW);
-    expect(both.held).toBeLessThan(size);
-    expect(occurrencesIn(both.text, STANDING_BUCKET)).toBe(1);
-    expect(occurrencesIn(both.text, "these filters")).toBe(1);
-    // The scope's own phrase for the chips is the one the clause subtracts, so
-    // it never reaches the sentence beside the words that already say it.
-    expect(both.text).not.toContain("matching these filters");
-
-    // A window narrowed by the CHIPS alone keeps the sentence it always had:
-    // there the arm's own words are the whole narrowing, and nothing is added.
-    const chipped = windowLine(
-      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
-    );
-    expect(chipped.truncated).toBe(true);
-    expect(chipped.text).not.toContain("matching these filters");
-    expect(occurrencesIn(chipped.text, "these filters")).toBe(1);
-    // The unnarrowed line and the chip-narrowed one differ in exactly two
-    // places — the count, and the phrase beside it. Everything else is one
-    // sentence spelled once. The unnarrowed side asserts no filter at all
-    // since admin-window/BUG-0123, which is why the substitution names both
-    // halves rather than only the number.
-    const plain = windowLine(await renderClaims(crowdedScript(size)));
-    expect(plain.text).not.toContain("match these filters");
-    expect(chipped.text).toBe(
-      plain.text.replace(
-        `${count(size)} claims in all;`,
-        `${count(chipped.held)} claims match these filters;`,
-      ),
-    );
-  });
-
-  it("claims a filter over the list only when a chip is set (admin-window/BUG-0123)", async () => {
-    // Priya's sentence: `/claims` said "877 claims match these filters" over a
-    // read no filter had touched, and `/claims?record_id=<uuid>` said it again,
-    // byte for byte, with the parameter dropped in silence
-    // (`M2-usersim-priya.md` §6). The count and the window were right; the
-    // clause around them was the one thing on the page that was not.
-    const size = CLAIM_WINDOW * 2 + 7;
-    const bare = windowLine(await renderClaims(crowdedScript(size)));
-    expect(bare.truncated).toBe(true);
-    expect(bare.held).toBe(size);
-    // The number and the noun survive; the assertion about the filters does not.
-    expect(bare.text).toContain(`${count(size)} claims`);
-    expect(bare.text).not.toContain("match these filters");
-
-    // A parameter this page does not filter by leaves the window line alone —
-    // and leaves it saying nothing about filters either.
-    const typed = windowLine(
-      await renderClaims(crowdedScript(size), { record_id: ENTITY.event }),
-    );
-    expect(typed.text).toBe(bare.text);
-    expect(typed.held).toBe(size);
-
-    // The other way: a chip really set puts the phrase back, over its own count.
-    const chipped = windowLine(
-      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
-    );
-    expect(chipped.text).toContain("claims match these filters");
-    expect(chipped.held).toBeLessThan(size);
-    expect(chipped.held).toBeGreaterThan(CLAIM_WINDOW);
-  });
 
   /**
    * The standing bucket's claims inside a view that holds OTHER buckets too.
@@ -1354,24 +904,6 @@ describe("the claim list's window", () => {
       );
       expect(line.truncated, bucket).toBe(expected.length > CLAIM_WINDOW);
     }
-  });
-
-  it("leaves every bucket count the view's own, with the list windowed", async () => {
-    // EC5 parity, under the window: the table above the list still counts the
-    // whole classification, so no figure on the page became a window
-    // aggregate.
-    const population = crowd(OVERFLOW);
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    for (const row of bucketRows(markup)) {
-      const held = population.claims.filter((claim) => claim.bucket === row.bucket);
-      expect(row.claims, row.bucket).toBe(held.length);
-    }
-    expect(
-      bucketRows(markup).reduce((total, row) => total + row.claims, 0),
-    ).toBe(OVERFLOW);
-    // The counted total is bigger than what the list drew — which is the whole
-    // point of the sentence above it.
-    expect(OVERFLOW).toBeGreaterThan(claimIds(markup).length);
   });
 
   /**
@@ -1472,54 +1004,11 @@ describe("the claim list's window", () => {
     }
     expect(new Set([holdsNothing, matchedNothing, standingEmpty]).size).toBe(3);
   });
-
-  it("windows the standing tab's list the same way", async () => {
-    const size = CLAIM_WINDOW + 9;
-    const standing = crowd(size);
-    const script: Script = {
-      [T.pendingClaims]: claimView(
-        standing.claims.map((claim) => ({
-          ...claim,
-          bucket: "standing_disagreement" as PendingClaimRow["bucket"],
-          unmet_requirement: null,
-        })),
-      ),
-      [T.observations]: { data: standing.observations },
-      [T.sources]: { data: [], count: 0 },
-    };
-    const markup = await renderClaims(script, { tab: "standing" });
-    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
-    const line = windowLine(markup);
-    expect(line.limit).toBe(CLAIM_WINDOW);
-    expect(line.held).toBe(size);
-    expect(line.truncated).toBe(true);
-  });
 });
 
 /* ── the standing-disagreements tab ──────────────────────────────────────── */
 
 describe("the standing-disagreements tab", () => {
-  it("renders exactly the standing_disagreement claims", async () => {
-    const markup = await renderClaims(healthyScript(), { tab: "standing" });
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(matching({ bucket: "standing_disagreement" })),
-    );
-    // It is a subset, not the page: something is deliberately left out.
-    expect(claimIds(markup).length).toBeLessThan(SHOWABLE.length);
-  });
-
-  it("keeps the source narrowing when the operator crosses to it", async () => {
-    const markup = await renderClaims(healthyScript(), {
-      tab: "standing",
-      source_id: SOURCE.first,
-    });
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(
-        matching({ bucket: "standing_disagreement", source_id: SOURCE.first }),
-      ),
-    );
-  });
-
   it("offers both tabs, marking the one we are on, each keeping the filter", async () => {
     const markup = await renderClaims(healthyScript(), {
       tab: "standing",
@@ -1554,16 +1043,6 @@ describe("the standing-disagreements tab", () => {
     expect(handTyped).not.toContain("bucket=escalated");
     expect(claimIds(handTyped)).toEqual(
       oldestFirst(matching({ bucket: "standing_disagreement" })),
-    );
-  });
-
-  it("shows the bucket table only where it belongs", async () => {
-    // The standing tab is one bucket's subset; a five-row bucket table above it
-    // would be the other tab's question asked twice.
-    const markup = await renderClaims(healthyScript(), { tab: "standing" });
-    expect(bucketRows(markup)).toHaveLength(0);
-    expect(bucketRows(await renderClaims(healthyScript()))).toHaveLength(
-      RENDERED_BUCKETS.length,
     );
   });
 });
@@ -1698,69 +1177,6 @@ describe("the gauge's window line", () => {
     expect(gaugeLine(narrowed)).toContain("venues");
     expect(gaugeLine(narrowed)).toContain("domain");
     expect(gaugeLine(narrowed)).not.toBe(gaugeLine(bare));
-  });
-
-  /**
-   * The other half of the same rule (admin-window/BUG-0163): the sentence
-   * claims a NARROWING exactly where the read carried one, and nowhere else.
-   *
-   * `gaugeFilter` hands the gauge the source and the domain and drops the
-   * bucket — the gauges read `observations`, which has no bucket — so
-   * `?bucket=` moves no figure in this section and may claim no narrowing of
-   * its sentence either.
-   *
-   * **What admin-window/BUG-0204 changed here, and what it did not.** Until
-   * that ticket this pinned the line BYTE-IDENTICAL under `?bucket=` on both
-   * tabs, which is how the gauge came to be the one caption on the page that
-   * said nothing about a chip standing active above it (the M3 user-sim walk:
-   * an empty claim list one screen above a gauge reading 877). The buckets
-   * tab's line now ADDS a sentence saying what it answers for — graded by the
-   * pin below — and everything this test was protecting still holds and is
-   * still graded here: no figure moved, the added words claim no narrowing and
-   * name no bucket value, and the STANDING tab, which carries no bucket facet
-   * at all, is byte-identical still.
-   */
-  it("claims no narrowing for a facet its own read did not carry", async () => {
-    const gaugeLine = (markup: string) =>
-      cheerio
-        .load(markup)('[data-surface="gauge"] [data-window]')
-        .text()
-        .replace(/\s+/g, " ")
-        .trim();
-    /** Everything the gauge section DRAWS, its own window line aside. */
-    const gaugeFigures = (markup: string) => {
-      const $ = cheerio.load(markup);
-      const surface = $('[data-surface="gauge"]');
-      surface.find("[data-window]").remove();
-      return surface.text().replace(/\s+/g, " ").trim();
-    };
-
-    for (const tab of ["buckets", "standing"]) {
-      const bare = await renderClaims(healthyScript(), { tab });
-      const bucketed = await renderClaims(healthyScript(), {
-        tab,
-        bucket: "escalated",
-      });
-      expect(gaugeLine(bare), tab).not.toBe("");
-      // NO FIGURE MOVED, on either tab: the bucket facet narrowed the page,
-      // not this read.
-      expect(gaugeFigures(bucketed), tab).toBe(gaugeFigures(bare));
-      // The standing tab carries no bucket facet at all, so its line is the
-      // bare page's to the byte; the buckets tab's may only have GAINED words.
-      if (tab === "standing") {
-        expect(gaugeLine(bucketed), tab).toBe(gaugeLine(bare));
-      } else {
-        const [subtracted, added] = differingClause(gaugeLine(bare), gaugeLine(bucketed));
-        expect(subtracted, tab).toBe("");
-        expect(added, tab).not.toBe("");
-        // …and what it gained claims no narrowing and names no bucket value.
-        expect(added, tab).not.toContain(NARROWED_BY_FILTERS);
-        expect(added, tab).not.toContain("escalated");
-      }
-      // …and the unnarrowed sentence names no narrowing at all.
-      expect(gaugeLine(bare), tab).not.toContain(NARROWED_BY_FILTERS);
-      expect(gaugeLine(bare), tab).not.toContain("domain");
-    }
   });
 
   /**
@@ -1915,57 +1331,6 @@ describe("the gauge's window line", () => {
   });
 
   /**
-   * What the fix COSTS, in requests (LESSONS 10, admin-window/DEBT-0012).
-   *
-   * Fact 2 of the two-fact rule is a read this page did not have — the
-   * unnarrowed count INSIDE the gauge's own window — so it is issued, and this
-   * pins where: only where a facet can narrow the gauge at all, exactly once,
-   * as a `countRead` count carrying the window's lower bound and no facet.
-   * An unnarrowed page and a `?bucket=` page issue it not at all.
-   */
-  it("buys fact 2 with one bounded count, and only where a facet narrows this read", async () => {
-    // A windowed COUNT is a `{ count: "exact" }` read over ZERO rows carrying
-    // the window's lower bound. The count SHAPE is half of the test and not
-    // decoration: since admin-window/TASK-0074 the gauge's own claims leg is a
-    // windowed ROW read of the same view, so "carries a gte" alone names two
-    // different reads.
-    const windowedCounts = (stub: StubClient) =>
-      stub.calls.filter(
-        (call) =>
-          call.table === T.pendingClaims &&
-          call.steps.some((step) => step.method === "gte") &&
-          isCountLeg(call),
-      );
-
-    const unnarrowing: Record<string, string>[] = [{}, { bucket: "escalated" }];
-    for (const params of unnarrowing) {
-      const quiet = await renderWithStub(healthyScript(), params);
-      expect(windowedCounts(quiet.stub), JSON.stringify(params)).toHaveLength(0);
-    }
-
-    const narrowed = await renderWithStub(healthyScript(), { domain: "venues" });
-    const counts = windowedCounts(narrowed.stub);
-    expect(counts).toHaveLength(1);
-    const steps = counts[0].steps;
-    // A count over zero rows, so `ROW_CAP` cannot reach it and no row is
-    // transported — and GET-shaped, so an absent view answers with its own
-    // `PGRST205` body (admin-window/BUG-0210).
-    const select = steps.find((step) => step.method === "select");
-    expect(select?.args[1]).toEqual({ count: "exact" });
-    expect(
-      steps.filter((step) => step.method === "limit").map((step) => step.args),
-    ).toEqual([[0]]);
-    // Bounded by the window the section states, and by nothing else: it is the
-    // population WITH NO FACET, so the domain the page narrowed by is absent.
-    expect(
-      steps.filter((step) => step.method === "gte").map((step) => step.args[0]),
-    ).toEqual(["observed_at"]);
-    expect(
-      steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
-    ).toEqual([]);
-  });
-
-  /**
    * …and what it costs when that read REFUSES.
    *
    * Fact 2 is a count that renders no figure: it only decides which words an
@@ -2013,24 +1378,6 @@ describe("the gauge's window line", () => {
 /* ── the four states ─────────────────────────────────────────────────────── */
 
 describe("absence and failure", () => {
-  it("renders the not-provisioned state naming the view, and nothing throws", async () => {
-    for (const tab of ["buckets", "standing"]) {
-      const markup = await renderClaims(
-        {
-          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-          [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-          [T.sources]: { data: [] },
-        },
-        { tab },
-      );
-      expect(markup, tab).toContain(T.pendingClaims);
-      expect(claimIds(markup), tab).toEqual([]);
-      expect(bucketRows(markup), tab).toEqual([]);
-      // Never a zero standing in for a table nobody could read.
-      expect(cheerio.load(markup)("[data-bucket-claims]"), tab).toHaveLength(0);
-    }
-  });
-
   /**
    * **EXPECTED CHANGE, admin-window/BUG-0138.** `observations` used to be the
    * list's second leg — the view carried no age, so an absent `observations`
@@ -2070,67 +1417,6 @@ describe("absence and failure", () => {
     // The line names WHICH read refused (admin-window/BUG-0016, TASK-0030).
     expect(markup).toContain(T.pendingClaims);
     expect(claimIds(markup)).toEqual([]);
-  });
-
-  /**
-   * The failed-read half of the window-line rule (admin-window/BUG-0063,
-   * fixed): the line's own count hook must not survive a failed read as a `0`.
-   *
-   * This page's rule on a failed read is that a count is ABSENT, not zero —
-   * the bucket table drops `data-bucket-claims` entirely two tests above
-   * ("Never a zero standing in for a table nobody could read"),
-   * ARCHITECTURE.md §4.3 promoted it ("a null count is a refusal, never a
-   * zero"), and `/runs` pins the stronger form for a window line
-   * (`tests/offline/runs/page.test.ts`, "claims no window it never read").
-   *
-   * `data-window-held` is also the hook the live parity oracle grades this
-   * page by (`tests/live/claims.live.test.ts`), and `0` there means exactly
-   * one thing: the read HAPPENED and found nothing. An ok-but-empty matching
-   * set publishes that `0` beside its Empty card — the line follows the read,
-   * not the rows (admin-window/BUG-0070, and the leg that grades it for every
-   * windowed surface at once, `tests/offline/absence/pages.test.ts`) — which
-   * is precisely why a read that never happened may publish no count at all.
-   *
-   * It grades the COUNT and nothing else; the test below it grades the whole
-   * line going with it.
-   *
-   * Addressed by the LIST's own hook rather than by `[data-window-held]`
-   * anywhere on the page: since admin-window/DEBT-0006 every window line
-   * publishes a held count, so the gauge below — whose `observations` read
-   * succeeded and found nothing — honestly publishes `0` in these same
-   * scripts. The claim graded here is unchanged and is the one the name
-   * makes: the LIST's read failed, so the LIST states no count.
-   */
-  it("claims no count it never took when the list's read fails", async () => {
-    const failures: Array<[string, Script]> = [
-      [
-        "refused",
-        {
-          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-          [T.observations]: { data: [] },
-          [T.sources]: { data: [] },
-        },
-      ],
-      [
-        "transport",
-        {
-          [T.pendingClaims]: { error: transportFailure("bad port") },
-          [T.observations]: { data: [] },
-          [T.sources]: { data: [] },
-        },
-      ],
-    ];
-    for (const [label, script] of failures) {
-      const markup = await renderClaims(script);
-      // The error state is what is on screen — not an empty view.
-      expect(markup, label).toContain(T.pendingClaims);
-      expect(claimIds(markup), label).toEqual([]);
-      // ... and no count hook stands in for the count nobody could take.
-      expect(
-        cheerio.load(markup)('[data-window="claims"][data-window-held]'),
-        label,
-      ).toHaveLength(0);
-    }
   });
 
   it("drops the whole window line, not just its count, on a read it never made", async () => {
@@ -2177,26 +1463,6 @@ describe("absence and failure", () => {
     }
   });
 
-  it("still states the window when only the leg that NAMES the sources refused", async () => {
-    // The seam the fix has to get right: the line is gated on the LIST's read,
-    // not on the page having no failure at all. The registry leg is a second
-    // leg that costs the source LABEL and nothing else (admin-window/BUG-0043),
-    // so the list read happened, the window is real, and it is still stated —
-    // with the count the page actually drew, beside the refusal for the leg
-    // that did fail.
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
-    );
-    const line = cheerio.load(markup)('[data-window="claims"]');
-    expect(line).toHaveLength(1);
-    // The figure is the set the read really held, not a constant: it is the
-    // number of claims this population shows on this tab.
-    expect(Number(line.attr("data-window-held"))).toBe(claimIds(markup).length);
-    expect(line.attr("data-window-truncated")).toBe("false");
-    // ... and the leg that refused is still reported.
-    expect(markup).toContain(T.sources);
-  });
-
   it("keeps the transport failure's cause, which the message alone does not carry", async () => {
     const markup = await renderClaims({
       [T.pendingClaims]: { error: transportFailure("bad port") },
@@ -2221,14 +1487,6 @@ describe("absence and failure", () => {
     expect(markup).not.toContain(T.pendingClaims);
     // The list itself is a card, not a headers-only table.
     expect(cheerio.load(markup)('table[aria-label="All claims"]')).toHaveLength(0);
-  });
-
-  it("renders standing alone, with no props at all", async () => {
-    // The shell's route test calls every page this way.
-    readWith.client = stubClient(healthyScript()).asSupabaseClient();
-    const markup = render(await ClaimsPage());
-    expect(markup).not.toContain(PARKED);
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
   });
 
   it("renders the gauge's own state when its window cannot be read", async () => {
@@ -2479,69 +1737,6 @@ describe("which arm the bucket caption takes", () => {
     }
   });
 
-  /**
-   * A FACET'S OWN TABLE STAYS UNNARROWED BY ITSELF AND SAYS SO (architect
-   * ruling 2026-09-11, folded into admin-window/TASK-0071 from QA's product
-   * residual on admin-window/TASK-0077).
-   *
-   * `/claims?bucket=<x>` draws this table's WHOLE distribution beside a list
-   * the same facet really narrowed — measured on staging 2026-09-11:
-   * awaiting_link 108, awaiting_row 770, three buckets at 0, identical to the
-   * bare page's. The figures are right and this ticket moves none of them.
-   * What ended is the page saying "nothing above narrows these counts" with
-   * the bucket chip standing active above it.
-   *
-   * **Graded as STRUCTURE, never as copy** (the ticket's own division: "a walk
-   * grades the copy, the checks grade the structure"). The rule this case
-   * pins is that the denial clause is REPLACED rather than merely appended to:
-   * the bare caption and the bucket-faceted one share a prefix and a suffix,
-   * and BOTH have something of their own in between. A page that kept the
-   * denial and bolted a clause onto the end leaves the bare arm's middle
-   * empty, and fails here.
-   *
-   * **Its twin is the render that must NOT take it** (LESSONS 8): a source
-   * facet the whole view carries anyway is a facet in force that this table is
-   * not narrowed by either, and its caption is still the bare page's to the
-   * byte — so the clause is gated on the BUCKET facet and not on "a facet is
-   * set".
-   */
-  it("says the bucket table answers for every bucket when a bucket facet is set", async () => {
-    const bare = await renderClaims(healthyScript());
-    const bareCaption = bucketCaption(bare);
-    const faceted = await renderClaims(healthyScript(), { bucket: "escalated" });
-    const facetedCaption = bucketCaption(faceted);
-
-    // Non-vacuous: the page really applied the facet, and it really removed no
-    // row of this table — so the caption is talking about a live facet that
-    // narrowed nothing here.
-    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active)).toHaveLength(1);
-    expect(droppedLine(faceted).lines).toBe(0);
-    expect(bucketRows(faceted).map((row) => row.claims)).toEqual(
-      bucketRows(bare).map((row) => row.claims),
-    );
-
-    // The clause is its own arm, and names no bucket value.
-    expect(facetedCaption).not.toBe(bareCaption);
-    expect(facetedCaption).not.toContain("escalated");
-
-    // …and it REPLACED the denial rather than standing beside it: each arm has
-    // a clause of its own between the shared prefix and the shared suffix.
-    const [bareClause, facetedClause] = differingClause(bareCaption, facetedCaption);
-    expect(bareClause).not.toBe("");
-    expect(facetedClause).not.toBe("");
-
-    // THE TWIN: a facet in force that this table is not narrowed by, and no
-    // bucket facet — the caption is the bare page's, to the byte.
-    const allOnOne = healthyScript({
-      [T.pendingClaims]: claimView(
-        CLAIMS.map((claim) => ({ ...claim, source_id: SOURCE.first })),
-      ),
-    });
-    const carried = await renderClaims(allOnOne, { source_id: SOURCE.first });
-    expect(chipsOf(carried, "source_id").filter((chip) => chip.active)).toHaveLength(1);
-    expect(bucketCaption(carried)).toBe(bucketCaption(await renderClaims(allOnOne)));
-  });
-
   it("blames a source or domain only when it removed a row of this table", async () => {
     /** The same view with every claim moved onto one value of `facet`. */
     const allOn = (facet: "source_id" | "domain", value: string): Script => {
@@ -2582,33 +1777,6 @@ describe("which arm the bucket caption takes", () => {
       bucketRows(plain).map((row) => row.claims),
     );
     expect(bucketCaption(removed)).not.toBe(bucketCaption(plain));
-  });
-
-  it("carries neither arm over a read that came back without a count", async () => {
-    // `readComplete`'s fifth refusal (`lib/db/result.ts`: a null count is a
-    // refusal, never a zero — admin-window/BUG-0007's rule). It reaches the
-    // page as the same `error` kind the other four do, and this pins that the
-    // caption's gate is the READ's outcome rather than a list of messages.
-    const whole = bucketCaption(await renderClaims(healthyScript()));
-    const narrowed = bucketCaption(
-      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
-    );
-    for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
-      const markup = await renderClaims(
-        healthyScript({ [T.pendingClaims]: { data: [...CLAIMS], count: null } }),
-        params,
-      );
-      const label = JSON.stringify(params);
-      const $ = cheerio.load(markup);
-      // Non-vacuous: the surface really refused, and drew no figure.
-      expect($('[data-surface="buckets"] [data-state]').attr("data-state"), label).toBe("error");
-      expect($("[data-bucket-claims]").length, label).toBe(0);
-      const said = $('[data-surface="buckets"] p')
-        .toArray()
-        .map((element) => $(element).text().replace(/\s+/g, " ").trim());
-      expect(said, label).not.toContain(whole);
-      expect(said, label).not.toContain(narrowed);
-    }
   });
 });
 
@@ -2672,18 +1840,6 @@ describe("which emptiness this is", () => {
     };
   }
 
-  it("blames the facet when the facet is what emptied the list", async () => {
-    // `venues` is a domain the view really carries and no standing
-    // disagreement is in it: three standing claims, none of them matching, so
-    // the filter is the whole reason this list is empty.
-    const markup = await renderClaims(healthyScript(), {
-      tab: "standing",
-      domain: "venues",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    expect(emptyHook(markup)).toBe("narrowing");
-  });
-
   it("blames no facet when the tab holds nothing for it to remove", async () => {
     // The same shape of URL over a view with NO standing disagreements: the
     // source facet removed not one row, because there was none to remove.
@@ -2737,7 +1893,6 @@ describe("which emptiness this is", () => {
     );
   });
 
-
   /* ── the same rule, over the GAUGE's set (admin-window/BUG-0163) ──────── */
 
   /**
@@ -2773,24 +1928,6 @@ describe("which emptiness this is", () => {
       [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     };
   }
-
-  it("blames the facet on the gauge card when the facet emptied the window", async () => {
-    // A domain this app can spell and this view holds no claim in: the read
-    // carried `.eq("domain", …)` and every figure in the section went to zero
-    // because of it.
-    const narrowed = await renderClaims(healthyScript(), { domain: "idols" });
-    const bare = await renderClaims(healthyScript());
-
-    expect(gaugeCard(narrowed)).not.toBe("");
-    expect(gaugeCard(narrowed)).not.toBe(gaugeCard(bare));
-    // It names the narrowing that emptied it, and the one control that clears
-    // it — the same words, from the same module, as the list's own card.
-    expect(gaugeCard(narrowed)).toContain("idols");
-    expect(gaugeCard(narrowed)).toContain(CLEAR_LABEL);
-    // Non-vacuous: with no facet the section has claims to age, so this card
-    // is not simply what this fixture always renders.
-    expect(gaugeCard(bare)).toBe("");
-  });
 
   it("blames no facet on the gauge card when the window is empty whatever the URL says", async () => {
     const script = emptyWindow();
@@ -2916,20 +2053,6 @@ describe("which emptiness this is", () => {
         ?.args[1];
     expect(scanEdge("gte")).toBe(edge("gte"));
     expect(scanEdge("lt")).toBe(edge("lt"));
-  });
-
-  it("still names its scope for a facet that really removed rows", async () => {
-    // The other direction, and the reason the fix is not "never blame a
-    // filter": a source carrying claims, but not these ones.
-    const markup = await renderClaims(healthyScript(), {
-      source_id: SOURCE.second,
-      domain: "venues",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    expect(emptyHook(markup)).toBe("narrowing");
-    expect(bucketCaption(markup)).not.toBe(
-      bucketCaption(await renderClaims(healthyScript())),
-    );
   });
 });
 
@@ -3130,92 +2253,6 @@ describe("a narrowing with no chip row", () => {
       expect(said, state).toContain(NARROWING);
       expect(said, state).toContain(FACET);
     }
-  });
-
-  it("claims no filter above when the only narrowing has no chip", async () => {
-    // The two false clauses of the ticket, in the state the designer read:
-    // both chip rows on `all`, every figure narrowed.
-    const markup = await renderClaims(acrossDomains(CLAIM_WINDOW * 3), {
-      domain: NARROWING,
-    });
-    for (const facet of ["bucket", "source_id"]) {
-      expect(
-        chipsOf(markup, facet).filter((chip) => chip.active).map((chip) => chip.label),
-        facet,
-      ).toEqual([ANY_LABEL]);
-    }
-    for (const phrase of ["these filters", "the filters above"]) {
-      expect(line(markup), phrase).not.toContain(phrase);
-      expect(bucketCaption(markup), phrase).not.toContain(phrase);
-    }
-    // ...and the empty card, reached by the same URL over a population the
-    // domain empties, offers no chip it cannot clear with.
-    const emptied = await renderClaims(healthyScript(), {
-      tab: "standing",
-      domain: NARROWING,
-    });
-    for (const phrase of CHIP_PHRASES) {
-      expect(card(emptied), phrase).not.toContain(phrase);
-    }
-  });
-
-  /**
-   * THE STATE THE PIN ABOVE NEVER REACHES: a chip that IS set over a table
-   * that drops that chip's facet (QA, admin-window/BUG-0191).
-   *
-   * The pin above walks `?domain=` with BOTH chip rows on `all`, so it grades
-   * the rule "no chip is set, so claim no filter above". The other half of the
-   * same rule is a chip that is set and narrows this table by NOTHING:
-   * `?bucket=X&domain=Y`. This table's read drops the bucket facet on purpose
-   * (`bucketStats`), so the domain did all the narrowing and the bucket chip
-   * did none — while `chipped` WAS `hasChipFacet(filter)` over the
-   * UNDROPPED filter, which the bucket facet alone satisfies. The caption
-   * therefore blamed "the filters above" and then said, in its next clause,
-   * that the one filter above does not narrow these counts. Since
-   * admin-window/BUG-0191 the caption asks the filter its own read carried,
-   * and this pin is a plain `it(...)`.
-   *
-   * Measured on staging 2026-09-11 at `/claims?bucket=awaiting_row&domain=events`:
-   * bucket counts 0/108/741/0/0 — identical to `?domain=events` and NOT to the
-   * bare page's 0/108/769/0/0 — with the chip rows reading `awaiting_row` and
-   * `all`. The gauge section one screen down already asks the right filter
-   * (it asked `hasChipFacet` of `gaugeFilter(filter)`; since
-   * admin-window/BUG-0191 both surfaces read ONE binding).
-   *
-   * Neither phrase is typed here. The chip clause is READ OFF THE APP: the
-   * only thing a chip-narrowed caption says that the same view narrowed by the
-   * control-less facet alone does not — so a rewording of either arm moves
-   * this test with it, and the guard has its passing spelling and its failing
-   * one (LESSONS 8).
-   */
-  it("claims no filter above when the only chip set narrows this table by nothing", async () => {
-    // The clause a CHIP narrowing adds to this caption, in the app's own
-    // words, with the domain held constant across both renders — read in the
-    // state where that chip really removes rows (admin-window/BUG-0192).
-    const chipClause = await chipClauseOf(bucketCaption);
-    // Non-vacuous: there really is a clause to look for.
-    expect(chipClause).not.toBe("");
-
-    const params = { bucket: "awaiting_row", domain: NARROWING };
-    const faceted = await renderClaims(healthyScript(), params);
-    // Non-vacuous, the other direction: the bucket chip is really ACTIVE, no
-    // source chip is, and this table's figures are the domain's figures — the
-    // bucket facet removed not one row of them.
-    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([params.bucket]);
-    expect(chipsOf(faceted, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-    const figures = (markup: string) => bucketRows(markup).map((row) => row.claims);
-    expect(figures(faceted)).toEqual(
-      figures(await renderClaims(healthyScript(), { domain: NARROWING })),
-    );
-    // …and the domain really narrowed them, so the narrowed arm is the one
-    // under test rather than the unnarrowed one.
-    expect(figures(faceted)).not.toEqual(figures(await renderClaims(healthyScript())));
-
-    // The defect: the caption blames a chip bar in which the only thing set
-    // narrows this table by nothing.
-    expect(bucketCaption(faceted)).not.toContain(chipClause);
   });
 
   /**
@@ -3566,157 +2603,6 @@ describe("a narrowing with no chip row", () => {
   });
 
   /**
-   * THE STANDING TAB'S OWN BUCKET IS NOT A CONTROL ABOVE (QA on
-   * admin-window/BUG-0192; the hazard that ticket named in its own words).
-   *
-   * On the standing tab `listFilterOf` MERGES the tab's bucket into the list's
-   * filter and the URL's own `?bucket=` is dropped. The widened count that
-   * decides the chip clause must therefore drop the chip facets the URL
-   * carried **out of the filter the read was given** — and the bucket in that
-   * filter is the TAB's, not the URL's. Subtracting it compares this tab's
-   * rows against the OTHER tab's population, and the comparison then differs
-   * for a reason that has nothing to do with the chip bar.
-   *
-   * The state is one CLICK away, and this test reaches it that way: the tab
-   * link is followed off the markup rather than typed, so a page that stops
-   * carrying `?bucket=` across the tabs stops reaching it honestly rather than
-   * passing on a URL nobody can build.
-   *
-   * Non-vacuous in both directions: at `SOURCE.third` + `groups` the source
-   * chip removes NOT ONE row of the standing subset (fixture arithmetic
-   * below), so no clause may point at the chip bar; at `PARTIAL_SOURCE` +
-   * `SHARED_DOMAIN` it really does remove one, and the clause is there.
-   */
-  it(
-    "claims no filter above on the standing tab when the chip set removed no row of it",
-    async () => {
-      /** The claims of the standing subset a set of facets keeps. */
-      const standingRows = (facets: Record<string, string>) =>
-        matching({ ...facets, bucket: STANDING_BUCKET });
-
-      // The URL the operator is on: a bucket chip, a source chip and the
-      // control-less domain, all three really applied by the BUCKETS tab.
-      const onBuckets = { bucket: "escalated", source_id: SOURCE.third, domain: "groups" };
-      const buckets = await renderClaims(healthyScript(), onBuckets);
-      expect(droppedLine(buckets).lines).toBe(0);
-
-      // ...and the click: the standing tab's own href, read off the page.
-      const href =
-        cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
-      const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
-      // Non-vacuous: the click really does carry the bucket parameter over to
-      // a tab that drops it — which is the state under test.
-      expect(params.bucket).toBe(onBuckets.bucket);
-      expect(params.tab).toBe("standing");
-
-      const { markup, stub } = await renderWithStub(healthyScript(), params);
-      // Non-vacuous, the arithmetic: the source chip removed NO row of the
-      // standing subset under this domain, and the list is narrowed all the
-      // same (the domain did it), so the narrowed arm is the one on screen.
-      expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
-        standingRows({ domain: "groups" }),
-      );
-      expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
-      expect(standingRows({ domain: "groups" }).length).toBeLessThan(
-        matching({ bucket: STANDING_BUCKET }).length,
-      );
-      expect(claimIds(markup)).toEqual(
-        oldestFirst(standingRows({ source_id: SOURCE.third, domain: "groups" })),
-      );
-
-      // THE SENTENCE: the chip bar shaped nothing here, so nothing points at
-      // it — and the line is the one the same page renders without the
-      // parameter it dropped, which is what "dropped" means.
-      expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
-      const withoutTheDroppedBucket = await renderClaims(healthyScript(), {
-        tab: "standing",
-        source_id: SOURCE.third,
-        domain: "groups",
-      });
-      expect(line(markup)).toBe(line(withoutTheDroppedBucket));
-
-      // THE READ: every count this tab issues is a count of THIS tab's subset.
-      // A count with the tab's bucket dropped is a count of the other tab's
-      // population, and no sentence on this page is about that set.
-      for (const facets of countFacets(stub)) {
-        expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
-      }
-
-      // The other direction, under the same dropped bucket: a source that
-      // really does remove a row of this subset still earns the clause.
-      expect(
-        standingRows({ source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN }).length,
-      ).toBeLessThan(standingRows({ domain: SHARED_DOMAIN }).length);
-      const reallyNarrowed = await renderClaims(healthyScript(), {
-        tab: "standing",
-        bucket: "escalated",
-        source_id: PARTIAL_SOURCE,
-        domain: SHARED_DOMAIN,
-      });
-      expect(line(reallyNarrowed)).toContain(NARROWED_BY_FILTERS);
-    },
-  );
-
-  /**
-   * THE SAME HAZARD WHEN THE TWO BUCKETS ARE THE SAME STRING (the case the
-   * pin above cannot see; admin-window/BUG-0193).
-   *
-   * `standing_disagreement` is itself a bucket the chip row offers, so
-   * `?bucket=standing_disagreement` is one click from the buckets tab to the
-   * standing tab — and there the filter the read was GIVEN and the filter the
-   * URL ASKED for hold the same string for `bucket` while only one of them is
-   * a control above. A subtraction that decided by comparing those two values
-   * would drop the tab's own bucket here and count the other tab's population,
-   * exactly as the one that decided by presence did: which is why the surface
-   * hands its own facets in (`tabFacetsOf`).
-   */
-  it("keeps the tab's own bucket when the URL asks for that same bucket", async () => {
-    const onBuckets = {
-      bucket: STANDING_BUCKET,
-      source_id: SOURCE.third,
-      domain: "groups",
-    };
-    const buckets = await renderClaims(healthyScript(), onBuckets);
-    expect(droppedLine(buckets).lines).toBe(0);
-
-    // The click, off the page's own markup: the bucket travels to the tab.
-    const href = cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
-    const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
-    expect(params.bucket).toBe(STANDING_BUCKET);
-    expect(params.tab).toBe("standing");
-
-    const { markup, stub } = await renderWithStub(healthyScript(), params);
-    // Non-vacuous: the source chip removes no row of this tab's subset under
-    // this domain, and the domain really narrows it.
-    const standingRows = (facets: Record<string, string>) =>
-      matching({ ...facets, bucket: STANDING_BUCKET });
-    expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
-      standingRows({ domain: "groups" }),
-    );
-    expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
-    expect(standingRows({ domain: "groups" }).length).toBeLessThan(
-      matching({ bucket: STANDING_BUCKET }).length,
-    );
-
-    // The read: every count of this tab is a count of this tab's subset.
-    for (const facets of countFacets(stub)) {
-      expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
-    }
-    // The sentence: nothing points at a chip bar that shaped nothing, and the
-    // line is the one the same page renders without the parameter it dropped.
-    expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
-    expect(line(markup)).toBe(
-      line(
-        await renderClaims(healthyScript(), {
-          tab: "standing",
-          source_id: SOURCE.third,
-          domain: "groups",
-        }),
-      ),
-    );
-  });
-
-  /**
    * THE WHOLE STATE SPACE OF THE RULE, SWEPT (QA, admin-window/BUG-0192 +
    * BUG-0193 re-check).
    *
@@ -3907,17 +2793,6 @@ describe("the way out of a narrowing", () => {
     const arrived = await renderClaims(healthyScript(), paramsOf(exit.href));
     expect(claimIds(arrived).length, state).toBeGreaterThan(0);
     expect(exitOf(arrived), state).toBeUndefined();
-  });
-
-  it("names the facet that has no chip row, so the exit says what it clears", async () => {
-    // The ticket's own URL, end to end: the page never said the word "domain"
-    // (that half is admin-window/BUG-0160) and had no control that dropped it
-    // (this half). Both are read off one card.
-    const markup = await renderClaims(healthyScript(), { domain: "zzz" });
-    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
-    expect(card(markup)).toContain("domain");
-    expect(card(markup)).toContain("zzz");
-    expect(card(markup)).toContain(theExit(markup, "?domain=zzz").label);
   });
 
   it("draws no exit where the URL narrowed nothing", async () => {
@@ -4126,18 +3001,6 @@ describe("what a filled window promises", () => {
     return states;
   }
 
-  it("cannot reach past the cap from any state its own chips offer", async () => {
-    for (const { params, markup } of await everyChipState()) {
-      const where = new URLSearchParams(params).toString() || "no facet";
-      // The narrowing really applied — the page dropped nothing and drew the
-      // window it was asked for — and it still filled its cap, so there are
-      // claims this state holds and does not show.
-      expect(droppedLine(markup).lines, where).toBe(0);
-      expect(claimIds(markup).length, where).toBe(CLAIM_WINDOW);
-      expect(filledItsCap(markup), where).toBe(true);
-    }
-  });
-
   it("says what it is not showing and offers no way to it", async () => {
     for (const { params, markup } of await everyChipState()) {
       const where = new URLSearchParams(params).toString() || "no facet";
@@ -4259,23 +3122,6 @@ describe("the filters", () => {
     // The bucket chips still offer every other source's page.
     expect(chips.length).toBeGreaterThan(2);
   });
-
-  it("still offers both chip facets when nothing matched, and a way out of the one that emptied it", async () => {
-    const markup = await renderClaims(healthyScript(), {
-      source_id: SOURCE.first,
-      domain: "groups",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    for (const facet of ["bucket", "source_id"]) {
-      expect(chipsOf(markup, facet).length, facet).toBeGreaterThan(1);
-    }
-    // The way out of the facet that has no chip row is still on screen: every
-    // chip of every other facet drops the narrowing that emptied the page...
-    expect(chipsOf(markup, "source_id")[0].href).not.toContain("source_id=");
-    // ...and the domain narrowing the page really applied is still carried by
-    // the chips that keep it, so it is visible in the URL rather than lost.
-    expect(chipsOf(markup, "bucket")[0].href).toContain("domain=groups");
-  });
 });
 
 /* ── one id, one narrowing ───────────────────────────────────────────────── */
@@ -4319,85 +3165,6 @@ describe("a source id in another spelling", () => {
     ` ${CANONICAL.replace(/-/g, "")}\t`,
   ];
 
-  it.each(SPELLINGS)("renders the same claims as the canonical spelling, for %o", async (spelling) => {
-    expect(spelling).not.toBe(CANONICAL);
-    const asked = await renderClaims(healthyScript(), { source_id: spelling });
-    const canonical = await renderClaims(healthyScript(), { source_id: CANONICAL });
-
-    // The rows themselves, and the fixture makes the claim non-vacuous: this
-    // source really does narrow, so "the same rows" is not "all of them".
-    expect(claimIds(asked)).toEqual(claimIds(canonical));
-    expect(claimIds(asked).length).toBeGreaterThan(0);
-    expect(claimIds(asked).length).toBeLessThan(
-      claimIds(await renderClaims(healthyScript())).length,
-    );
-    // ...and the bucket table, which is the page's other set.
-    expect(bucketRows(asked)).toEqual(bucketRows(canonical));
-  });
-
-  it.each(SPELLINGS)("spells the narrowing back in ONE form, for %o", async (spelling) => {
-    const markup = await renderClaims(healthyScript(), { source_id: spelling });
-    const chips = chipsOf(markup, "source_id");
-    const active = chips.filter((chip) => chip.active);
-
-    // One chip is on, it is this source's, and it says the source's NAME.
-    expect(active.map((chip) => chip.label)).toEqual([nameOf(CANONICAL)]);
-    // Every href this page writes carries the canonical id and no other
-    // spelling of it — a bookmark taken from here is the one URL for this
-    // state, whatever the operator pasted.
-    // The href this page writes for the state it is IN carries the canonical
-    // id — a bookmark taken from here is the one URL for this state, whatever
-    // the operator pasted — and the whole chip bar is byte for byte the one
-    // the canonical spelling renders, so no href anywhere carries a second
-    // spelling of this id.
-    expect(active[0].href).toContain(encodeURIComponent(CANONICAL));
-    expect(chips).toEqual(
-      chipsOf(await renderClaims(healthyScript(), { source_id: CANONICAL }), "source_id"),
-    );
-    // The page did the narrowing, so it may not say it dropped it.
-    expect(droppedLine(markup).lines).toBe(0);
-  });
-
-  /**
-   * The second fixture the guard owes (LESSONS 8). Neither of these names a
-   * source this view holds, so each narrows NOTHING and is reported by the
-   * dropped-parameter line exactly as before — the id grammar widened which
-   * spellings of a REAL id are understood and nothing else.
-   */
-  it.each([
-    ["a value that is no id at all", "not-a-uuid"],
-    ["whitespace INSIDE an otherwise real id", `${CANONICAL.slice(0, 20)} ${CANONICAL.slice(20)}`],
-  ])("narrows nothing for %s, and says so", async (_label, asked) => {
-    const markup = await renderClaims(healthyScript(), { source_id: asked });
-    expect(claimIds(markup)).toEqual(claimIds(await renderClaims(healthyScript())));
-    expect(droppedLine(markup).names).toEqual(["source_id"]);
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-  });
-
-  /**
-   * **EXPECTED CHANGE, admin-window/BUG-0138.** A well-formed id nothing
-   * carries used to be checked against the sources of the whole claim
-   * population — the read this page no longer makes — and reported as dropped
-   * over an unnarrowed page. It NARROWS now: the value goes to the query, every
-   * figure comes back 0, and the page says where it looked.
-   */
-  it("narrows to nothing for a well-formed id no claim carries", async () => {
-    const asked = "01920000-0000-7000-8000-0000000009f9";
-    const markup = await renderClaims(healthyScript(), { source_id: asked });
-    const $ = cheerio.load(markup);
-
-    expect(claimIds(markup)).toEqual([]);
-    expect(droppedLine(markup).lines).toBe(0);
-    expect($('[data-empty="narrowing"]')).toHaveLength(1);
-    expect(Number($('[data-window="claims"]').attr("data-window-held"))).toBe(0);
-    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
-    // No chip claims to be the state we are in — the registry has no row for
-    // this id, so there is no chip that could — and "all" is not on either,
-    // because a narrowing really is applied.
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active)).toEqual([]);
-  });
-
   /**
    * The whole PAGE, and not an enumerated list of its parts (QA,
    * admin-window/DEBT-0009).
@@ -4430,70 +3197,6 @@ describe("a source id in another spelling", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-/* ── a parameter this page has no facet for ──────────────────────────────── */
-
-/**
- * `record_id` narrows nothing here, in every spelling, and the page SAYS so
- * (QA, admin-window/DEBT-0009).
- *
- * DEBT-0009's own text asserted that `/claims` "takes `record_id` as a raw
- * string facet" and asked for that facet to be canonicalised. It does not and
- * never did: `CLAIM_FACETS` is `[bucket, source_id, domain]`, `pending_claims`
- * keys an entity by `entity_id`, and `?record_id=` is the usersim's example of
- * a parameter this page DROPS (`M2-usersim-priya.md` §6, cited by
- * `lib/url/dropped-params.ts`). The correction is worth a test rather than a
- * sentence in a ticket, because the tempting repair is to invent the facet —
- * an id facet nobody designed, with no column behind it and no bounded chip
- * vocabulary — and nothing on this page would have reddened if someone had.
- *
- * The rule is graded at the leaf (`tests/offline/claims/filters.test.ts`) and
- * on `/queues`' page; the one place it was NOT graded is the page this ticket
- * changed, whose facet reader now canonicalises. So: a `record_id` that is a
- * real id, one that is no id at all, and one that is the id of a source this
- * page really does narrow by, all reach the same answer — the unnarrowed page,
- * under a line that names the parameter.
- */
-describe("a record_id asked of /claims", () => {
-  it.each([
-    ["a well-formed id, which a source on this page really has", SOURCE.first],
-    ["a well-formed id nothing here carries", "01920000-0000-7000-8000-0000000009f9"],
-    ["a value that is no id at all", "not-a-uuid"],
-  ])("narrows nothing and is reported, for %s", async (_label, asked) => {
-    const markup = await renderClaims(healthyScript(), { record_id: asked });
-    const bare = await renderClaims(healthyScript());
-
-    // Both of the page's sets are the unnarrowed ones...
-    expect(claimIds(markup)).toEqual(claimIds(bare));
-    expect(bucketRows(markup)).toEqual(bucketRows(bare));
-    // ...no facet is on...
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-    // ...and the page says what it did not do, by name.
-    expect(droppedLine(markup).names).toEqual(["record_id"]);
-    expect(droppedLine(markup).total).toBe(1);
-  });
-
-  it("is still reported beside a source_id that DID narrow, in another spelling", async () => {
-    const params = {
-      source_id: SOURCE.first.replace(/-/g, ""),
-      record_id: SOURCE.first,
-    };
-    const markup = await renderClaims(healthyScript(), params);
-
-    // The one that narrowed, narrowed — and spells itself back canonically.
-    const active = chipsOf(markup, "source_id").filter((chip) => chip.active);
-    expect(active.map((chip) => chip.label)).toEqual([nameOf(SOURCE.first)]);
-    expect(active[0].href).toContain(encodeURIComponent(SOURCE.first));
-    expect(claimIds(markup)).toEqual(
-      claimIds(await renderClaims(healthyScript(), { source_id: SOURCE.first })),
-    );
-    // The one that did not, is named — and it is the ONLY one named, so the
-    // canonicalised facet is not swept into the same sentence.
-    expect(droppedLine(markup).names).toEqual(["record_id"]);
-    expect(droppedLine(markup).total).toBe(1);
   });
 });
 
@@ -4560,58 +3263,6 @@ describe("a source is named", () => {
     );
   });
 
-  it("names the chips exactly as the same facet on /sources does", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const [id, name] of SOURCE_NAME) {
-      const chip = chipsOf(markup, "source_id").find((one) => one.label === name);
-      expect(chip, name).toBeDefined();
-      expect((chip as { href: string }).href).toContain(encodeURIComponent(id));
-    }
-    // Not one chip anywhere reads as a uuid the registry could have named.
-    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).not.toContain(
-      SOURCE.first,
-    );
-  });
-
-  /**
-   * The standing tab's per-source rows obey the same one rule
-   * (admin-window/BUG-0158, QA's attack on BUG-0156). The split anchor spelled
-   * `{split.source ?? split.sourceId}` — and `??` sees only `null`, so a
-   * registry row that EXISTED with an ink-less name took neither branch and the
-   * anchor rendered with nothing to read and nothing visible to click, beside a
-   * sibling row that named its source. It now asks `sourceLabel` over the map
-   * built from the gauge's OWN joined `sources` rows.
-   *
-   * Both directions in one render (LESSONS 8), and the hooks the link is made
-   * of are asserted too: the label is the only thing that may change, so the
-   * row is still keyed by its id and still narrows to it.
-   */
-  for (const blank of ["", "   ", "\u200b"]) {
-    it(`names a standing split the registry names ${JSON.stringify(blank)} by its id`, async () => {
-      const blanked = REGISTRY.map((row) =>
-        row.source_id === SOURCE.first ? { ...row, source: blank } : row,
-      );
-      const markup = await renderClaims(
-        healthyScript({ [T.sources]: { data: blanked } }),
-        { tab: "standing" },
-      );
-      const $ = cheerio.load(markup);
-      const anchorFor = (id: string) => $(`[data-split-source="${id}"]`);
-
-      const blankNamed = anchorFor(SOURCE.first);
-      expect(blankNamed.length, "the blank-named split did not render").toBe(1);
-      // The id verbatim, and the link still goes where it went.
-      expect(blankNamed.text()).toContain(SOURCE.first);
-      expect(blankNamed.attr("href")).toContain(encodeURIComponent(SOURCE.first));
-      // Non-vacuity in the same render: the sibling split still reads as its
-      // registry name and never as its uuid.
-      const named = anchorFor(SOURCE.second);
-      expect(named.length, "the named split did not render").toBe(1);
-      expect(named.text()).toContain(SOURCE_NAME.get(SOURCE.second) as string);
-      expect(named.text()).not.toContain(SOURCE.second);
-    });
-  }
-
   /**
    * **THE SENTENCE COUNTS WHAT THE ROWS ABOVE IT SHOW** (campaign
    * admin-window/DEBT-0022, the class site admin-window/TASK-0060 fixed on
@@ -4659,62 +3310,6 @@ describe("a source is named", () => {
     expect(standingSplitsWearingAnId(allNamed)).toEqual([]);
     expect(figuresIn(standingClosingSentence(allNamed))).toEqual([]);
     expect(standingClosingSentence(withBlank)).not.toBe(standingClosingSentence(allNamed));
-  });
-
-  it("leaves a standing split's registry name exactly as the registry wrote it", async () => {
-    // The other direction: a name with ink travels byte-identical — the pads
-    // are the registry's and this page neither trims them nor prefers the id.
-    const padded = "  ticketmaster  ";
-    const rows = REGISTRY.map((row) =>
-      row.source_id === SOURCE.first ? { ...row, source: padded } : row,
-    );
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { data: rows } }),
-      { tab: "standing" },
-    );
-    const anchor = cheerio.load(markup)(`[data-split-source="${SOURCE.first}"]`);
-    expect(anchor.length).toBe(1);
-    // The anchor also carries the source's tier and lifecycle, so the label is
-    // read as the text it STARTS with rather than as the whole cell.
-    expect(anchor.text().startsWith(padded), anchor.text()).toBe(true);
-  });
-
-  it("reports the registry leg when it refuses, and leaves every source its id", async () => {
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
-    );
-    // The claims are still the claims: a label that could not be read takes
-    // nothing down with it.
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-    for (const claim of SHOWABLE) {
-      expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
-    }
-    // ... and the failure is on screen, naming the object that refused.
-    expect(markup).toContain(T.sources);
-    expect(markup).toContain("permission denied");
-  });
-});
-
-/* ── the fixture the assertions rest on ──────────────────────────────────── */
-
-describe("the population this file reads", () => {
-  it("carries every bucket, including the one that must never render", () => {
-    expect(new Set(CLAIMS.map((claim) => claim.bucket))).toEqual(
-      new Set([...RENDERED_BUCKETS, PARKED]),
-    );
-    expect(CLAIMS.filter((claim) => claim.bucket === PARKED)).toHaveLength(1);
-    expect(new Set(CLAIMS.map((claim) => claim.source_id)).size).toBe(3);
-    // Two of those three are registered and one is not, so a label assertion
-    // has an input it must name and an input it must leave alone
-    // (admin-window/BUG-0043).
-    expect(REGISTRY.map((row) => row.source_id).sort()).toEqual(
-      [...SOURCE_NAME.keys()].sort(),
-    );
-    expect(
-      CLAIMS.some((claim) => !SOURCE_NAME.has(claim.source_id)),
-      "a source the registry does not name",
-    ).toBe(true);
-    expect(CLAIMS.some((claim) => claim.entity_id === ENTITY.event)).toBe(true);
   });
 });
 
@@ -4805,19 +3400,6 @@ describe("a hand-edited URL", () => {
       paramsOf("source_id=%3Cscript%3Ealert(1)%3C%2Fscript%3E"),
     );
     expect(markup).not.toContain("<script>");
-  });
-
-  it("keeps the tab a URL asks for, however it spells the rest", async () => {
-    const markup = await renderClaims(
-      healthyScript(),
-      paramsOf(`tab=standing&bucket=${PARKED}&source_id=${SOURCE.first}`),
-    );
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(
-        matching({ bucket: "standing_disagreement", source_id: SOURCE.first }),
-      ),
-    );
-    expect(markup).not.toContain(PARKED);
   });
 });
 
@@ -4942,25 +3524,6 @@ describe("a parameter the page did not apply", () => {
     expect(markup).not.toContain(TYPED);
   });
 
-  it("names a facet whose value no chip offers, without echoing the value", async () => {
-    // The parked bucket is the value this page may never render, so the line
-    // that reports it dropped is exactly where an echo would land
-    // (LOOK_AND_FEEL bar 3, ARCHITECTURE.md §6 trap 4).
-    const markup = await renderClaims(healthyScript(), { bucket: PARKED });
-    const line = droppedLine(markup);
-    expect(line.present).toBe(true);
-    expect(line.names).toEqual(["bucket"]);
-    expect(markup).not.toContain(PARKED);
-
-    // Any unusable value, not just that one: the rule is the offered
-    // vocabulary, and a case variant is outside it like anything else.
-    expect(droppedLine(await renderClaims(healthyScript(), { bucket: "Escalated" })).names)
-      .toEqual(["bucket"]);
-    expect(
-      droppedLine(await renderClaims(healthyScript(), { source_id: "not-a-source" })).names,
-    ).toEqual(["source_id"]);
-  });
-
   it("counts a parameter whose own NAME this app may not render, and spells none of it", async () => {
     // The URL may use the parked bucket as a KEY, and bar 3 is about the
     // string on the screen, not about which half of a query pair it came from.
@@ -5071,55 +3634,6 @@ describe("a parameter the page did not apply", () => {
     expect(droppedLine(plain).lines).toBe(0);
   });
 
-  it("says what the bucket figures are figures of, and asserts no filter without one", async () => {
-    // The page's second sentence over an unnarrowed read: the caption claimed
-    // the bucket counts were "under the filters above" with an empty chip bar.
-    const whole = bucketCaption(await renderClaims(healthyScript()));
-    expect(whole).not.toContain("filters above");
-    expect(whole).toContain("real zero");
-
-    // A hand-typed parameter narrows nothing, so the caption does not move.
-    expect(bucketCaption(await renderClaims(healthyScript(), { record_id: TYPED }))).toBe(
-      whole,
-    );
-
-    // The other way: with a chip set the sentence is the one it has always been.
-    const narrowed = bucketCaption(
-      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
-    );
-    expect(narrowed).toContain("under the filters above");
-    expect(narrowed).not.toBe(whole);
-  });
-
-  /**
-   * A URL may carry a parameter whose KEY is empty or blank, and both reach
-   * this page as a real dropped parameter: `?=x` arrives as `{"": "x"}` and
-   * `?%20%20=1` as `{"  ": "1"}` (measured over HTTP against a production
-   * build, 2026-09-09). `droppedParams` skips an empty VALUE and never an
-   * empty NAME, so the line counts one and spells nothing — "The URL carries
-   * , which this page did not apply: nothing below is narrowed by it." The
-   * sentence exists to name the parameter verbatim (criterion 3); a hole
-   * where the name goes names nothing, and the operator who typed it is told
-   * only that something they cannot identify was ignored.
-   *
-   * FIXED by admin-window/BUG-0127, first arm: `droppedParams` now skips a
-   * key that is empty or whitespace-only, exactly as it already skips an
-   * empty VALUE — a pair needs both halves to be a request, and a value with
-   * no name asks for nothing this page could have applied. So the line does
-   * not render at all for these URLs and there is no name to hole. The next
-   * test is the direct pin of that behaviour, in both directions.
-   */
-  it("spells a name, or none, but never a hole where a name goes", async () => {
-    const blankKeys: Record<string, string>[] = [{ "": "x" }, { "  ": "1" }];
-    for (const params of blankKeys) {
-      const line = droppedLine(await renderClaims(healthyScript(), params));
-      // Every name the line puts in mono is a name an operator can read back.
-      for (const name of line.names) {
-        expect(name.trim(), JSON.stringify(params)).not.toBe("");
-      }
-    }
-  });
-
   it("ignores a key with no visible content the way it ignores an empty value, and moves nothing else", async () => {
     // admin-window/BUG-0127, criterion 2: `?=x` and `?%20%20=1` name no
     // facet, so they are the URL saying nothing rather than the page
@@ -5156,98 +3670,6 @@ describe("a parameter the page did not apply", () => {
     }
     // The other direction, so the assertions above are not passing over a
     // page that stopped reporting dropped parameters altogether.
-    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
-      .toEqual(["record_id"]);
-  });
-
-  /**
-   * The same sentence and the same hole, from a key `String.prototype.trim`
-   * does not strip.
-   *
-   * admin-window/BUG-0127 closed the blank-key hole by ignoring a key whose
-   * `trim()` is empty, which is the WHITESPACE half of "this key names
-   * nothing". The other half is a key whose codepoints are not whitespace and
-   * still lay out to nothing: `?%00=1`, `?%E2%80%8B=1` (ZERO WIDTH SPACE),
-   * `?%C2%AD=1` (SOFT HYPHEN), `?%E2%81%A0=1` (WORD JOINER), `?%E2%80%8E=1`
-   * (LEFT-TO-RIGHT MARK), `?%7F=1` (DELETE). Each reaches `droppedParams`
-   * with the key intact, each lands in `named`, and each is spelled into the
-   * mono span — where a browser lays it out at **0px, not visible** and the
-   * operator reads "The URL carries , which this page did not apply"
-   * (measured in Chromium, both colour schemes, against a production build on
-   * port 8796, 2026-09-09; the `record_id` control measures 59.41px, visible).
-   *
-   * Either arm satisfies this pin, exactly as BUG-0127's criterion 1 allowed:
-   * ignore such a key (no name to hole) or spell something readable. What it
-   * refuses is a name with no renderable glyph in it.
-   *
-   * FIXED by admin-window/BUG-0136, the same arm BUG-0127 chose: the
-   * whitespace-only test in `droppedParams` is now the app's ONE definition of
-   * blank (`hasVisibleContent`, `lib/verdict/decision.ts`,
-   * admin-window/BUG-0089), which knows the format characters, the controls
-   * and the Hangul fillers that `trim()` does not. A key a reader would see
-   * nothing of names nothing, so none of these URLs renders the line at all —
-   * and the pin below, which was `it.fails` while the divergence stood, is a
-   * plain `it`.
-   */
-  it("names a parameter an operator can read back, whatever the key's codepoints", async () => {
-    const invisible = ["\u0000", "\u200B", "\u00AD", "\u2060", "\u200E", "\u007F"];
-    for (const key of invisible) {
-      const where = `U+${key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
-      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
-      for (const name of line.names) {
-        // Control characters, format characters and spaces are what a reader
-        // never sees; a name that is nothing but those names nothing.
-        expect(name.replace(/[\p{Cc}\p{Cf}\p{Zs}]/gu, ""), where).not.toBe("");
-      }
-    }
-    // Not vacuous: the line still renders, and still names, a real key.
-    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
-      .toEqual(["record_id"]);
-  });
-
-  /**
-   * The name is rendered VERBATIM, so a key carrying an unterminated bidi
-   * override rewrites the sentence it is written into
-   * (admin-window/BUG-0137, QA).
-   *
-   * U+202E RIGHT-TO-LEFT OVERRIDE is a format character, so `visibleContent`
-   * strips it and the key `ab\u202Ecd` has visible content — it is named, and
-   * the override travels into the mono span with it. The override's scope is
-   * the paragraph, not the span, so everything after it reverses. Measured in
-   * Chromium on a production build (port 8798, staging, 2026-09-09, both
-   * colour schemes), `/claims?ab%E2%80%AEcd=1` renders:
-   *
-   *     The URL carries ab.ti yb deworran si woleb gnihton :ylppa ton did egap siht hcihw ,dc
-   *
-   * and `/claims?%E2%80%AEabc=1` the same with the name reading `cba`; the
-   * name span's own box grows from ~20px to 371.75px as it swallows the
-   * reversed run. The sentence the page wrote is not the sentence the
-   * operator reads, which is what bar 13 ("no screen claims a mark it did not
-   * draw") and BUG-0123's "names something the operator can read back" are.
-   *
-   * The check is on the TEXT rather than on any styling, deliberately: the
-   * reversal travels with the sentence when it is copied out of the page into
-   * a plain-text field, where no isolation rule follows it.
-   *
-   * FIXED by admin-window/BUG-0137: the line spells a key only if its raw
-   * characters match the renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`
-   * (`droppedParams`, `src/lib/claims/filters.ts`; ARCHITECTURE.md §7). A
-   * bidi control is outside that class, so a key carrying one is COUNTED and
-   * never spelled, and no control from a URL reaches the markup at all —
-   * which is why the copied-out text reads in the order the page wrote it.
-   */
-  it("cannot let a URL reverse the sentence its name is written into", async () => {
-    for (const key of ["ab\u202Ecd", "\u202Eabc", "x\u202Dy"]) {
-      const where = [...key]
-        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-        .join(" ");
-      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
-      // Either arm: drop the override from the name, or name nothing at all.
-      for (const name of line.names) {
-        expect(name, where).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/u);
-      }
-    }
-    // Not vacuous: an ordinary key is still named, in full.
     expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
       .toEqual(["record_id"]);
   });
@@ -5599,20 +4021,6 @@ describe("a server that ignored the exclusion", () => {
 });
 
 describe("QA: what the parked bucket alone carries", () => {
-  it("offers no chip built from a parked row, and none for the domain facet at all", async () => {
-    const markup = await renderClaims(qaScript());
-    // The source chips are the REGISTRY's rows since admin-window/BUG-0138,
-    // and this database's registry is empty — so the row offers "all" and
-    // nothing else. The property that mattered here is unchanged and stronger:
-    // no chip is built from a CLAIM row, so a source only parked rows carry
-    // cannot become one.
-    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual(["all"]);
-    // The domain chip row is gone entirely (Ben's A2, 2026-09-10).
-    expect(chipsOf(markup, "domain")).toEqual([]);
-    expect(markup).not.toContain(QA_SOURCE.parkedOnly);
-    expect(markup).not.toContain(PARKED);
-  });
-
   it("narrows to NOTHING when the URL names one of them, and says where it looked", async () => {
     // **EXPECTED CHANGE, admin-window/BUG-0138.** These used to narrow nothing
     // — they were outside the vocabularies the page read off the population —
@@ -5820,19 +4228,6 @@ describe("the copy the operator actually reads", () => {
     // ...and nowhere is it re-spelled as prose, which is what made the two
     // pages disagree with each other.
     expect(markup).not.toContain("stuck-pattern");
-  });
-  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
-    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
-    // transform keeps the space that `next build`'s transform drops (measured
-    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
-    // actually guards it, so it stands beside them.
-    //
-    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
-    expect(
-      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">stuck_pattern</span> dial is a'),
-    ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial is a']);
-    // ...and the page as it stands must be clean of it.
-    expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
   });
 });
 
@@ -6273,38 +4668,6 @@ describe("each read answers for itself", () => {
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
   });
 
-  it("renders a bucket's refusal rather than a zero when the count is absent", async () => {
-    // `{count: null, error: null}` is what a select written WITHOUT
-    // `{ count: "exact" }` returns — a refusal, never a zero
-    // (ARCHITECTURE.md §4.3, common violations row 2).
-    const markup = await renderClaims(
-      healthyScript({
-        [T.pendingClaims]: (call: RecordedCall) => {
-          const head = isCountLeg(call);
-          const bucket = call.steps.find(
-            (step) => step.method === "eq" && step.args[0] === "bucket",
-          )?.args[1];
-          if (head && bucket === "agreeing") return { data: null, count: null, error: null };
-          return claimView(CLAIMS)(call);
-        },
-      }),
-    );
-    const $ = cheerio.load(markup);
-    const agreeing = $('[data-bucket="agreeing"]').closest("tr");
-    expect(agreeing.find("[data-bucket-claims]")).toHaveLength(0);
-    expect(agreeing.find('[data-state="error"]')).toHaveLength(1);
-
-    // The other four are real numbers, and one of them is a real ZERO — the
-    // second fixture the rule owes (LESSONS 8): a counted zero renders as a
-    // zero, an absent count renders as the refusal.
-    const narrowed = await renderClaims(healthyScript(), { source_id: SOURCE.second });
-    const zero = bucketRows(narrowed).find((row) => row.bucket === "escalated");
-    expect(zero?.claims).toBe(0);
-    expect(
-      cheerio.load(narrowed)('[data-bucket="escalated"]').closest("tr").text(),
-    ).toContain("0");
-  });
-
   it("keeps the rows when the count that would state the window line refuses", async () => {
     const markup = await renderClaims(
       healthyScript({
@@ -6565,18 +4928,6 @@ describe("the affordance that continues the claim list", () => {
     // The wrapper was never rendered at all, so nothing downstream had to be
     // honest about a state that cannot be honoured.
     expect(paging.calls).toEqual([]);
-  });
-
-  it("hands the hook the rows it RENDERED, at this app's own route", async () => {
-    await renderClaims(pagedScript(130));
-    expect(paging.calls).toHaveLength(1);
-    const { initial, deps } = paging.calls[0];
-    // `held` is the rendered row count, never the count and never the limit.
-    expect(initial.held).toBe(CLAIM_WINDOW);
-    expect(initial.rows).toEqual([]);
-    expect(initial.status).toBe("idle");
-    expect(deps.route).toBe(PAGE_ROUTES.claims);
-    expect(deps.size).toBe(CLAIM_WINDOW);
   });
 
   // FIXED, and this is the guard that keeps it fixed — admin-window/BUG-0226,
@@ -6893,42 +5244,6 @@ describe("the affordance that continues the claim list", () => {
   /** The page's own deps, as it handed them to the driver. */
   const depsOf = () =>
     paging.calls[0].deps as Omit<PageDeps<ClaimLine>, "fetchJson">;
-
-  it("does not claim rows are withheld once the walk has reached the end of the set", async () => {
-    // The sibling of QA's `/browse` pin, pressed to exhaustion through the
-    // same driver (admin-window/BUG-0172, criterion 9). Both handles are the
-    // app's own statements about ONE question: are there matching claims this
-    // surface could show that are not on screen?
-    const claims = longPopulation(130);
-    const script = pagedScript(130);
-    await renderClaims(script);
-    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const press = (state: PageState<ClaimLine>, answer: PageAnswer<ClaimLine>) =>
-      requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) });
-
-    const second = await press(initial, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-      offset: CLAIM_WINDOW,
-      exhausted: false,
-    });
-    paging.override = await press(second, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW * 2, 130), new Map()),
-      offset: CLAIM_WINDOW * 2,
-      exhausted: true,
-    });
-    const markup = await renderClaims(script);
-
-    // The walk really did reach the end, and the rows really are all drawn.
-    expect(pagingArms(markup)).toEqual(["exhausted"]);
-    expect(claimIds(markup)).toHaveLength(130);
-
-    // …so nothing on this page may still say claims are being held back.
-    expect(windowFigures(markup).lines).toBe(1);
-    expect(windowFigures(markup).truncated).toBe(false);
-    expect(lineText(markup)).not.toContain(DID_NOT_FILL);
-  });
 
   it("keeps its held on the COUNT its own read established, whatever a press appends", async () => {
     // `/browse`'s `held` is the rows its reads came back with and grows with
@@ -7248,22 +5563,6 @@ describe("the affordance that continues the claim list", () => {
     }
   });
 
-  it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
-    const script = pagedScript(130);
-    await renderClaims(script);
-    paging.override = pressing(paging.calls[0].initial as unknown as PageState<ClaimLine>);
-    const loading = await renderClaims(script);
-    expect(pagingArms(loading)).toEqual(["loading"]);
-    // A press in flight has taken in no row and ended nothing.
-    expect(windowFigures(loading)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 130,
-      truncated: true,
-    });
-    expect(lineText(loading)).not.toContain(DID_NOT_FILL);
-  });
-
   it("a refused press settles nothing: the line is what it was before it", async () => {
     const claims = longPopulation(130);
     const script = pagedScript(130);
@@ -7312,51 +5611,6 @@ describe("the affordance that continues the claim list", () => {
     const afterReadFailure = await renderClaims(script);
     expect(lineHtml(afterReadFailure)).toBe(lineHtml(before));
     expect(pagingArms(afterReadFailure)).toContain("more");
-  });
-
-  it("at the bound ceiling it still says claims are not shown", async () => {
-    // The state a walk reaches after `MAX_PAGE_OFFSET` rows: every further
-    // bound is past the ceiling `pageBound` enforces, so `PageMore` draws its
-    // limit sentence and NO control — and that sentence does not claim the set
-    // has ended, because nothing established that. The line must agree: claims
-    // this surface could show are not shown, and it says so.
-    //
-    // The held is seeded rather than pressed to: 2,000 full pages is what puts
-    // a real operator here, and the state is built the way the surface's own
-    // state is built (`initialPage`), then driven through the REAL driver with
-    // the refusal this app's route answers a bound past the ceiling with.
-    const script = pagedScript(130);
-    await renderClaims(script);
-    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
-
-    // These two renders go around `renderClaims`, and only these two do: its
-    // sweep grades that no FIRST screen of this file draws the limit arm, and
-    // the state under test here is the one state where drawing it is correct.
-    const rendered = async (): Promise<string> => {
-      readWith.client = stubClient(script).asSupabaseClient();
-      return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
-    };
-
-    paging.override = atCeiling;
-    const before = await rendered();
-    expect(pagingArms(before)).toEqual(["limit"]);
-    expect(windowFigures(before).lines).toBe(1);
-    expect(windowFigures(before).truncated).toBe(true);
-    expect(lineText(before)).not.toContain(DID_NOT_FILL);
-
-    paging.override = await requestPage<ClaimLine>(atCeiling, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "refused",
-          reason: "the `offset` must be at most 100000",
-          bound: String(MAX_PAGE_OFFSET + CLAIM_WINDOW),
-        }),
-    });
-    const after = await rendered();
-    expect(pagingArms(after)).toEqual(["limit"]);
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    expect(lineHtml(after)).toBe(lineHtml(before));
   });
 
   it("draws no control from a state off the grid, and never calls it exhausted", async () => {

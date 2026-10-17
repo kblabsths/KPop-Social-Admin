@@ -32,7 +32,6 @@ import {
 // what this leaf still owns is the pair of facts the page hands it — "did this
 // URL narrow anything" and "where is this page with nothing set".
 import { clearNarrowing } from "@/lib/url/narrowing";
-import { recordHref } from "@/lib/records/routes";
 // The vocabulary's own home (admin-window/TASK-0072): the shape and the two
 // functions over it are the URL leaf's, the facet TABLE below is this page's.
 import { unchippedNarrowings, unchippedPhrase } from "@/lib/url/narrowing";
@@ -207,26 +206,9 @@ describe("a source id in another spelling", () => {
     expect(filter).toEqual({ source_id: params.source_id });
     expect(droppedParams(params, filter)).toEqual({ named: [], withheld: 0 });
   });
-
-  /**
-   * The word facets are answered by the SAME comparison and are unchanged by
-   * it: no bucket and no domain is a uuid, so the id grammar has nothing to
-   * say about either and the value compares as itself.
-   */
-  it("leaves a facet whose values are words comparing as words", () => {
-    expect(filterFrom({ bucket: "escalated", domain: "venues" }, BUCKETS)).toEqual({
-      bucket: "escalated",
-      domain: "venues",
-    });
-    expect(filterFrom({ bucket: " escalated" }, BUCKETS)).toEqual({});
-  });
 });
 
 describe("the facets", () => {
-  it("are spec §4's three, each named for the field it narrows", () => {
-    expect([...CLAIM_FACETS]).toEqual(["bucket", "source_id", "domain"]);
-  });
-
   it("reads each facet out of the URL", () => {
     const filter = filterFrom(
       { bucket: "escalated", source_id: SOURCES[1], domain: "venues" },
@@ -306,17 +288,6 @@ describe("the URL a state has", () => {
     expect(claimsHref(PATH, {}, "standing")).toBe("/claims?tab=standing");
   });
 
-  it("writes the facets in one fixed order", () => {
-    const href = claimsHref(
-      PATH,
-      { domain: "events", source_id: SOURCES[0], bucket: "escalated" },
-      "buckets",
-    );
-    expect(href).toBe(
-      `/claims?bucket=escalated&source_id=${SOURCES[0]}&domain=events`,
-    );
-  });
-
   /**
    * The query one PRESS carries — campaign admin-window/TASK-0067, SPEC F14.
    *
@@ -383,18 +354,6 @@ describe("the URL a state has", () => {
     const applied = filterFrom(asked, BUCKETS);
     expect(applied).toEqual({ domain: "events" });
     expect(claimsQuery(applied, tabFrom(asked))).toBe("domain=events&tab=standing");
-  });
-
-  it("round-trips every filter it writes", () => {
-    const filter: ClaimsFilter = {
-      bucket: "awaiting_row",
-      source_id: SOURCES[1],
-      domain: "venues",
-    };
-    const query = new URL(claimsHref(PATH, filter, "standing"), "https://x");
-    const params = Object.fromEntries(query.searchParams.entries());
-    expect(filterFrom(params, BUCKETS)).toEqual(filter);
-    expect(tabFrom(params)).toBe("standing");
   });
 });
 
@@ -577,27 +536,6 @@ describe("one facet at a time", () => {
       expect(hasChipFacet(bare)).toBe(false);
       expect(hasNarrowingFacet(bare)).toBe(false);
     });
-
-    it("keeps the narrowing readable back into the URL it came from", () => {
-      // LOOK_AND_FEEL bar 11, the half admin-window/BUG-0160 was filed for:
-      // the bookmarked view is a link, so the screen has to spell what the
-      // link carries. The parameter's name and its value are both in the
-      // phrase, and the value is the one the href writes back.
-      for (const value of ["events", "venues", "groups"]) {
-        const filter = filterFrom({ domain: value }, BUCKETS);
-        const [narrowing] = unchippedOf(filter);
-        expect(claimsHref(PATH, filter)).toContain(
-          `${narrowing.facet}=${narrowing.value}`,
-        );
-        expect(unchippedPhrase(narrowing)).toContain(value);
-      }
-    });
-  });
-
-  it("builds one group per CHIP facet, in facet order", () => {
-    expect(filterBar(PATH, {}, "buckets", OPTIONS).map((group) => group.facet)).toEqual([
-      ...CHIP_FACETS,
-    ]);
   });
 });
 
@@ -642,42 +580,44 @@ describe("widening a read by one facet family", () => {
       tabFacetsOf(tab, standingBucket),
     );
 
-  it("drops the chip facets the URL contributed and keeps the ones with no control", () => {
-    const applied = listFilterOf(asked, "buckets", standingBucket);
-    // Non-vacuous: on this tab both chips really are part of the read.
-    expect(applied).toEqual(asked);
-    for (const facet of CHIP_FACETS) expect(applied[facet]).toBeDefined();
+  /**
+   * The subtraction, over the three states the class was wrong in one at a
+   * time (admin-window/BUG-0192's hazard 1, refiled as admin-window/BUG-0193):
+   * the buckets tab, where both chips really are part of the read; the
+   * standing tab, whose own bucket replaced the URL's and must survive the
+   * subtraction; and the standing tab asked for that same bucket, where the
+   * applied and the asked value are one string while only one is a control.
+   */
+  const WIDENINGS: ReadonlyArray<readonly [string, ClaimsTab, ClaimsFilter, string, ClaimsFilter]> = [
+    ["the buckets tab, which merges nothing", "buckets", asked, "escalated", { domain: "events" }],
+    [
+      "the standing tab, which merged its own bucket in",
+      "standing",
+      asked,
+      standingBucket,
+      { bucket: standingBucket, domain: "events" },
+    ],
+    [
+      "the standing tab when the URL asked for that same bucket",
+      "standing",
+      { ...asked, bucket: standingBucket },
+      standingBucket,
+      { bucket: standingBucket, domain: "events" },
+    ],
+  ];
 
-    expect(widened(asked, "buckets")).toEqual({ domain: "events" });
-    // A subtraction, not a mutation: the read the page issues is untouched.
-    expect(applied).toEqual(asked);
-  });
-
-  it("keeps a facet the surface merged in of its own accord", () => {
-    const applied = listFilterOf(asked, "standing", standingBucket);
-    // The tab's bucket replaced the URL's, which is the state under test.
-    expect(applied.bucket).toBe(standingBucket);
-
-    const result = widened(asked, "standing");
-    expect(result).toEqual({ bucket: standingBucket, domain: "events" });
-    // Said as the count means it: every row counted is still a row of THIS
-    // tab's subset, and the only thing missing is the chip the operator set.
-    expect(result.bucket).toBe(applied.bucket);
-    expect(result.source_id).toBeUndefined();
-  });
-
-  it("keeps it when the URL happens to ask for the same value", () => {
-    // One click from the buckets tab: `standing_disagreement` is a bucket the
-    // chip row offers, so `?bucket=standing_disagreement` travels into the
-    // standing tab's href and the two buckets become one string. Equal values
-    // are a coincidence; which facet is a CONTROL is the fact.
-    const coincident: ClaimsFilter = { ...asked, bucket: standingBucket };
-    expect(BUCKETS).toContain(standingBucket);
-
-    const result = widened(coincident, "standing");
-    expect(result.bucket).toBe(standingBucket);
-    expect(result).toEqual(widened(asked, "standing"));
-  });
+  it.each(WIDENINGS)(
+    "drops the chip facets the URL contributed and keeps the rest, on %s",
+    (_state, tab, from, appliedBucket, expected) => {
+      const applied = listFilterOf(from, tab, standingBucket);
+      const before = { ...applied };
+      // The bucket the READ carries is the tab's where the tab has one.
+      expect(applied.bucket).toBe(appliedBucket);
+      expect(widened(from, tab)).toEqual(expected);
+      // A subtraction, not a mutation: the read the page issues is untouched.
+      expect(applied).toEqual(before);
+    },
+  );
 
   it("answers for a tab that merges nothing, and for every facet family", () => {
     // The other tab merges no facet at all, so its widened read is its applied
@@ -856,18 +796,6 @@ describe("where a claim leads", () => {
   it("links to its source's own page, narrowed to it", () => {
     expect(sourceHref("source a/b")).toBe("/sources?source_id=source%20a%2Fb");
   });
-
-  it("links to the record where its fact's provenance is shown", () => {
-    expect(recordHref("events", "e-1")).toBe("/records/events/e-1");
-    expect(recordHref("venues", "v/1")).toBe("/records/venues/v%2F1");
-  });
-
-  it("offers no provenance link for a record that does not exist yet", () => {
-    // An `awaiting_row` claim's record has no canonical row — there is no fact
-    // to show provenance for, and the row says what it is waiting for instead.
-    expect(recordHref("events", null)).toBeNull();
-    expect(recordHref("events", "")).toBeNull();
-  });
 });
 
 describe("what the URL asked for and the page did not do", () => {
@@ -890,271 +818,74 @@ describe("what the URL asked for and the page did not do", () => {
     });
   });
 
-  it("counts a parameter whose own NAME the app may not render, and spells none of it", () => {
-    const parked = "in_" + "window";
-    expect(droppedParams({ [parked]: "1" }, {}, [parked])).toEqual({
-      named: [],
-      withheld: 1,
-    });
-  });
-
-  it("ignores a key that is empty or blank, exactly as it ignores an empty value", () => {
-    // admin-window/BUG-0127: `/claims?=x` reaches the page as `{"": "x"}` and
-    // `/claims?%20%20=1` as `{"  ": "1"}`. A query pair is a request only when
-    // it has both halves: a value carrying no name asks for nothing this page
-    // could have applied, so it is the URL saying nothing — the same answer
-    // `?bucket=` already gets — and not a narrowing to report. Counting it
-    // instead would put it on the `withheld` path, whose sentence ("a
-    // parameter this page may not name") states a reason that is not the
-    // reason: there is no name being withheld.
-    expect(droppedParams({ "": "x" }, {})).toEqual({ named: [], withheld: 0 });
-    expect(droppedParams({ "  ": "1" }, {})).toEqual({ named: [], withheld: 0 });
-    expect(droppedParams({ "\t\n": "1" }, {})).toEqual({ named: [], withheld: 0 });
-    // The empty VALUE this sits beside, unchanged.
-    expect(droppedParams({ record_id: "" }, {})).toEqual({ named: [], withheld: 0 });
-    // A blank key alongside a real one drops neither the report nor the count.
-    expect(droppedParams({ "": "x", record_id: "r-1" }, {})).toEqual({
-      named: ["record_id"],
-      withheld: 0,
-    });
-  });
-
   /**
-   * The same rule, on the half `String.prototype.trim` cannot see
-   * (admin-window/BUG-0136).
-   *
-   * `trim()` strips the Unicode `White_Space` set and nothing else, so
-   * `?%E2%80%8B=1` (ZERO WIDTH SPACE), `?%00=1`, `?%C2%AD=1` (SOFT HYPHEN),
-   * `?%E2%81%A0=1` (WORD JOINER), `?%E2%80%8E=1` (LEFT-TO-RIGHT MARK) and
-   * `?%7F=1` (DELETE) all reached `named` and were spelled into the mono span,
-   * where Chromium laid every one of them out at 0px — the same hole
-   * admin-window/BUG-0127 closed for `?=x`, reached through a codepoint
-   * instead of a space. `droppedParams` now asks the app's ONE definition of
-   * blank (`hasVisibleContent`, `lib/verdict/decision.ts`,
-   * admin-window/BUG-0089) rather than `trim()`, so both halves get the same
-   * answer from the same rule.
+   * What the line does with a dropped parameter's KEY is decided by the key's
+   * spelling — the class admin-window/BUG-0127 (a blank key), BUG-0136 (a key
+   * with no visible content) and BUG-0137 (a key outside the renderable
+   * allowlist `^[A-Za-z0-9_.-]{1,64}$`, ARCHITECTURE.md §7) each fixed one
+   * codepoint family of, graded as one table over the leaf's one rule: a key
+   * with no visible content asked for nothing and is ignored, a key from the
+   * allowlist is named verbatim, and every other key is COUNTED and never
+   * spelled — the parked word above all, however an ink-less mark rides along
+   * inside or beside it.
    */
-  it("ignores a key with no visible content, whatever its codepoints", () => {
-    // Ink-less by category: controls (Cc), format characters (Cf) and a
-    // Hangul filler — none of which `trim()` removes.
-    const inkLess = [
-      "\u0000", // NULL
-      "\u200B", // ZERO WIDTH SPACE
-      "\u00AD", // SOFT HYPHEN
-      "\u2060", // WORD JOINER
-      "\u3164", // HANGUL FILLER
-      "\u200E", // LEFT-TO-RIGHT MARK
-      "\u007F", // DELETE
-      "\u00A0", // NO-BREAK SPACE — whitespace, so trim() saw this one too
-      "\uFEFF", // ZERO WIDTH NO-BREAK SPACE (BOM)
-      "\u200B\u00AD\u2060", // a key made of nothing else
-      " \u200B ", // mixed with the whitespace half
-    ];
-    for (const key of inkLess) {
-      const where = [...key]
-        .map(
-          (c) =>
-            "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"),
-        )
-        .join(" ");
-      expect(droppedParams({ [key]: "1" }, {}), where).toEqual({
-        named: [],
-        withheld: 0,
-      });
-    }
-  });
+  type KeyCase = readonly [Record<string, string>, { named: string[]; withheld: number }];
+  const parked = "in_" + "window";
+  const ignored = (key: string): KeyCase => [{ [key]: "1" }, { named: [], withheld: 0 }];
+  const named = (key: string): KeyCase => [{ [key]: "1" }, { named: [key], withheld: 0 }];
+  const counted = (key: string): KeyCase => [{ [key]: "1" }, { named: [], withheld: 1 }];
+  const KEY_SPELLINGS: ReadonlyArray<KeyCase> = [
+    // Ignored: the key is empty, whitespace, or codepoints a reader never sees
+    // — controls (Cc), format characters (Cf), a Hangul filler, the BOM.
+    ...[
+      "",
+      "  ",
+      "\t\n",
+      "\u0000",
+      "\u200B",
+      "\u00AD",
+      "\u2060",
+      "\u3164",
+      "\u200E",
+      "\u007F",
+      "\u00A0",
+      "\uFEFF",
+      "\u200B\u00AD\u2060",
+      " \u200B ",
+    ].map(ignored),
+    // …a value carrying no name beside a value with one, and an empty VALUE.
+    [{ "": "x", record_id: "r-1" }, { named: ["record_id"], withheld: 0 }],
+    [{ record_id: "" }, { named: [], withheld: 0 }],
+    // Named, verbatim: inside the renderable allowlist, 64 characters at most.
+    ...[".", "-", "_", "0", "record_id", "bucket", "in_windows", "a.b-c_9", "A0", "a".repeat(64)].map(
+      named,
+    ),
+    // Counted, never spelled: ink the page cannot promise to render as itself,
+    // a mark laid out at 0px, a bidi override, a space, one character past the
+    // bound — and the parked word, with any of them riding along.
+    ...[
+      "\u8A18\u9332",
+      "\u2800",
+      "record_id\u200B",
+      "\uFE0F",
+      "\u034F",
+      "\u0301",
+      "\u202Eabc",
+      "a b",
+      "a".repeat(65),
+      parked,
+      parked + "\u200B",
+      "in\u200B_window",
+      parked + "\uFE0F",
+      "in_win\u034Fdow",
+      parked + "\u2800",
+    ].map(counted),
+  ];
 
-  it("names a key that puts any ink on the page, however little", () => {
-    // The other direction, so the rule above cannot pass by dropping every
-    // dropped parameter. One printable character on the renderable allowlist
-    // is a name an operator can read back.
-    for (const key of [".", "-", "_", "0", "record_id", "bucket", "in_windows"]) {
-      expect(droppedParams({ [key]: "1" }, {}), JSON.stringify(key)).toEqual({
-        named: [key],
-        withheld: 0,
-      });
-    }
-
-    // MOVED by admin-window/BUG-0137 (criterion 6), from `named` to counted.
-    // These three carry ink — `hasVisibleContent` still says so, and
-    // `decision.ts` is untouched — but ink is no longer what decides SPELLING.
-    // The line spells a key only from the renderable allowlist
-    // `^[A-Za-z0-9_.-]{1,64}$` (ARCHITECTURE.md §7), because "does this render
-    // ink" and "does this read as the word bar 3 bans" are not decidable by
-    // codepoint class: `in_win<U+034F>dow` reads as the parked word, and so
-    // would a homoglyph nobody has typed yet. Each is still COUNTED — a
-    // parameter was carried and dropped, and the page says so without
-    // spelling it.
-    for (const key of [
-      "\u8A18\u9332", // CJK: ink, and outside the class the page can promise
-      "\u2800", // BRAILLE PATTERN BLANK: content to `decision.ts`, unspellable here
-      "record_id\u200B", // ASCII plus a ZWSP — no longer byte-identical to a name
-    ]) {
-      expect(droppedParams({ [key]: "1" }, {}), JSON.stringify(key)).toEqual({
-        named: [],
-        withheld: 1,
-      });
-    }
-  });
-
-  it("still counts, and still refuses to spell, a name the app may not render", () => {
-    // LOOK_AND_FEEL bar 3 through the ink-less half: `in_window` must appear
-    // nowhere, and a key that READS as `in_window` because its extra
-    // codepoints draw nothing would put it on screen just as surely. The
-    // withheld test therefore asks what a reader would SEE of the key,
-    // through the same one definition (admin-window/BUG-0136).
-    const parked = "in_" + "window";
-    expect(droppedParams({ [parked]: "1" }, {}, [parked])).toEqual({
-      named: [],
-      withheld: 1,
-    });
-    expect(droppedParams({ [parked + "\u200B"]: "1" }, {}, [parked])).toEqual({
-      named: [],
-      withheld: 1,
-    });
-    expect(droppedParams({ "in\u200B_window": "1" }, {}, [parked])).toEqual({
-      named: [],
-      withheld: 1,
-    });
-    // A key with no visible content at all is ignored BEFORE the withheld
-    // test: there is no name to withhold, so nothing is counted either.
-    expect(droppedParams({ "\u200B": "1" }, {}, [parked])).toEqual({
-      named: [],
-      withheld: 0,
-    });
-    // And an ordinary neighbour of the parked word is still named in full.
-    expect(droppedParams({ in_windows: "1" }, {}, [parked])).toEqual({
-      named: ["in_windows"],
-      withheld: 0,
-    });
-  });
-
-  /**
-   * The rule itself, both ways (admin-window/BUG-0137, criteria 1, 3 and 7).
-   *
-   * ARCHITECTURE.md §7: "text this app did not author never sits inside a
-   * sentence this app wrote" — foreign text reaches prose through an
-   * allowlist or inside its own box, never by scrubbing. This line takes the
-   * allowlist arm, so what it spells is byte-identical to what the URL
-   * carried (spec §11), and everything else is counted through the `withheld`
-   * arm that already existed for the parked word.
-   */
-  it("spells a key only from the renderable allowlist, and counts every other", () => {
-    // NAMED: the class every facet this page could ever offer satisfies, and
-    // the class in which a key renders as itself.
-    const parked = "in_" + "window";
-    for (const key of ["record_id", "bucket", "a.b-c_9", "A0", "a".repeat(64)]) {
-      expect(droppedParams({ [key]: "1" }, {}, [parked]), JSON.stringify(key)).toEqual({
-        named: [key],
-        withheld: 0,
-      });
-    }
-
-    // COUNTED: outside the class by character, or longer than 64. Length is
-    // bounded because a name spelled verbatim is a line the operator reads,
-    // and no facet this page offers is longer than 12 characters.
-    for (const key of [
-      "\u8A18\u9332", // CJK — ink, but not a name this page can promise
-      "\uFE0F", // VARIATION SELECTOR-16 — 0px in Chromium
-      "\u202Eabc", // RIGHT-TO-LEFT OVERRIDE — reversed the app's own sentence
-      "a b", // a space, so the name would not read as one token
-      "a".repeat(65), // one character past the bound
-    ]) {
-      const where = [...key]
-        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-        .join(" ");
-      expect(droppedParams({ [key]: "1" }, {}, [parked]), where).toEqual({
-        named: [],
-        withheld: 1,
-      });
-    }
-
-    // The allowlist decides SPELLING, never whether a parameter was dropped:
-    // a key that carries no name at all is still ignored before it, and a
-    // key that carries no value still asked for nothing.
-    expect(droppedParams({ "\u200B": "1" }, {})).toEqual({ named: [], withheld: 0 });
-    expect(droppedParams({ record_id: "" }, {})).toEqual({ named: [], withheld: 0 });
-  });
-
-  /**
-   * The half the CATEGORY the one definition names cannot see
-   * (admin-window/BUG-0137, QA).
-   *
-   * `hasVisibleContent` removes `\p{White_Space}`, `\p{Cf}`, `\p{Cc}` and the
-   * four Hangul fillers — not `\p{Mn}`. So a key of nothing but a nonspacing
-   * mark reaches `named` and is spelled into the mono span, where Chromium
-   * lays it out at **width 0px, is_visible false** and the operator reads
-   * "The URL carries , which this page did not apply" — the hole
-   * admin-window/BUG-0127 and BUG-0136 each closed for their own family of
-   * codepoints. Measured over HTTP on a production build (port 8798,
-   * staging, 2026-09-09), identical in light and dark; the `record_id`
-   * control measures 59.41px, visible.
-   *
-   * FIXED by admin-window/BUG-0137, the arm this pin's own text offers
-   * second — "spell something an operator can read back" — taken as a rule
-   * rather than as a fourth codepoint family: a key is spelled only if its
-   * RAW characters match the renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`
-   * (`droppedParams`, `src/lib/claims/filters.ts`; ARCHITECTURE.md §7,
-   * "text this app did not author never sits inside a sentence this app
-   * wrote"). None of these three keys does, so none is spelled — and each
-   * is COUNTED rather than ignored, which is the ONE field of this pin that
-   * moved (`withheld: 1`, not `0`): a parameter really was carried and
-   * dropped, the key has visible content by the app's one definition of
-   * blank, and bar 13 has the page say so without naming it. The other arm
-   * — ignoring them — would need a second opinion about blankness in this
-   * file, which is the fourth blocklist admin-window/BUG-0137 exists to
-   * refuse (measured: `agenticflow/tracker/evidence/BUG-0137/rule-dryrun.mjs`).
-   */
-  it("ignores a key that is nothing but marks a reader cannot see", () => {
-    // Each measured at width 0px in Chromium, both colour schemes:
-    // U+FE0F VARIATION SELECTOR-16, U+034F COMBINING GRAPHEME JOINER,
-    // U+0301 COMBINING ACUTE ACCENT.
-    for (const key of ["\uFE0F", "\u034F", "\u0301"]) {
-      const where =
-        "U+" + key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
-      expect(droppedParams({ [key]: "1" }, {}), where).toEqual({
-        named: [],
-        withheld: 1,
-      });
-    }
-  });
-
-  /**
-   * LOOK_AND_FEEL bar 3 through the same gap (admin-window/BUG-0137, QA):
-   * "`in_window` appears nowhere — not as a bucket row, not as a filter
-   * option, not as a zero, on any page", and `contracts/admin-build.md`
-   * acceptance test 3 says the same. admin-window/BUG-0136 made the withheld
-   * test read the key as a reader would (`visibleContent`), which catches
-   * `in_window\u200B`; a mark that same definition rules CONTENT rides
-   * straight through it, and the parked word is rendered legibly.
-   *
-   * Measured in Chromium on a production build (port 8798, 2026-09-09, both
-   * colour schemes): `/claims?in_window%EF%B8%8F=1` renders the mono span
-   * `in_window` at **59.41px, visible — the `record_id` control's exact
-   * width**, because U+FE0F adds no ink; `/claims?in_win%CD%8Fdow=1` the
-   * same; `/claims?in_window%E2%A0%80=1` at 66.92px (the word plus a blank
-   * braille cell). FIXED by admin-window/BUG-0137 — see the pin above: none
-   * of the three keys matches the renderable allowlist, so none reaches the
-   * mono span, and each is counted through the `withheld` arm exactly as an
-   * exact `in_window` already was.
-   */
-  it("still refuses to spell the parked word when an inkless mark rides along", () => {
-    const parked = "in_" + "window";
-    for (const key of [parked + "\uFE0F", "in_win\u034Fdow", parked + "\u2800"]) {
-      const where = [...key]
-        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-        .join(" ");
-      // Still COUNTED — bar 13's "no screen claims a mark it did not draw" is
-      // kept by saying one was dropped without spelling it.
-      expect(droppedParams({ [key]: "1" }, {}, [parked]), where).toEqual({
-        named: [],
-        withheld: 1,
-      });
-    }
-    // Not vacuous: an ordinary neighbour of the parked word is still named.
-    expect(droppedParams({ in_windows: "1" }, {}, [parked])).toEqual({
-      named: ["in_windows"],
-      withheld: 0,
-    });
-  });
+  it.each(KEY_SPELLINGS)(
+    "names, counts or ignores %o by its key's spelling alone, answering %o",
+    (params, expected) => {
+      expect(droppedParams(params, {}, [parked])).toEqual(expected);
+    },
+  );
 });

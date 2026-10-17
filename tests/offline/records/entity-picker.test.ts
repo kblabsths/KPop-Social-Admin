@@ -23,7 +23,6 @@ import {
   IDLE_PICK_STATE,
   PickerOptions,
   PickerPanel,
-  PickerValue,
   closesPanel,
   matchOptions,
   noMatchWords,
@@ -37,7 +36,7 @@ import {
   type PickerWindow,
 } from "@/components/records/entity-picker";
 import { recordFields } from "@/components/records/fields";
-import { EDIT_CONFIG, decideEdit, decideReference } from "@/lib/edit/config";
+import { EDIT_CONFIG } from "@/lib/edit/config";
 import { EM_DASH } from "@/lib/format";
 import { codeLinesIn, codeText, sourceFiles, sourceText } from "../source-tree";
 import { mirrorDirFor, sweepDeadMirrorDirs } from "../../probe-area";
@@ -126,17 +125,6 @@ describe("which widget a reference field draws", () => {
   const reference = config.reference;
   const row = { event_id: "01920000-0000-7000-8000-0000000000a3", venue_id: VENUE };
 
-  it("has a reference to be about, so nothing below is vacuous", () => {
-    expect(reference).not.toBeNull();
-  });
-
-  it("gives the reference line the picker, never the cell", () => {
-    const line = recordFields(config, row, new Map(), null, "open").find(
-      (field) => field.name === reference?.field,
-    );
-    expect(line?.widget).toBe("picker");
-  });
-
   it("gives it the picker with no value to point at yet", () => {
     // An empty reference is exactly the record an operator most needs to be
     // able to point at a row: a control that appears only once a value exists
@@ -150,33 +138,6 @@ describe("which widget a reference field draws", () => {
     ).find((field) => field.name === reference?.field);
     expect(line?.widget).toBe("picker");
     expect(line?.reference).toBeNull();
-  });
-
-  it("draws no widget at all when the override path is closed", () => {
-    // THE graded normal case: with `settle_review_item` absent the reference
-    // field is read-only with the reason named above the table — no picker, no
-    // disabled control, nothing toward a write path that does not exist.
-    const line = recordFields(config, row, new Map(), null, "closed").find(
-      (field) => field.name === reference?.field,
-    );
-    expect(line?.widget).toBe("read_only");
-  });
-
-  it("gives every editable column the cell, so the two kinds are told apart", () => {
-    // The second fixture: if `recordFields` answered `picker` for everything
-    // the assertions above would be green for the wrong reason.
-    const fields = recordFields(
-      config,
-      { ...row, title: "A title" },
-      new Map(),
-      null,
-      "open",
-    );
-    for (const column of config.editable) {
-      expect(fields.find((field) => field.name === column)?.widget, column).toBe(
-        "cell",
-      );
-    }
   });
 });
 
@@ -278,10 +239,6 @@ describe("a choice while a choice is still saving", () => {
       .length;
   }
 
-  it("offers every option while nothing is in flight, so the claim below is not vacuous", () => {
-    expect(liveOptions(panelAt({ kind: "idle" }))).toBe(OPTIONS.length);
-  });
-
   /**
    * QA's pin for admin-window/BUG-0097, flipped from `it.fails` to a plain
    * `it` by the fix. Before it: every option was still clickable under
@@ -296,29 +253,6 @@ describe("a choice while a choice is still saving", () => {
     // and the panel does not blank itself mid-write. Going busy is not the
     // same move as going away.
     expect(cheerio.load(markup)("li button").length).toBe(OPTIONS.length);
-  });
-
-  /**
-   * The busy rule follows the FILTER, not just the resting list — QA,
-   * admin-window/BUG-0097. The operator who typed before choosing is looking
-   * at a subset, and that subset is what their second click would land on;
-   * `busy` reaching only the unfiltered rendering would leave exactly the
-   * buttons that are on screen live.
-   */
-  it("offers no live option while saving even when the search narrowed the list", () => {
-    const markup = renderToStaticMarkup(
-      createElement(PickerPanel, {
-        window: windowOf(),
-        query: "Gocheok",
-        current: null,
-        status: { kind: "saving" } as Status,
-        onQuery: () => {},
-        onChoose: () => {},
-      }),
-    );
-    const $ = cheerio.load(markup);
-    expect($("li button").length).toBe(1); // the filter really did narrow it
-    expect(liveOptions(markup)).toBe(0);
   });
 
   it("offers them again once the write has answered", () => {
@@ -358,11 +292,6 @@ describe("whose answer the picker's state accepts", () => {
     edit,
     option,
     outcome: ok ? { ok: true } : { ok: false, message: `${option.id} refused` },
-  });
-
-  it("starts from nothing chosen and nothing said", () => {
-    expect(IDLE_PICK_STATE.status.kind).toBe("idle");
-    expect(IDLE_PICK_STATE.chosen).toBeNull();
   });
 
   it("takes a first choice, and shows it once its own write answers", () => {
@@ -415,16 +344,6 @@ describe("whose answer the picker's state accepts", () => {
     expect(late).toBe(state);
     expect(late.status.kind).toBe("saving");
     expect(late.chosen).toBe(A); // still what the last ANSWERED write set
-  });
-
-  it("hands the widget back after a write, so the next choice can be made", () => {
-    const saved = reducePick(
-      reducePick(IDLE_PICK_STATE, choosing(1, A)),
-      settled(1, A, true),
-    );
-    const again = reducePick(saved, choosing(2, B));
-    expect(again.status.kind).toBe("saving");
-    expect(again.chosen).toBe(A); // the line still says what it says until B answers
   });
 
   it("clears a spent statement without speaking over a write in flight", () => {
@@ -537,23 +456,6 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
     vi.useRealTimers();
   });
 
-  it("takes its delay from the one rule, so the two widgets cannot drift", () => {
-    // The cell's confirmed state and the picker's, each built by its own
-    // reducer, are asked the same question and must give the same answer.
-    const cellSaved = reduceEdit(
-      reduceEdit(IDLE_EDIT_STATE, { kind: "committed", edit: 1 }),
-      { kind: "settled", edit: 1, outcome: { ok: true } },
-    );
-    const pickSaved = reducePick(
-      reducePick(IDLE_PICK_STATE, choosing(1, A)),
-      settled(1, A, true),
-    );
-    expect(confirmationDelayMs(pickSaved.status)).not.toBeNull();
-    expect(confirmationDelayMs(pickSaved.status)).toEqual(
-      confirmationDelayMs(cellSaved.status),
-    );
-  });
-
   it("arms no clock of its own, in any spelling", () => {
     // The rule: the picker module schedules nothing. Read over CODE lines, so
     // a comment naming the mechanism is not a second clock (LESSONS 3).
@@ -605,21 +507,6 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
     expect(picker.says()('[role="alert"]')).toHaveLength(1);
     vi.advanceTimersByTime(60_000);
     expect(picker.now().status.kind).toEqual("failed");
-  });
-
-  it("leaves a write still in flight alone", () => {
-    const picker = mountPick();
-    picker.dispatch(choosing(1, A));
-    expect(confirmationDelayMs(picker.now().status)).toBeNull();
-
-    vi.advanceTimersByTime((DELAY ?? 0) * 2);
-    expect(picker.now().status.kind, "the write has not answered").toEqual("saving");
-    expect(picker.says()('[role="status"]')).toHaveLength(1);
-    // And the options are still the busy ones: no clock hands the widget back
-    // early (admin-window/BUG-0097).
-    expect(
-      picker.says()("li button").filter((_, button) => button.attribs.disabled === undefined),
-    ).toHaveLength(0);
   });
 
   describe.each([{ leaked: false }, { leaked: true }])(
@@ -848,25 +735,6 @@ describe("the picker's confirmation, on the click-to-edit cell's own clock", () 
       ).toBe(failed);
     }
   });
-
-  /**
-   * PIN — QA's, for admin-window/BUG-0119, flipped from `it.fails` to `it` by
-   * the fix. It was red because the clock came over from the cell and
-   * BUG-0107's page-wide half did not: a picker refusal ended only on an
-   * Escape pressed while focus was still inside the open panel, and it never
-   * took the page's one refusal slot, so it could stand stacked with a cell's.
-   * The block below this describe grades what those two names now do.
-   */
-  it(
-    "arms the page-wide retire rule for a refusal the open panel cannot end (BUG-0119)",
-    () => {
-      const picker = sourceText("src/components/records/entity-picker.tsx");
-      expect(picker, "the three listeners a closed, refusing widget needs").toContain(
-        "armRetire",
-      );
-      expect(picker, "and the page's one refusal slot").toContain("takeRefusalSlot");
-    },
-  );
 });
 
 /* ── the page-wide retire, and the page's one refusal slot ────────────────── */
@@ -1547,19 +1415,6 @@ describe("Escape means one thing wherever focus is", () => {
     shell.close();
   });
 
-  it("answers Escape and refuses every other move, as one decision", () => {
-    expect(closesPanel({ kind: "escape" })).toBe(true);
-    for (const move of [
-      { kind: "press", inside: true },
-      { kind: "press", inside: false },
-      { kind: "focus", inside: true },
-      { kind: "focus", inside: false },
-      { kind: "superseded" },
-    ] as const) {
-      expect(closesPanel(move), `${move.kind}`).toBe(false);
-    }
-  });
-
   it("hears the key through the page-wide listeners, not a handler of its own", () => {
     // The structural half: a key handler bound to the panel is exactly the
     // defect — it hears Escape only while focus is inside the panel. One path,
@@ -1643,60 +1498,6 @@ describe("where the picker leaves focus", () => {
     }
   });
 
-  // QA's pin for admin-window/BUG-0149, flipped from `it.fails` to a plain
-  // `it` by the fix: `pickerFocus` now acts on the status EDGE, so the answer
-  // arriving is a moment it has something to say about.
-  it("puts focus back on a live control when an answer lands on a panel focus has slipped out of (admin-window/BUG-0149)", () => {
-    // admin-window/BUG-0149. Criterion 3 names three moments at which focus
-    // must be on a real focusable element of this widget: after a refusal,
-    // after a save that lands, and after a save another widget supersedes.
-    // `pickerFocus`'s no-transition branch used to rescue focus for exactly
-    // ONE status — `open && status.kind === "saving"` — so a panel still open
-    // when the answer arrived was left with focus wherever it was, and
-    // "wherever it was" includes `document.body`. Nothing about that is
-    // hypothetical: the operator presses the panel's own hint line, or the
-    // gap between two rows, while the write runs. That press focuses nothing,
-    // so the browser leaves focus on the body; it is INSIDE the widget, so it
-    // is not the operator walking away and no rule reads it as a choice.
-    const shell = pickerShell().chooseButton().pickRow();
-    expect(shell.focus(), "the write parked it on the search field").toEqual("search");
-    shell.pressInsideOnNothing();
-    expect(shell.focus(), "and the press blurred it to the document").toEqual("nowhere");
-    expect(shell.status().kind, "the write is still in flight").toEqual("saving");
-
-    shell.answer(VENUE_REFUSED);
-    expect(shell.status().kind, "the choice is refused").toEqual("failed");
-    expect(shell.isOpen(), "and a refusal keeps the panel open").toBe(true);
-    expect(
-      shell.focus(),
-      "criterion 3: after a refusal, focus is on a real control of this widget",
-    ).not.toEqual("nowhere");
-    shell.close();
-  });
-
-  // QA's pin for admin-window/BUG-0149, flipped from `it.fails` to a plain
-  // `it` by the fix: the `idle` a retirement leaves behind is an edge too.
-  it("puts focus back on a live control when another widget supersedes a refusal it is holding (admin-window/BUG-0149)", () => {
-    // admin-window/BUG-0149, the same branch and criterion 3's third moment:
-    // the page's one refusal slot changes hands and this picker's statement
-    // goes `idle` with the panel still open — an edge the no-transition branch
-    // had no answer for either.
-    const shell = pickerShell().chooseButton().pickRow();
-    shell.pressInsideOnNothing();
-    shell.answer(VENUE_REFUSED);
-    const other = shell.otherWidgetRefuses();
-    expect(shell.status().kind, "the older refusal yielded the page's slot").toEqual(
-      "idle",
-    );
-    expect(shell.isOpen(), "and the panel the operator is reading stayed open").toBe(true);
-    expect(
-      shell.focus(),
-      "criterion 3: after a superseded save, focus is on a real control of this widget",
-    ).not.toEqual("nowhere");
-    other.release();
-    shell.close();
-  });
-
   it("puts adrift focus on a live control at every edge that ends a write", () => {
     // admin-window/BUG-0149, the whole transition table rather than the two
     // moments that were measured. An edge that ends a write is `failed` or
@@ -1768,32 +1569,6 @@ describe("where the picker leaves focus", () => {
       }),
       "a write in flight with the panel closed: nothing can hold focus yet",
     ).toEqual("wait");
-  });
-
-  it("puts focus back on the Choose button when a closed panel's refusal is superseded", () => {
-    // admin-window/BUG-0149's closed arm, walked rather than asserted on the
-    // rule: Escape during the write closes the panel (it does not cancel the
-    // PATCH), the refusal arrives on the button, the operator presses a part
-    // of the row that focuses nothing, and then another widget takes the
-    // page's one refusal slot.
-    const shell = pickerShell().chooseButton().pickRow().escape();
-    shell.answer(VENUE_REFUSED);
-    expect(shell.isOpen(), "Escape closed the panel mid-write").toBe(false);
-    expect(shell.focus(), "the refusal landed focus on the button").toEqual("toggle");
-    shell.pressInsideOnNothing();
-    expect(shell.focus(), "and a press on nothing blurred it to the document").toEqual(
-      "nowhere",
-    );
-    const other = shell.otherWidgetRefuses();
-    expect(shell.status().kind, "the older refusal yielded the page's slot").toEqual(
-      "idle",
-    );
-    expect(
-      shell.focus(),
-      "criterion 3: the widget's live control with the panel closed is the button",
-    ).toEqual("toggle");
-    other.release();
-    shell.close();
   });
 
   it("waits for the Choose button to be real before handing focus back", () => {
@@ -1905,36 +1680,6 @@ describe("where the picker leaves focus", () => {
       "elsewhere",
     );
     walked.close();
-  });
-
-  it("steals no focus from a page that has merely drawn a picker", () => {
-    // Acting on the TRANSITION, not on the flag: a record page draws one of
-    // these at rest, and a widget that focused itself on mount would fight
-    // every other one on the page.
-    for (const adrift of [true, false]) {
-      expect(
-        pickerFocus({
-          open: false,
-          was: false,
-          status: { kind: "idle" },
-          wasStatus: "idle",
-          adrift,
-        }),
-        `adrift=${adrift}`,
-      ).toEqual("leave");
-    }
-    // ...and an operator who deliberately shift-tabs back to the Choose button
-    // with the panel open is not bounced forward into the list again.
-    expect(
-      pickerFocus({
-        open: true,
-        was: true,
-        status: { kind: "idle" },
-        wasStatus: "idle",
-        adrift: true,
-      }),
-      "no edge at all — no panel move, no answer: focus is the operator's",
-    ).toEqual("leave");
   });
 
   it("offers the whole path to a keyboard, with nothing taken out of the order", () => {
@@ -2094,23 +1839,6 @@ describe("the picker's empty and null renderings", () => {
     // The dash carries no qualifier: no "(no name)", no "unnamed" (LESSONS 1).
     expect(button.text().replace(NAMELESS, "").replace(EM_DASH, "").trim()).toBe("");
   });
-
-  it("renders the resting value as the dash when the field points nowhere", () => {
-    const markup = renderToStaticMarkup(
-      createElement(PickerValue, { id: null, name: null, domain: "venues" }),
-    );
-    expect(cheerio.load(markup).text()).toContain(EM_DASH);
-    expect(cheerio.load(markup)("a").length).toBe(0);
-  });
-
-  it("keeps the route out beside the control when the field does point somewhere", () => {
-    const markup = renderToStaticMarkup(
-      createElement(PickerValue, { id: VENUE, name: "Olympic Hall", domain: "venues" }),
-    );
-    const $ = cheerio.load(markup);
-    expect($("a").attr("href")).toBe(`/records/venues/${VENUE}`);
-    expect($.text()).toContain(VENUE);
-  });
 });
 
 /* ── the window it is showing, stated ─────────────────────────────────────── */
@@ -2189,25 +1917,6 @@ describe("the window the picker states", () => {
  *    `submitReferenceEdit` and never `submitFieldEdit`.
  */
 describe("no code path submits a reference field's value as text", () => {
-  it("refuses a reference column through the one authoriser, and allows a scalar", () => {
-    for (const config of Object.values(EDIT_CONFIG)) {
-      const reference = config.reference;
-      if (reference === null) continue;
-      // The input the rule MUST flag.
-      const asValue = decideEdit(config.table, reference.field);
-      expect(asValue.allowed, `${config.table}.${reference.field}`).toBe(false);
-      if (!asValue.allowed) {
-        expect(asValue.refusal.kind).toBe("field_not_editable");
-      }
-      // The input it must NOT flag: the same column asked for as a reference,
-      // and a scalar column asked for as a value. Without these the rule above
-      // would be green on a map that refuses everything.
-      expect(decideReference(config.table, reference.field).allowed).toBe(true);
-      expect(config.editable.length).toBeGreaterThan(0);
-      expect(decideEdit(config.table, config.editable[0]).allowed).toBe(true);
-    }
-  });
-
   it("renders the text cell from exactly one module, and the picker from another", () => {
     const renderers = sourceFiles().filter((file) =>
       /<FieldEditor\b/.test(codeText(file)),

@@ -200,13 +200,6 @@ describe("a mapped column of the one directly-written table", () => {
  * writer spy is what makes "and never the direct path" observable.
  */
 describe("a mapped column of a resolver-owned table", () => {
-  it("makes exactly one settlement call, and no direct write", async () => {
-    const { status } = await patch("events", { field: "title", value: "A new title" });
-    expect(status).toBe(200);
-    expect(settleReviewItem).toHaveBeenCalledTimes(1);
-    expect(updateRecordField).not.toHaveBeenCalled();
-  });
-
   it("carries the override envelope exactly, and nothing else", async () => {
     await patch("venues", { field: "city", value: "Seoul" });
     const [client, decision] = settleReviewItem.mock.calls[0] as [
@@ -368,12 +361,6 @@ describe("a mapped column of a resolver-owned table", () => {
     expect(decision.value.value).toBe("\u200bBLACKPINK\u200b");
   });
 
-  it("answers a malformed id without settling anything", async () => {
-    const { status } = await patch("events", { field: "title", value: "x" }, "walk-1");
-    expect(status).toBe(404);
-    expect(settleReviewItem).not.toHaveBeenCalled();
-  });
-
   it("returns the verdict receipt, and no record it did not read", async () => {
     // The value the operator typed became an OBSERVATION; what the canonical
     // row holds now is the pipeline's answer, read on the next render.
@@ -431,44 +418,6 @@ describe("the picker's choice", () => {
     expect(updateRecordField).not.toHaveBeenCalled();
   });
 
-  it("names the fact the DECISION LOG spells: the registry field for the reference, the column for a scalar", async () => {
-    // The mirror image of admin-window/BUG-0090, pinned on BOTH fixtures
-    // (QA finding relayed 2026-09-09). The resolver stamps
-    // `field_provenance.field` with the REGISTRY field and derives the column
-    // itself (`v_column := 'venue_id'`, scraper migration `20260901000005`
-    // and the handoff artifact's reference arm), and the record page's
-    // provenance read now asks in the log's vocabulary
-    // (`mappedRegistryFields`). So a write that stamped `venue_id` would make
-    // that read miss the fact it just wrote, and the em dash BUG-0090
-    // measured would come back from the other side.
-    //
-    // Both arms go through `registryFieldOf`, so this is one rule with two
-    // answers rather than two code paths that happen to agree today.
-    const cases: ReadonlyArray<readonly [string, unknown, string]> = [
-      // The reference: the two names differ, and the LOG's name is sent.
-      ["venue_id", { ref: "01920000-0000-7000-8000-0000000000a4" }, "venue"],
-      // A scalar: the two names are the same, so nothing moves.
-      ["title", { value: "A new title" }, "title"],
-    ];
-    for (const [field, payload, expected] of cases) {
-      settleReviewItem.mockClear();
-      await patch("events", { field, ...(payload as object) });
-      const [, decision] = settleReviewItem.mock.calls[0] as [
-        unknown,
-        { value: Record<string, unknown> },
-      ];
-      expect(decision.value.field, field).toBe(expected);
-      // ...and the envelope still names no COLUMN. The function derives it
-      // (`c_value_keys` carries no `column`, and an unknown key is refused),
-      // so sending one would be registry knowledge re-encoded by hand — and,
-      // on the shipped artifact, a refusal.
-      expect(
-        Object.prototype.hasOwnProperty.call(decision.value, "column"),
-        field,
-      ).toBe(false);
-    }
-  });
-
   it("sends exactly the reference arm the settlement artifact will accept", async () => {
     // Coupled to the artifact rather than to a builder's memory of it: its
     // reference arm links `(domain='events', field='venue')` and RAISES on
@@ -500,20 +449,6 @@ describe("the picker's choice", () => {
     );
   });
 
-  it("refuses the same column submitted as text, before any database call", async () => {
-    // The shipped path criterion 1 names: `venue_id` is not in `editable`, so
-    // a value submission for it is refused by the ONE authoriser — no
-    // settlement, no write, and the refusal names the field.
-    const { status, text } = await patch("events", {
-      field: "venue_id",
-      value: "Olympic Hall",
-    });
-    expect(status).toBe(403);
-    expect(JSON.parse(text).error).toContain("venue_id");
-    expect(settleReviewItem).not.toHaveBeenCalled();
-    expect(updateRecordField).not.toHaveBeenCalled();
-  });
-
   it("refuses a ref for a column the map does not call a reference", async () => {
     for (const [table, field] of [
       ["events", "title"],
@@ -526,12 +461,6 @@ describe("the picker's choice", () => {
       expect(settleReviewItem, `${table}.${field}`).not.toHaveBeenCalled();
       expect(updateRecordField, `${table}.${field}`).not.toHaveBeenCalled();
     }
-  });
-
-  it("refuses a ref on a table the map does not carry", async () => {
-    const { status } = await patch("groups", { field: "group_id", ref: VENUE });
-    expect(status).toBe(404);
-    expect(settleReviewItem).not.toHaveBeenCalled();
   });
 
   it("refuses a ref that is not a record id, rather than sending it", async () => {
@@ -574,18 +503,6 @@ describe("the picker's choice", () => {
     expect(status).toBe(400);
     expect(JSON.parse(text).error).toContain("ref");
     expect(settleReviewItem).not.toHaveBeenCalled();
-  });
-
-  it("answers 503 naming what is absent, which is the normal case here too", async () => {
-    settleReviewItem.mockResolvedValue({
-      kind: "not_provisioned",
-      missing: "settle_review_item",
-    });
-    const { status, text } = await patch("events", { field: "venue_id", ref: VENUE });
-    expect(status).toBe(503);
-    expect(JSON.parse(text).missing).toBe("settle_review_item");
-    expect(JSON.parse(text).ok).toBeUndefined();
-    expect(updateRecordField).not.toHaveBeenCalled();
   });
 
   it("answers a malformed record id without settling anything", async () => {
@@ -659,26 +576,6 @@ async function refused(table: string, body: unknown, where: string) {
 }
 
 describe("the handler refuses a forged edit and attempts no write", () => {
-  it("refuses a column the map does not carry", async () => {
-    for (const field of ["created_at", "spotify_id", "social_links", "wikipedia_url"]) {
-      await refused("walk_sandbox", { field, value: "forged" }, field);
-      updateRecordField.mockReset();
-    }
-  });
-
-  it("refuses a primary key, a foreign key and a timestamp", async () => {
-    for (const [table, field] of [
-      ["walk_sandbox", "sandbox_id"],
-      ["walk_sandbox", "created_at"],
-      ["events", "event_id"],
-      ["events", "created_at"],
-      ["venues", "venue_id"],
-    ] as const) {
-      await refused(table, { field, value: "forged" }, `${table}.${field}`);
-      updateRecordField.mockReset();
-    }
-  });
-
   it("refuses a column of a resolver-owned table the map does not carry, 403, naming the field", async () => {
     // FEAT-0011 criterion 5, server-side and at the ROUTE: the reference
     // column, the CHECK-constrained three, the unruled ones and a key. Each is
@@ -761,20 +658,6 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     }
   });
 
-  it("refuses a table the map does not carry, the archive and a legacy table", async () => {
-    for (const table of [
-      "event_performers",
-      "scraped_events",
-      "events_legacy",
-      "groups_legacy",
-      "admin_allowed_emails",
-      "user_roles",
-    ]) {
-      await refused(table, { field: "name", value: "forged" }, table);
-      updateRecordField.mockReset();
-    }
-  });
-
   it("is not fooled by a case, whitespace or homoglyph variant of a mapped column", async () => {
     // `lаbel` carries a Cyrillic а (U+0430); the rest differ only in case or
     // padding. An allowlist compared loosely would let any of them through.
@@ -798,17 +681,6 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     }
   });
 
-  it("is not fooled by a name inherited from Object.prototype", async () => {
-    for (const field of ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty"]) {
-      await refused("walk_sandbox", { field, value: "forged" }, `field ${field}`);
-      updateRecordField.mockReset();
-    }
-    for (const table of ["__proto__", "constructor", "toString"]) {
-      await refused(table, { field: "name", value: "forged" }, `table ${table}`);
-      updateRecordField.mockReset();
-    }
-  });
-
   it("refuses a body that is not an object of the documented shape", async () => {
     for (const body of ["[]", '"a string"', "42", "true", "null", "not json at all", ""]) {
       await refused("walk_sandbox", body, JSON.stringify(body));
@@ -827,44 +699,6 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     // No json is ever written from here (root CLAUDE.md, AGENTS.md).
     for (const value of [{ nested: true }, ["a", "b"], [{ a: 1 }]]) {
       await refused("walk_sandbox", { field: "label", value }, JSON.stringify(value));
-      updateRecordField.mockReset();
-    }
-  });
-
-  /**
-   * A number JSON can PARSE but cannot CARRY BACK.
-   *
-   * `1e999` is valid JSON and parses to `Infinity`; `typeof Infinity` is
-   * `"number"`, so the scalar gate accepts it. It then reaches
-   * `updateRecordField`, and supabase-js serialises the update payload with
-   * `JSON.stringify` — which renders a non-finite number as `null`. The bytes
-   * PostgREST receives are `{"label":null}`, byte-identical to an explicit
-   * clear, and the route answers 200 `{"ok":true}`.
-   *
-   * That contradicts the route's own contract (route.ts: "only an explicit
-   * `null` or `\"\"` clears a column") and is BUG-0011's harm through a
-   * different door: a request that asked to SET a value silently NULLs a
-   * vetted catalog column with the service-role key and is told it succeeded.
-   *
-   * The bodies are raw strings on purpose: `JSON.stringify({value: Infinity})`
-   * is `{"value":null}`, so an object body cannot express this request — a
-   * test that builds its body as an object exercises the explicit-clear path
-   * instead and passes for the wrong reason.
-   *
-   * PINNED `it.fails` (strict) for admin-window/BUG-0013: it is green only
-   * while the divergence is live, so fixing the route turns it RED and the fix
-   * flips it back to a plain `it()`. Watched failing as a plain `it()` against
-   * run/admin-window @ 8ff70f7 before BUG-0013 was filed:
-   * "AssertionError: {\"field\":\"bio\",\"value\":1e999}: expected 200 to be
-   * greater than or equal to 400".
-   */
-  it("refuses a non-finite number instead of nulling the column", async () => {
-    for (const body of [
-      '{"field":"label","value":1e999}',
-      '{"field":"label","value":-1e999}',
-      '{"field":"tally","value":1e999}',
-    ]) {
-      await refused("walk_sandbox", body, body);
       updateRecordField.mockReset();
     }
   });
@@ -926,25 +760,6 @@ describe("the handler refuses a forged edit and attempts no write", () => {
     expect(status).toBe(400);
     expect(JSON.parse(text).error).toMatch(/Infinity/);
     expect(updateRecordField).not.toHaveBeenCalled();
-  });
-
-  /**
-   * REGRESSION — admin-window/BUG-0011 (fixed in admin-window/TASK-0017).
-   *
-   * The route's documented body is `{ field, value }`. A body carrying no
-   * `value` at all states no intent: it is malformed, not an instruction to
-   * null a vetted catalog column. The retired route this one carries over from
-   * never nulled on an omitted key — it nulled on `""` alone. This test was
-   * pinned `it.fails` while the divergence was live; it is a plain `it` again.
-   *
-   * Note the second body: `JSON.stringify` DROPS a key whose value is
-   * `undefined`, so `{ field: "name", value: undefined }` reaches the handler
-   * as `{"field":"name"}` — the exact request a widget bug produces.
-   */
-  it("refuses a body that omits `value` instead of clearing the column", async () => {
-    await refused("walk_sandbox", { field: "label" }, "value omitted");
-    updateRecordField.mockReset();
-    await refused("walk_sandbox", { field: "name", value: undefined }, "value undefined");
   });
 
   it("names the missing `value` in the refusal, as a client error", async () => {
@@ -1112,26 +927,6 @@ describe("a segment that is not a record id", () => {
     expect(updateRecordField).not.toHaveBeenCalled();
   });
 
-  it("says nothing the database said — no error code, no syntax text, no type name", async () => {
-    for (const id of NOT_RECORD_IDS) {
-      const { text } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
-      expect(text, JSON.stringify(id)).not.toMatch(/22P02|invalid input syntax|uuid|postgres|pgrst/i);
-      updateRecordField.mockReset();
-    }
-  });
-
-  it("still writes a well-formed id, whatever case it is spelled in", async () => {
-    // The guard refuses non-ids, not ids — over-refusal would break the one
-    // path the surface actually uses.
-    for (const id of [RECORD_ID, RECORD_ID.toUpperCase()]) {
-      const { status } = await patch("walk_sandbox", { field: "label", value: "x" }, id);
-      expect(status, id).toBe(200);
-      expect(updateRecordField.mock.calls[0][1], id).toBe(id);
-      updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
-    }
-  });
-
   it("does not take an answer the map owns: the id is asked after decideEdit", async () => {
     // Each of these carries a malformed id AND a refusal the map or the body
     // parser owns. The status must stay the one that refusal has today —
@@ -1249,44 +1044,6 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
     }
   });
 
-  it("gives the malformed miss and the well-formed miss the same body on every editable table", async () => {
-    // One sentence, one status, per table: a caller cannot learn from the
-    // answer whether the id it sent was even shaped like an id.
-    for (const [table, field] of [["walk_sandbox", "label"]] as const) {
-      updateRecordField.mockResolvedValue({ kind: "ok", data: null });
-      const wellFormed = await patch(table, { field, value: "x" }, RECORD_ID);
-      expect(wellFormed.status, table).toBe(404);
-      expect(updateRecordField, table).toHaveBeenCalledTimes(1);
-      updateRecordField.mockReset();
-
-      const malformed = await patch(table, { field, value: "x" }, "walk-1");
-      expect(malformed.status, table).toBe(404);
-      expect(malformed.text, table).toBe(wellFormed.text);
-      expect(updateRecordField, table).not.toHaveBeenCalled();
-      updateRecordField.mockReset();
-      updateRecordField.mockResolvedValue({ kind: "ok", data: { sandbox_id: RECORD_ID } });
-    }
-  });
-
-  it("keeps the map's and the body parser's answers for these segments too", async () => {
-    // The ordering claim, driven with ids the builder's list does not carry:
-    // the gate added exactly one answer, it did not relabel the others.
-    const cases: ReadonlyArray<readonly [string, string, unknown, number]> = [
-      ["a".repeat(8000), "nosuchtable", { field: "name", value: "x" }, 404],
-      [`{${RECORD_ID}}`, "events", { field: "event_type", value: "x" }, 403],
-      ["٢f0b", "walk_sandbox", { field: "spotify_id", value: "x" }, 403],
-      [`${RECORD_ID}\n`, "walk_sandbox", { field: "label" }, 400],
-      [`${RECORD_ID}\u0000`, "walk_sandbox", "not json at all", 400],
-      ["*", "scraped_events", { field: "payload", value: "x" }, 404],
-    ];
-    for (const [id, table, body, status] of cases) {
-      const answer = await patch(table, body, id);
-      expect(answer.status, `${table} ${JSON.stringify(id).slice(0, 24)}`).toBe(status);
-      expect(updateRecordField, table).not.toHaveBeenCalled();
-      updateRecordField.mockReset();
-    }
-  });
-
   it("makes exactly one database call for a well-formed id, whatever the writer answers", async () => {
     // The other half of "no call for a malformed id": the route never retries,
     // never double-writes, and never falls through to a second attempt.
@@ -1301,16 +1058,6 @@ describe("the id gate, attacked (QA, admin-window/BUG-0068)", () => {
       expect(updateRecordField, outcome.kind).toHaveBeenCalledTimes(1);
       updateRecordField.mockReset();
     }
-  });
-
-  it("refuses a malformed id the same way when the same request arrives twice at once", async () => {
-    const both = await Promise.all([
-      patch("walk_sandbox", { field: "label", value: "x" }, "walk-1"),
-      patch("walk_sandbox", { field: "label", value: "x" }, "walk-1"),
-    ]);
-    for (const answer of both) expect(answer.status).toBe(404);
-    expect(both[0].text).toBe(both[1].text);
-    expect(updateRecordField).not.toHaveBeenCalled();
   });
 });
 

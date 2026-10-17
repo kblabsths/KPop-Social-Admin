@@ -178,21 +178,6 @@ function ageDistribution(
   );
 }
 
-describe("the fixtures these components render", () => {
-  it("are real aggregate output, with a measurable side and an unmeasurable one", () => {
-    expect(CYCLES.factsExamined).toBe(12_757);
-    expect(CYCLES.duration.p50).toBe(200);
-    expect(CYCLES.duration.max).toBe(1200);
-    expect(UNMEASURED.duration.p50).toBeNull();
-    expect(UNMEASURED.duration.unmeasurable).toBe(1);
-    expect(QUEUES.items).toBe(1200);
-    expect(QUEUES.window.truncated).toBe(true);
-    expect(CONFLICTS.weeks.some((week) => week.opened === 1200)).toBe(true);
-    expect(CONFLICTS.weeks.every((week) => week.settled === null)).toBe(true);
-    expect(QUEUES.queues[1].openAge.p50).toBeNull();
-  });
-});
-
 describe("GaugeCard", () => {
   it("renders the aggregate's figure thousand-separated, in the card anatomy", () => {
     const html = card({ label: "facts examined", value: CYCLES.factsExamined });
@@ -240,48 +225,50 @@ describe("GaugeCard", () => {
     expect(textOf(floor).length).toBeGreaterThan(textOf(exact).length);
   });
 
-  it("never qualifies or colours a figure it does not have", () => {
-    const html = card({
-      label: "median duration",
-      value: UNMEASURED.duration.p50,
-      absent: "no cycle has finished",
-      floor: true,
-      tone: "broken",
-    });
-    expect(classesOf(html)).not.toContain("type-body");
-    expect(classesOf(html)).not.toContain("text-broken");
-  });
-
-  // admin-window/BUG-0018 — the same invariant as the test above, for the two
-  // ways an absence reaches this card as a non-null `value`: the app's own
-  // formatters return the em dash as a STRING (`duration(null)`, `count(null)`,
-  // `relativeAge(null).text`), and an arithmetic figure can arrive non-finite.
-  // Both render as the dash, so neither may carry a floor qualifier or a
+  // admin-window/BUG-0018 and BUG-0004, as one class: an absence reaches this
+  // card in several spellings — `null`, the em dash the app's own formatters
+  // return as a STRING (`duration(null)`, `count(null)`, `relativeAge(null).text`),
+  // a blank string, and an arithmetic figure that arrived non-finite. The card
+  // asks `isAbsent`, the app's one definition, instead of `value === null`, so
+  // every spelling renders the dash and none may carry a floor qualifier or a
   // palette colour — a health tone on a figure nobody measured is the reading
-  // this gauge exists to prevent (spec §5). The card asks `isAbsent` instead of
-  // `value === null`, which is why these two now hold.
-  it("never qualifies or colours an absence that arrived as a formatted string", () => {
-    const html = card({
-      label: "median duration",
-      // exactly what a page renders a seconds figure with: the helper this
-      // ticket added, over an aggregate percentile that is null
-      value: duration(UNMEASURED.duration.p50),
-      floor: true,
-      tone: "broken",
-    });
+  // this gauge exists to prevent (spec §5).
+  const ABSENCES: [string, Parameters<typeof GaugeCard>[0]][] = [
+    [
+      "null, with a reason",
+      {
+        label: "median duration",
+        value: UNMEASURED.duration.p50,
+        absent: "no cycle has finished",
+        floor: true,
+        tone: "broken",
+      },
+    ],
+    [
+      "a formatted string",
+      {
+        label: "median duration",
+        value: duration(UNMEASURED.duration.p50),
+        floor: true,
+        tone: "broken",
+      },
+    ],
+    ["NaN", { label: "writes per fact", value: Number.NaN, floor: true, tone: "broken" }],
+    [
+      "Infinity",
+      { label: "writes per fact", value: Number.POSITIVE_INFINITY, floor: true, tone: "broken" },
+    ],
+    ["an empty string", { label: "median duration", value: "", floor: true, tone: "broken" }],
+    ["whitespace", { label: "median duration", value: "   ", floor: true, tone: "broken" }],
+    ["the em dash itself", { label: "median duration", value: EM_DASH, floor: true, tone: "broken" }],
+  ];
+
+  it.each(ABSENCES)("never qualifies or colours an absence that arrived as %s", (_spelling, props) => {
+    const html = card(props);
     expect(textOf(html)).toContain(EM_DASH);
+    expect(classesOf(html)).toContain("text-ink-disabled");
     expect(classesOf(html)).not.toContain("type-body");
     expect(classesOf(html)).not.toContain("text-broken");
-  });
-
-  // admin-window/BUG-0018 (see above).
-  it("never qualifies or colours a non-finite figure", () => {
-    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
-      const html = card({ label: "writes per fact", value, floor: true, tone: "broken" });
-      expect(textOf(html), String(value)).toContain(EM_DASH);
-      expect(classesOf(html), String(value)).not.toContain("type-body");
-      expect(classesOf(html), String(value)).not.toContain("text-broken");
-    }
   });
 
   it("says why it cannot measure, whether or not the caller gave a reason", () => {
@@ -305,36 +292,10 @@ describe("GaugeCard", () => {
     expect(classesOf(card({ label: "facts examined", value: 12 }))).not.toContain("type-data");
   });
 
-  // admin-window/BUG-0019 — the reason path now asks the same definition the
-  // value path does, so this is a plain `it` (it was pinned `it.fails` while
-  // the card decided the reason with `??`, which catches only null/undefined).
-  it("says why it cannot measure even when the caller's reason is itself blank", () => {
-    // A blank reason is one the union's third arm accepts, since it demands
-    // `absent: string` and "" is a string. Whatever its whitespace spelling, it
-    // states nothing, so the card must fall back to words rather than render
-    // the dash bare — the reading LOOK_AND_FEEL forbids and the very reason the
-    // UNSTATED_REASON fallback exists.
-    for (const absent of ["", "   ", "\n\t "]) {
-      const html = card({ label: "median duration", value: null, absent });
-      const beside = textOf(html).replace(EM_DASH, "").replace("median duration", "").trim();
-      expect(textOf(html), JSON.stringify(absent)).toContain(EM_DASH);
-      expect(classesOf(html), JSON.stringify(absent)).toContain("type-data");
-      expect(beside.length, JSON.stringify(absent)).toBeGreaterThan(0);
-      // and the words are the ones an unannotated absence gets: a stated-but-
-      // empty reason and no reason at all are the same absence, not two
-      // renderings (no wording is pinned — the two markups are compared)
-      expect(html, JSON.stringify(absent)).toBe(
-        card({ label: "median duration", value: Number.NaN }),
-      );
-    }
-
-    // a reason that does carry words is still the caller's, untouched
-    const stated = card({ label: "median duration", value: null, absent: "  no cycle yet  " });
-    expect(textOf(stated)).toContain("no cycle yet");
-  });
-
-  // admin-window/BUG-0019, QA's attack pass: the spellings the fix's own case
-  // does not name, and the arm it must never reach.
+  // admin-window/BUG-0019 — the reason path asks the same definition the value
+  // path does (it was pinned `it.fails` while the card decided the reason with
+  // `??`, which catches only null/undefined): the spellings of a stated-nothing
+  // reason, and the arm it must never reach.
   it("treats every spelling of a stated-nothing reason as the same absence, and leaves a measured figure alone", () => {
     // the reason is asked the app's ONE definition (`isAbsent`), so the
     // spellings that definition already calls absences — the em dash a
@@ -372,19 +333,6 @@ describe("GaugeCard", () => {
     });
     expect(injected).not.toContain("<script>");
     expect(tagsOf(injected)).toEqual(["div", "span", "span", "span", "span"]);
-  });
-
-  it("takes its absence from the app's one definition, not a guard of its own", () => {
-    // the spellings the two tests above do not cover: `isAbsent` treats a blank
-    // string and a bare em dash as absences, so the card must too — one guard,
-    // one meaning, in GaugeCard, StatCard and DataTable alike (BUG-0004)
-    for (const value of ["", "   ", EM_DASH]) {
-      const html = card({ label: "median duration", value, floor: true, tone: "broken" });
-      expect(textOf(html), JSON.stringify(value)).toContain(EM_DASH);
-      expect(classesOf(html), JSON.stringify(value)).toContain("text-ink-disabled");
-      expect(classesOf(html), JSON.stringify(value)).not.toContain("type-body");
-      expect(classesOf(html), JSON.stringify(value)).not.toContain("text-broken");
-    }
   });
 
   it("never mistakes a measured zero for an absence, in either spelling", () => {

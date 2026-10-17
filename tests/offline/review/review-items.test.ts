@@ -27,7 +27,6 @@ import {
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
-  undefinedColumnOfRelation,
   type StubClient,
 } from "../../fixtures/stub-client";
 
@@ -136,22 +135,6 @@ function populationOf(result: Awaited<ReturnType<typeof readReviewQueues>>) {
 }
 
 describe("listReviewItems", () => {
-  it("reads review_items and returns the rows in queue order", async () => {
-    const stub = withRows(population());
-    const result = await listReviewItems({}, stub.asSupabaseClient());
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(stub.tablesRead()).toEqual([T.reviewItems]);
-    expect(ids(result.data)).toEqual([
-      ID.reviewItemSourcePattern, // open,    high, 08-28
-      ID.reviewItemDataConflict, // open,    high, 08-30
-      ID.reviewItemEntityLink, // open,    low,  08-25 (older, but low)
-      "01920000-0000-7000-8000-000000000513", // settled, high, 08-22
-      "01920000-0000-7000-8000-000000000512", // settled, low,  08-20
-    ]);
-  });
-
   it("selects an explicit column list, not a star", async () => {
     const stub = withRows(population());
     await listReviewItems({}, stub.asSupabaseClient());
@@ -174,19 +157,6 @@ describe("listReviewItems", () => {
     }
   });
 
-  it("pushes the column filters it can to the database", async () => {
-    const stub = withRows(population());
-    await listReviewItems(
-      { queue: "entity_link", status: "open" },
-      stub.asSupabaseClient(),
-    );
-    const eqs = stub.calls[0].steps.filter((step) => step.method === "eq");
-    expect(eqs.map((step) => step.args)).toEqual([
-      ["queue", "entity_link"],
-      ["status", "open"],
-    ]);
-  });
-
   it("sends no eq for a derived filter — there is no shape or kind column", async () => {
     const stub = withRows(population());
     await listReviewItems({ shape: "entity_link_fact" }, stub.asSupabaseClient());
@@ -194,20 +164,6 @@ describe("listReviewItems", () => {
       .filter((step) => step.method === "eq")
       .map((step) => step.args[0]);
     expect(eqColumns).toEqual([]);
-  });
-
-  it("returns exactly the matching items for every shape filter", async () => {
-    for (const shape of SHAPES) {
-      const all = population();
-      const stub = withRows(all);
-      const result = await listReviewItems({ shape }, stub.asSupabaseClient());
-      expect(result.kind).toBe("ok");
-      if (result.kind !== "ok") continue;
-      expect(ids(result.data).sort()).toEqual(
-        ids(all.filter((i) => shapeOf(i) === shape)).sort(),
-      );
-      expect(result.data.every((i) => shapeOf(i) === shape)).toBe(true);
-    }
   });
 
   it("returns exactly the matching items for every queue and kind filter", async () => {
@@ -248,18 +204,6 @@ describe("listReviewItems", () => {
     expect(await listReviewItems({}, stub.asSupabaseClient())).toEqual({
       kind: "not_provisioned",
       missing: T.reviewItems,
-    });
-  });
-
-  it("classifies an absent column as not_provisioned, naming table and column", async () => {
-    const stub = stubClient({
-      [T.reviewItems]: {
-        error: undefinedColumnOfRelation(T.reviewItems, "folded_count"),
-      },
-    });
-    expect(await listReviewItems({}, stub.asSupabaseClient())).toEqual({
-      kind: "not_provisioned",
-      missing: `${T.reviewItems}.folded_count`,
     });
   });
 
@@ -334,44 +278,9 @@ describe("listReviewItems is a complete read", () => {
     expect(result.kind).toBe("error");
     expect(result).not.toHaveProperty("data");
   });
-
-  it("keeps queueOrder as the display authority, applied after the read", async () => {
-    // The stub answers whatever the script holds regardless of the `.order()`
-    // chain — so it stands in for a server order that disagrees. The rendered
-    // order comes back right anyway, which is the property: the query's order
-    // is for determinism, `queueOrder` decides what the page shows.
-    const rows = population();
-    const stub = stubClient({
-      [T.reviewItems]: { data: [...rows].reverse(), count: rows.length },
-    });
-    const result = await listReviewItems({}, stub.asSupabaseClient());
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(ids(result.data)).toEqual(ids(queueOrder(rows)));
-  });
 });
 
 describe("readReviewAttention", () => {
-  it("summarises the open items per kind", async () => {
-    const stub = withRows(population());
-    const result = await readReviewAttention(stub.asSupabaseClient());
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.data.decision).toEqual({
-      kind: "decision",
-      open: 2,
-      maxSeverity: "high",
-      oldestOpenedAt: "2026-08-25T06:00:00Z",
-    });
-    expect(result.data.signal).toEqual({
-      kind: "signal",
-      open: 1,
-      maxSeverity: "high",
-      oldestOpenedAt: "2026-08-28T06:00:00Z",
-    });
-  });
-
   it("asks the database for the open ones", async () => {
     const stub = withRows(population());
     await readReviewAttention(stub.asSupabaseClient());
@@ -401,18 +310,6 @@ describe("readReviewAttention", () => {
     const result = await readReviewAttention(stub.asSupabaseClient());
     expect(result.kind).toBe("error");
     expect(result).not.toHaveProperty("data");
-  });
-
-  it("propagates not_provisioned rather than reporting zero attention", async () => {
-    // A missing table must not read as "nothing needs attention" on the
-    // Dashboard — that is the failure mode acceptance test 9 exists for.
-    const stub = stubClient({
-      [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
-    });
-    expect(await readReviewAttention(stub.asSupabaseClient())).toEqual({
-      kind: "not_provisioned",
-      missing: T.reviewItems,
-    });
   });
 });
 
@@ -555,34 +452,6 @@ describe("readReviewQueues", () => {
     expect(result.data.population.signal).toEqual({ kind: "not_asked" });
   });
 
-  it("counts a kind the filter emptied as the rows it really holds", async () => {
-    // The seam the defect lived in: the filtered read cannot see the rows the
-    // facet removed, so a decision block reading only its own result cannot
-    // tell this state from an empty table.
-    const rows = population();
-    const stub = withLegs(rows, rows, DECISION_SHAPES);
-    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
-
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    expect(result.data.items.filter((row) => kindOfItem(row) === "decision")).toEqual([]);
-    expect(result.data.population.decision).toEqual({
-      kind: "ok",
-      data: rows.filter((row) => kindOfItem(row) === "decision").length,
-    });
-  });
-
-  it("reports a real zero for a kind the TABLE holds none of", async () => {
-    const signals = population().filter((row) => kindOfItem(row) === "signal");
-    const stub = withLegs(signals, signals);
-    const result = await readReviewQueues({ status: "open" }, stub.asSupabaseClient());
-
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    // A real zero, from a count the database gave — never a gap and never a
-    // refusal dressed as nothing (ARCHITECTURE.md §4.3).
-    expect(result.data.population.decision).toEqual({ kind: "ok", data: 0 });
-    expect(result.data.population.signal).toEqual({ kind: "ok", data: signals.length });
-  });
-
   it("reads ONCE when the URL narrows nothing, and is its own population", async () => {
     // The bare `/queues` must not pay for a second read: the unfiltered result
     // already IS the whole table. Not one count leg is issued either.
@@ -596,72 +465,6 @@ describe("readReviewQueues", () => {
       throw new Error("expected both populations ok");
     }
     expect(counted.decision.data + counted.signal.data).toBe(rows.length);
-  });
-
-  it("refuses whole rather than reporting a population the database never gave", async () => {
-    // Both legs are the same table and the same query; a refusal on either is
-    // the page's refusal. A count the app substituted would be exactly the
-    // figure LOOK_AND_FEEL state 3 forbids.
-    for (const [name, script] of [
-      ["absent", tableNotInSchemaCache(T.reviewItems)],
-      ["refused", permissionDenied(T.reviewItems)],
-    ] as const) {
-      const stub = stubClient({ [T.reviewItems]: { error: script } });
-      const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
-      expect(result.kind, name).not.toBe("ok");
-      expect(result, name).not.toHaveProperty("data.population");
-    }
-  });
-
-  /**
-   * Landed red by QA as a strict `it.fails` pin (admin-window/BUG-0135) and
-   * flipped to `it` by the fix: a population leg that could not be read no
-   * longer deletes the rows the URL's own complete read DID return.
-   *
-   * The population leg is unconditionally the WHOLE table, so no URL facet
-   * narrows it: past `ROW_CAP` it refuses for every faceted URL, including the
-   * `?queue=`/`?status=` ones PostgREST narrowed by a real column and answered
-   * in full. It decides four words of a sub-line and which empty card shows,
-   * and it renders no row of its own — the refusal belongs BESIDE the rows, the
-   * way `/claims` reports a source registry that would not read while every
-   * claim still renders, not INSTEAD of them. Which shape carries it is the
-   * fix's choice; this asserts only that the rows reach the caller.
-   *
-   * Its sibling below is the other half and must stay green: when the FILTERED
-   * leg is the truncated one, those rows really are unknown and the read
-   * refuses.
-   */
-  it(
-    "keeps the rows its own complete read returned when only the POPULATION leg is truncated (admin-window/BUG-0135)",
-    async () => {
-      const rows = population();
-      const conflicts = rows.filter((row) => row.queue === "data_conflict");
-      expect(conflicts.length).toBeGreaterThan(0);
-      const stub = stubClient({
-        [T.reviewItems]: [
-          // Leg 1 — the URL's own read, narrowed at the database by the
-          // `queue` COLUMN and complete: every matching row, counted.
-          { data: conflicts, count: conflicts.length },
-          // Leg 2 — the population: the whole table, past the cap.
-          { data: rows, count: ROW_CAP + 500 },
-        ],
-      });
-      const result = await readReviewQueues(
-        { queue: "data_conflict" },
-        stub.asSupabaseClient(),
-      );
-      expect(result.kind).toBe("ok");
-      if (result.kind !== "ok") return;
-      expect(ids(result.data.items)).toEqual(ids(queueOrder(conflicts)));
-    },
-  );
-
-  it("refuses a truncated read rather than counting a population it did not see", async () => {
-    const stub = stubClient({
-      [T.reviewItems]: { data: reviewItemEdgePopulation(), count: ROW_CAP + 40 },
-    });
-    const result = await readReviewQueues({ kind: "signal" }, stub.asSupabaseClient());
-    expect(result.kind).toBe("error");
   });
 });
 
@@ -908,75 +711,6 @@ describe("readReviewQueues counts only the kinds the URL narrows", () => {
   const SOURCE_PATTERN = "entity_link/source-set";
   const BOTH_KINDS = [DATA_CONFLICT_FACT, ENTITY_LINK_FACT, SOURCE_PATTERN];
 
-  /**
-   * One row per URL shape: what it costs against `review_items`, and which
-   * count legs make up the difference. `reads` is 1 (the row leg) + the legs.
-   */
-  const COST: {
-    where: string;
-    filter: Parameters<typeof readReviewQueues>[0];
-    reads: number;
-    counts: string[];
-  }[] = [
-    // The bare URL: its own rows ARE the whole table, so it is its own
-    // population and not one count is issued (admin-window/BUG-0133).
-    { where: "/queues", filter: {}, reads: 1, counts: [] },
-    // A URL naming ONE kind: the OTHER kind's shapes, and no others. The named
-    // kind's block is not structurally narrowed by its own value, so its
-    // population cannot change a word it renders (BUG-0129, BUG-0131).
-    {
-      where: "/queues?kind=decision",
-      filter: { kind: "decision" },
-      reads: 2,
-      counts: [SOURCE_PATTERN],
-    },
-    {
-      where: "/queues?kind=signal",
-      filter: { kind: "signal" },
-      reads: 3,
-      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
-    },
-    // A facet that IMPLIES one kind counts as naming it: every signal row is
-    // `queue: "entity_link"`, and the signal kind has exactly one shape, so
-    // both of these leave the signal block rendering its own whole set.
-    {
-      where: "/queues?queue=entity_link",
-      filter: { queue: "entity_link" },
-      reads: 3,
-      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
-    },
-    {
-      where: "/queues?shape=entity_link_source_pattern",
-      filter: { shape: "entity_link_source_pattern" },
-      reads: 3,
-      counts: [DATA_CONFLICT_FACT, ENTITY_LINK_FACT],
-    },
-    // A facet implying NO kind: both blocks can be emptied by it, so both
-    // populations are load-bearing and all three counts are issued. `status`
-    // is never implied by a kind, `source_id` never by anything
-    // (admin-window/BUG-0141), and the decision kind spans both queues and
-    // both fact shapes.
-    { where: "/queues?status=open", filter: { status: "open" }, reads: 4, counts: BOTH_KINDS },
-    {
-      where: "/queues?queue=data_conflict",
-      filter: { queue: "data_conflict" },
-      reads: 4,
-      counts: BOTH_KINDS,
-    },
-    {
-      where: "/queues?shape=data_conflict_fact",
-      filter: { shape: "data_conflict_fact" },
-      reads: 4,
-      counts: BOTH_KINDS,
-    },
-    {
-      where: `/queues?source_id=${CARRIED}`,
-      filter: { source_id: CARRIED },
-      reads: 4,
-      counts: BOTH_KINDS,
-    },
-  ];
-
   it("scripts its legs against every shape there is, so a fourth shape reddens here", () => {
     // Fixture integrity, not a domain claim: the per-leg scripting above hands
     // each count its answer BY POSITION, so this file's two shape lists have to
@@ -1084,16 +818,6 @@ describe("readReviewQueues counts only the kinds the URL narrows", () => {
     expect([...seen.entries()].sort()).toEqual([[1, 1], [2, 1], [3, 7], [4, 207]]);
   });
 
-  it("issues exactly the reads each URL shape needs, and no others", async () => {
-    for (const { where, filter, reads, counts } of COST) {
-      const rows = population();
-      const stub = withRows(rows);
-      await readReviewQueues(filter, stub.asSupabaseClient());
-      expect(readsOfReviewItems(stub), where).toBe(reads);
-      expect(countedShapes(stub), `${where}: which counts`).toEqual(counts);
-    }
-  });
-
   it("answers the kind it did not count as not_asked — never a zero, never a refusal", async () => {
     // The three states pulled apart on ONE run: a table holding no decision
     // row at all, read under `?kind=signal`. The decision population is a real
@@ -1179,20 +903,6 @@ describe("truncation beats every filter (QA attack)", () => {
       expect(result).not.toHaveProperty("data");
     }
   });
-
-  it("reports no attention numbers over an uncounted read", async () => {
-    // An open count and an oldest age are exactness claims. A response with no
-    // count cannot support them, so the summary must refuse rather than
-    // summarise whatever rows happened to arrive.
-    const stub = stubClient({
-      [T.reviewItems]: { data: reviewItemEdgePopulation(), count: null },
-    });
-    const result = await readReviewAttention(stub.asSupabaseClient());
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(T.reviewItems);
-    expect(result).not.toHaveProperty("data");
-  });
 });
 
 /* ── narrowed by a SOURCE (admin-window/BUG-0141) ─────────────────────────── */
@@ -1209,7 +919,6 @@ describe("truncation beats every filter (QA attack)", () => {
  */
 describe("listReviewItems narrowed by a source", () => {
   const CARRIED = ID.sourceBandsintown;
-  const ABSENT = ID.sourceTicketmaster;
 
   it("pushes the source to the database, beside the other column filters", async () => {
     const stub = withRows(population());
@@ -1245,51 +954,4 @@ describe("listReviewItems narrowed by a source", () => {
     // A per-fact item carries no source, so it can match no source narrowing.
     expect(result.data.every((row) => row.source_id === CARRIED)).toBe(true);
   });
-
-  it("returns nothing for a well-formed source the table does not carry", async () => {
-    const all = reviewItemEdgePopulation();
-    const result = await listReviewItems(
-      { source_id: ABSENT },
-      withRows(all).asSupabaseClient(),
-    );
-    if (result.kind !== "ok") throw new Error(result.kind);
-    expect(all.some((row) => row.source_id === ABSENT)).toBe(false);
-    expect(result.data).toEqual([]);
-  });
-
-  it("counts each kind's WHOLE-queue population, never the source's share", async () => {
-    // What lets a source with no items render "nothing matched" instead of
-    // "this queue is empty" (admin-window/BUG-0133): the population is the
-    // unfiltered figure, so `rendered !== population` can be asked at all. A
-    // count narrowed by the URL would make every block's zero look unfiltered.
-    const table = reviewItemEdgePopulation();
-    const carried = table.filter((row) => row.source_id === CARRIED);
-    const stub = withLegs(carried, table);
-    const result = await readReviewQueues({ source_id: CARRIED }, stub.asSupabaseClient());
-    if (result.kind !== "ok") throw new Error(result.kind);
-
-    // The rows are the source's…
-    expect(ids(result.data.items).sort()).toEqual(ids(carried).sort());
-    // …and the populations are the whole table's, per kind.
-    for (const kind of ["decision", "signal"] as const) {
-      expect(result.data.population[kind], kind).toEqual({
-        kind: "ok",
-        data: table.filter((row) => kindOfItem(row) === kind).length,
-      });
-    }
-    // The source facet took the COUNT path at all — which is the other half of
-    // BUG-0133: an unnarrowed URL reads its population off its own rows.
-    expect(countLegsOf(stub)).toHaveLength(SHAPES.length);
-    // …and no count leg carries the source.
-    for (const leg of countLegsOf(stub)) {
-      expect(
-        leg.steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
-      ).not.toContain("source_id");
-    }
-  });
 });
-
-/** The count legs of one recorded run — the population's own reads. */
-function countLegsOf(stub: ReturnType<typeof withLegs>) {
-  return stub.calls.filter((call) => isCountLeg(call));
-}

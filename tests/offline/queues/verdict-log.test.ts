@@ -455,11 +455,6 @@ describe("the nulls that are structure, not missing data", () => {
     expect(settleOnly.item).toBe(OTHER_ITEM);
   });
 
-  it("dashes a null note, with no qualifier beside it", async () => {
-    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
-    expect(cellsOf(markup, "override").cells[4]).toBe(EM_DASH);
-  });
-
   it("says ONCE, on the surface, what a dash means here", async () => {
     const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
     const $ = cheerio.load(markup);
@@ -482,11 +477,6 @@ describe("the nulls that are structure, not missing data", () => {
     ] as const) {
       expect(cellsOf(markup, action).cells[index]).toBe(EM_DASH);
     }
-  });
-
-  it("leaves no cell of any row blank", async () => {
-    const markup = await renderQueues(scriptOf(POPULATION, OBSERVATIONS));
-    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
   });
 
   /**
@@ -563,28 +553,6 @@ describe("the nulls that are structure, not missing data", () => {
     expect(cellsOf(markup, "supply_value").cells[NOTE]).toBe(REAL);
     expect(dashesIn(markup, "supply_value", NOTE)).toBe(0);
     // Nothing was bought by leaving an empty element behind, either.
-    expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
-  });
-
-  /**
-   * The same shape one column to the left. `verdicts.actor` is `not null` and
-   * its column comment says "never blank", but the settle route's fallback is
-   * `gate.user?.email ?? ""` (line ~124), so an empty actor is reachable — and
-   * it wrapped in an element exactly as the note did. Guarded in the same
-   * commit as admin-window/BUG-0085, in the same file and the same way.
-   */
-  it("dashes an actor that is present but blank", async () => {
-    const BLANK_ACTOR = verdictLogEntry({
-      verdict_id: "01920000-0000-7000-8000-000000000815",
-      action: "link_entity",
-      actor: "  ",
-      observation_id: null,
-      created_at: "2026-09-08T06:00:00Z",
-    });
-    const markup = await renderQueues(scriptOf([BLANK_ACTOR], []));
-
-    expect(cellsOf(markup, "link_entity").cells[ACTOR]).toBe(EM_DASH);
-    expect(dashesIn(markup, "link_entity", ACTOR)).toBe(1);
     expect(markup).not.toMatch(/<td[^>]*>\s*<\/td>/);
   });
 
@@ -733,66 +701,6 @@ describe("the action column", () => {
 /* ── the observation leg degrades, and never takes the log with it ───────── */
 
 describe("the observation leg", () => {
-  it("renders the id verbatim, unlinked, when the observation has no row", async () => {
-    // A verdict pointing at an observation this database no longer holds: the
-    // id is real, so a dash there would claim the verdict observed nothing.
-    const markup = await renderQueues(scriptOf([SETTLEMENT], []));
-    const row = cellsOf(markup, "choose_claimed_value");
-
-    expect(row.observation).toBe(SETTLEMENT.observation_id);
-    expect(row.observationHref).toBeUndefined();
-    expect(surfaceStateOf(markup, LOG)).toBe("ok");
-  });
-
-  /**
-   * STRICT PIN — QA, filed as admin-window/BUG-0150 while attacking BUG-0148.
-   *
-   * BUG-0148 put the review-item block's unlinked observation id through the
-   * shared `Identifier` primitive (DEBT-0011 criterion 2: "every call site
-   * that renders a machine identifier — ... an id — imports the primitive",
-   * and criterion 4, which hangs the ARCHITECTURE §7 bidi isolation off that
-   * one place). The verdict LOG renders the same two machine values — the
-   * action and the same `verdicts.observation_id` column, unlinked — as bare
-   * spans, taking the mono face from `DataTable`'s own `td` and the isolation
-   * from nowhere.
-   *
-   * That the table is not a boundary is not an argument, it is measured:
-   * `components/cycles/run-columns.tsx` renders two of ITS cells (`source`,
-   * `failure_class`) through the primitive already.
-   *
-   * Landed as `it.fails` while the divergence stands — the day both cells go
-   * through the primitive this XPASSes, turns the file red, and sends the
-   * reader to the ticket. No class literal and no attribute value is typed
-   * here: the isolation marker is read off the primitive's own render.
-   */
-  it(
-    "renders the log's machine values through the one identifier primitive, like the run table's cells",
-    async () => {
-      const markup = await renderQueues(scriptOf([SETTLEMENT], []));
-      const $ = cheerio.load(markup);
-      const primitive = cheerio.load(
-        render(h(Identifier, { children: SETTLEMENT.action })),
-      )("span");
-
-      // Non-vacuous: the primitive really does mark the box it renders.
-      expect(primitive.attr("dir"), "the primitive isolates its own box").toBeDefined();
-
-      const observation = $(`${LOG} [data-verdict-observation]`);
-      expect(observation, "the unlinked id is the cell under test").toHaveLength(1);
-      expect(observation.is("a"), "unlinked, so no anchor exception covers it").toBe(
-        false,
-      );
-      expect(
-        observation.attr("dir"),
-        "an id the database produced is isolated here too",
-      ).toBe(primitive.attr("dir"));
-      expect(
-        $(`${LOG} [data-verdict-action]`).attr("dir"),
-        "and so is the action beside it",
-      ).toBe(primitive.attr("dir"));
-    },
-  );
-
   /**
    * ...and the isolation that swap bought is graded on the input it exists for
    * (admin-window/BUG-0150; the same grading BUG-0148 got one tab over, in

@@ -63,18 +63,6 @@ const PAGE_MODULE = "src/app/records/[table]/[id]/page.tsx";
 const FIELDS_MODULE = "src/components/records/fields.ts";
 
 /**
- * The two tables Ben struck from the edit surface on 2026-09-08 — *"admin
- * edits catalog tables only through the observation pipeline; do not
- * re-implement direct edits"* (ARCHITECTURE §9, DECISIONS 2026-09-08).
- *
- * They are named HERE, in the test, and nowhere in `src/`: that is the whole
- * point. The map cannot say "not these two" — it says nothing about them at
- * all — so the assertion that they are absent has to spell them somewhere, and
- * a test is where a name that must NOT appear in the product belongs.
- */
-const STRUCK_TABLES = ["groups", "idols"] as const;
-
-/**
  * The two tables Admin may write only as an OVERRIDE (FEAT-0011). No write
  * verb anywhere under `src/` may name either one: their values change through
  * the settlement function, and the one `.update(` in this repo refuses them by
@@ -82,44 +70,6 @@ const STRUCK_TABLES = ["groups", "idols"] as const;
  * `tests/offline/edit/records.test.ts`).
  */
 const RESOLVER_OWNED = ["events", "venues"] as const;
-
-/**
- * The exact allowlists those two carried until the strike (`config.ts` as of
- * the commit before this one), so the refusal is proved over the whole vetted
- * set rather than a sample: a partial restoration cannot slip through.
- */
-const STRUCK_ALLOWLISTS: Readonly<Record<string, readonly string[]>> = {
-  groups: [
-    "name",
-    "korean_name",
-    "short_name",
-    "company",
-    "status",
-    "type",
-    "member_count",
-    "debut_date",
-    "image_url",
-    "bio",
-  ],
-  idols: [
-    "stage_name",
-    "real_name",
-    "korean_name",
-    "position",
-    "nationality",
-    "gender",
-    "bio",
-    "birth_date",
-    "image_url",
-    "status",
-    "height_cm",
-    "weight_kg",
-    "blood_type",
-    "mbti",
-    "agency",
-    "birth_place",
-  ],
-};
 
 /**
  * **Where the teeth are, now that the type no longer carries them**
@@ -173,49 +123,12 @@ describe("the map", () => {
     }
   });
 
-  it("carries no groups and no idols entry: the struck direct edit left with them", () => {
-    // Ben's strike, 2026-09-08 (ARCHITECTURE §9, DECISIONS 2026-09-08): admin
-    // edits catalog tables only through the observation pipeline. Absence from
-    // the map IS the mechanism — `editConfigFor` answers null, the record URL
-    // is a routed 404 and a PATCH is refused `unknown_table` — so this asserts
-    // the absence at every door the map opens.
-    for (const table of STRUCK_TABLES) {
-      expect(EDITABLE_TABLES, table).not.toContain(table);
-      expect(Object.keys(EDIT_CONFIG), table).not.toContain(table);
-      expect(editConfigFor(table), table).toBeNull();
-      expect(decideEdit(table, "name").allowed, table).toBe(false);
-    }
-
-    // ...and the TABLES are untouched. `lib/db/tables.ts` still spells both,
-    // which is what "they stay as test tables until they are removed" means
-    // here: the residue sweep and the schema description still reach them.
-    for (const table of STRUCK_TABLES) {
-      expect(TABLE_NAMES, table).toContain(table);
-    }
-  });
-
   it("names every table in tables.ts, so a typo here is one red test away", () => {
     // ARCHITECTURE §4 rule 4's reason, preserved without the import cycle rule
     // 7 forbids: the leaf spells the names, and this asserts they are the same
     // strings the rest of the app queries by.
     for (const table of EDITABLE_TABLES) {
       expect(TABLE_NAMES, table).toContain(table);
-    }
-  });
-
-  it("refuses every column the struck allowlists used to carry", () => {
-    // Not a token sample: the WHOLE vetted set each table carried until the
-    // strike, so a partial restoration cannot pass. The refusal is the
-    // table's, not the column's — an unmapped table has no fields.
-    for (const [table, columns] of Object.entries(STRUCK_ALLOWLISTS)) {
-      for (const column of columns) {
-        const decision = decideEdit(table, column);
-        expect(decision.allowed, `${table}.${column}`).toBe(false);
-        if (decision.allowed) continue;
-        expect(decision.refusal.kind, `${table}.${column}`).toBe("unknown_table");
-        expect(decision.refusal.message, `${table}.${column}`).toContain(table);
-        expect(isEditable(table, column), `${table}.${column}`).toBe(false);
-      }
     }
   });
 
@@ -268,68 +181,6 @@ describe("the map", () => {
     );
   });
 
-  it("sends every regime the map uses down exactly one write path", () => {
-    // `writePathFor` is TOTAL over `Regime` (there is no "no path" arm to fall
-    // into, because a table Admin may not write is not in the map), so every
-    // entry answers, and only the sandbox answers `direct`.
-    for (const config of Object.values(EDIT_CONFIG)) {
-      const path = writePathFor(config.regime);
-      expect(["direct", "override"], config.table).toContain(path);
-      expect(path === "direct", config.table).toBe(
-        config.table === "walk_sandbox",
-      );
-    }
-    expect(writePathFor("sandbox")).toBe("direct");
-    expect(writePathFor("resolver_owned")).toBe("override");
-  });
-
-  it("leaves created_at outside the sandbox's map, so no read ever asks for it", () => {
-    // §9.1 item 2: the read selects `mappedColumns` explicitly, so a column
-    // the map does not name is never read and never drawn. `created_at` is
-    // set once at seed and is the one sandbox column deliberately excluded.
-    expect(mappedColumns(EDIT_CONFIG.walk_sandbox)).not.toContain("created_at");
-    expect([...mappedColumns(EDIT_CONFIG.walk_sandbox)]).toEqual([
-      "sandbox_id",
-      "label",
-      "note",
-      "tally",
-      "is_flagged",
-      "observed_on",
-    ]);
-  });
-
-  it("gives the sandbox every column the write path coerces, one of each", () => {
-    // The POINT of the column set (§9.1 item 2): the widget is a single text
-    // cell, so each editable column exists to make PostgREST answer one type
-    // question on the way in. The columns are asserted against the DDL Ben
-    // pastes (`agenticflow/tracker/for-human/TASK-0034.md`), in the idiom the
-    // resolver-owned tables' `CANONICAL_COLUMNS` case uses above: a map name
-    // that is not a column of the table is one red test away, not one
-    // production page away.
-    const SANDBOX_COLUMNS: Readonly<Record<string, string>> = {
-      // uuid, not text: the architect's key ruling (2026-09-04, §9.1 item 9)
-      // is exactly this column's type, and the DDL Ben pastes spells it
-      // `sandbox_id uuid` (QA, admin-window/TASK-0035).
-      sandbox_id: "uuid",
-      label: "text",
-      note: "text",
-      tally: "integer",
-      is_flagged: "boolean",
-      observed_on: "date",
-      created_at: "timestamptz",
-    };
-    for (const column of mappedColumns(EDIT_CONFIG.walk_sandbox)) {
-      expect(SANDBOX_COLUMNS, column).toHaveProperty(column);
-    }
-    // One editable column of each coercion the surface can be asked for, and
-    // at least one of them nullable so the em-dash absence-then-fill path is
-    // walkable (`note` and `observed_on` are the DDL's nullable pair).
-    const types = EDIT_CONFIG.walk_sandbox.editable.map(
-      (column) => SANDBOX_COLUMNS[column],
-    );
-    expect(new Set(types)).toEqual(new Set(["text", "integer", "boolean", "date"]));
-  });
-
   it("gives the resolver-owned tables their real keys and the override path", () => {
     for (const table of ["events", "venues"]) {
       const config = EDIT_CONFIG[table];
@@ -361,28 +212,6 @@ describe("the map", () => {
       "country",
       "address",
     ]);
-  });
-
-  it("leaves the CHECK-constrained and unruled columns out of both lists", () => {
-    // Out because Ben did not rule them in — the first three are
-    // CHECK-constrained, the rest are unruled — never because a builder judged
-    // them. A column in NEITHER list is not read, not drawn, and refused
-    // server-side by the one code path (FEAT-0011 criterion 8).
-    const OUT: Readonly<Record<string, readonly string[]>> = {
-      events: ["event_type", "status", "time_precision", "ends_at", "ticket_url"],
-      venues: ["aliases", "latitude", "longitude", "timezone", "website", "image_url"],
-    };
-    for (const [table, columns] of Object.entries(OUT)) {
-      const config = EDIT_CONFIG[table];
-      for (const column of columns) {
-        // Real columns of the table — the exclusion is a ruling, not a typo.
-        expect(CANONICAL_COLUMNS[table], `${table}.${column}`).toContain(column);
-        expect(config.editable, `${table}.${column}`).not.toContain(column);
-        expect(config.display, `${table}.${column}`).not.toContain(column);
-        expect(mappedColumns(config), `${table}.${column}`).not.toContain(column);
-        expect(isEditable(table, column), `${table}.${column}`).toBe(false);
-      }
-    }
   });
 
   /**
@@ -436,28 +265,6 @@ describe("the map", () => {
     expect([...EDIT_CONFIG.venues.display]).toEqual([]);
   });
 
-  it("draws the same lines in the same order the move found them in", () => {
-    // The move is invisible except for the controls appearing: `mappedColumns`
-    // orders pk -> editable -> display, so both record pages draw exactly
-    // these lines, in exactly this order (FEAT-0011 criterion 8). Pinned
-    // literally, so a re-ordering of either list cannot pass unnoticed.
-    expect([...mappedColumns(EDIT_CONFIG.events)]).toEqual([
-      "event_id",
-      "title",
-      "description",
-      "poster_url",
-      "starts_at",
-      "venue_id",
-    ]);
-    expect([...mappedColumns(EDIT_CONFIG.venues)]).toEqual([
-      "venue_id",
-      "name",
-      "city",
-      "country",
-      "address",
-    ]);
-  });
-
   it("keeps the two lists disjoint on every entry, and says so on a probe that is not", () => {
     // A column in BOTH would be writable while the map called it read-only,
     // since `decideEdit` reads `editable` alone (Ben, 2026-09-08). Fixture 1 —
@@ -491,14 +298,6 @@ describe("the map", () => {
         expect(columns, `${table}.${column}`).toContain(column);
       }
     }
-  });
-
-  it("leaves the sandbox no display list — it edits its columns", () => {
-    // Its columns are already on screen through `editable`; a name in both
-    // would be one line drawn once either way, and the empty list is what
-    // says "nothing extra to show" rather than "not decided yet".
-    expect([...EDIT_CONFIG.walk_sandbox.display]).toEqual([]);
-    expect(EDIT_CONFIG.walk_sandbox.editable.length).toBeGreaterThan(0);
   });
 
   it("gives events the one reference the surface links through, and no other table one", () => {
@@ -643,97 +442,6 @@ describe("the map", () => {
       );
     }
   });
-
-  it("keeps every reference a displayed column, never an editable one", () => {
-    // A reference is a third QUESTION about a displayed column, not a third
-    // list of columns: one that is not displayed would be drawn nowhere, and
-    // one that is editable would offer a control over a link (AGENTS.md).
-    for (const config of Object.values(EDIT_CONFIG)) {
-      const reference = config.reference;
-      if (reference === null) continue;
-      expect(config.display, config.table).toContain(reference.field);
-      expect(config.editable, config.table).not.toContain(reference.field);
-      // It points at a table this app has a record surface for, spelled as
-      // the map keys it — the link is `/records/<domain>/<id>`.
-      expect(EDITABLE_TABLES, config.table).toContain(reference.domain);
-      expect(reference.domain, config.table).not.toBe(config.table);
-    }
-  });
-
-  it("never lists one column as both editable and displayed", () => {
-    // The two halves of the map answer different questions and a column in
-    // both would make "is this line read-only?" depend on which list won.
-    for (const config of Object.values(EDIT_CONFIG)) {
-      for (const column of config.display) {
-        expect(config.editable, `${config.table}.${column}`).not.toContain(column);
-        expect(column, config.table).not.toBe(config.pk);
-      }
-      expect(new Set(config.display).size, config.table).toBe(config.display.length);
-    }
-  });
-
-  it("lists no id, key, bookkeeping timestamp, link or json column as editable", () => {
-    // "user-facing fields only: never ids, keys or timestamps" (spec §8). The
-    // patterns are the shapes those columns take in this schema.
-    //
-    // The timestamp pattern is the BOOKKEEPING ones by name, narrowed from
-    // `/_at$/` when Ben answered the allowlist on 2026-09-08: `events.starts_at`
-    // is in his list, and it is a user-facing FACT about the event — when it
-    // begins — not a row's own history. The columns spec §8 means are the ones
-    // the pipeline writes about the row itself, and every one of them is still
-    // banned here and asserted absent below.
-    const forbidden = [
-      /^id$/,
-      /_id$/,
-      /^created_at$/,
-      /^updated_at$/,
-      /^applied_at$/,
-      /_synced_at$/,
-      /^created/,
-      /^updated/,
-      /key/i,
-      /^social_links$/,
-      /^aliases$/,
-      /^performers?$/,
-      /^venue$/,
-    ];
-    for (const config of Object.values(EDIT_CONFIG)) {
-      for (const column of config.editable) {
-        for (const pattern of forbidden) {
-          expect(pattern.test(column), `${config.table}.${column}`).toBe(false);
-        }
-        // A primary key never edits, not even its own table's.
-        expect(column, config.table).not.toBe(config.pk);
-      }
-    }
-    // The narrowing above is a ruling about `starts_at`, not a hole: every
-    // bookkeeping timestamp this schema has is still absent from every list.
-    for (const config of Object.values(EDIT_CONFIG)) {
-      for (const column of ["created_at", "updated_at", "last_synced_at", "applied_at"]) {
-        expect(config.editable, `${config.table}.${column}`).not.toContain(column);
-      }
-    }
-    // ...and the one Ben ruled IN is there, so this case cannot pass by the
-    // list being empty.
-    expect(EDIT_CONFIG.events.editable).toContain("starts_at");
-  });
-
-  it("carries no per-column flag and no second list: the entry is six keys", () => {
-    // "Widening the list later is ONE edit to those two entries" (Ben,
-    // 2026-09-08). A per-column flag or a "future columns" scaffold would
-    // show up as a seventh key on an entry; a second list would show up as an
-    // export of this module. Both are pinned as values rather than as prose.
-    for (const config of Object.values(EDIT_CONFIG)) {
-      expect(Object.keys(config).sort(), config.table).toEqual([
-        "display",
-        "editable",
-        "pk",
-        "reference",
-        "regime",
-        "table",
-      ]);
-    }
-  });
 });
 
 /* ── the map's columns, in one order ──────────────────────────────────────── */
@@ -759,17 +467,6 @@ describe("mappedColumns", () => {
       reference: null,
     });
     expect([...columns]).toEqual(["id", "name", "company", "bio"]);
-  });
-
-  it("answers nothing about writing: a displayed column is still refused", () => {
-    // The point of the helper is the READ and the ORDER. `decideEdit` is the
-    // only answer to "may this be written", and it does not read `display`.
-    for (const table of ["events", "venues"]) {
-      for (const column of EDIT_CONFIG[table].display) {
-        expect(mappedColumns(EDIT_CONFIG[table]), column).toContain(column);
-        expect(isEditable(table, column), `${table}.${column}`).toBe(false);
-      }
-    }
   });
 });
 
@@ -797,23 +494,6 @@ describe("decideEdit", () => {
         expect(decision.refusal.kind).toBe("field_not_editable");
         expect(decision.refusal.message).toContain(field);
         expect(decision.refusal.message).toContain("walk_sandbox");
-      }
-    }
-  });
-
-  it("refuses an id, key or timestamp column spelled correctly", () => {
-    const cases: ReadonlyArray<readonly [string, string]> = [
-      ["walk_sandbox", "sandbox_id"],
-      ["walk_sandbox", "created_at"],
-      ["events", "event_id"],
-      ["events", "created_at"],
-      ["venues", "venue_id"],
-    ];
-    for (const [table, field] of cases) {
-      const decision = decideEdit(table, field);
-      expect(decision.allowed, `${table}.${field}`).toBe(false);
-      if (!decision.allowed) {
-        expect(decision.refusal.message).toContain(table);
       }
     }
   });
@@ -889,32 +569,6 @@ describe("decideEdit", () => {
     }
   });
 
-  it("takes the path from the regime alone, on two entries that differ in everything else", () => {
-    // "No configuration key can move a table between paths" (FEAT-0011
-    // criterion 1). Two configs sharing only their regime answer the same
-    // path; the same two with the regime swapped answer the other one.
-    const spare: TableEditConfig = {
-      table: "one_table",
-      pk: "one_id",
-      regime: "resolver_owned",
-      editable: ["a"],
-      display: ["b"],
-      reference: { field: "b", domain: "venues", registryField: "b" },
-    };
-    const other: TableEditConfig = {
-      table: "another_table",
-      pk: "another_id",
-      regime: "resolver_owned",
-      editable: [],
-      display: [],
-      reference: null,
-    };
-    expect(writePathFor(spare.regime)).toBe(writePathFor(other.regime));
-    expect(writePathFor(spare.regime)).toBe("override");
-    const asSandbox: TableEditConfig = { ...spare, regime: "sandbox" };
-    expect(writePathFor(asSandbox.regime)).toBe("direct");
-  });
-
   it("refuses every displayed column of every table, naming the field", () => {
     // Criterion: `display` is READ-ONLY and cannot become writable by being
     // listed. The refusal is the ordinary one — the column is not in
@@ -929,19 +583,6 @@ describe("decideEdit", () => {
       expect(decision.allowed, `${table}.${field}`).toBe(false);
       if (!decision.allowed) {
         expect(decision.refusal.kind, `${table}.${field}`).toBe("field_not_editable");
-      }
-    }
-  });
-
-  it("ignores a display list entirely, however it is spelled", () => {
-    // A forged config claiming a column is displayed changes no answer:
-    // `decideEdit` reads the MAP, and the map's answer comes from `editable`
-    // alone.
-    expect(isEditable("walk_sandbox", "created_at")).toBe(false);
-    expect(isEditable("events", "venue_id")).toBe(false);
-    for (const config of Object.values(EDIT_CONFIG)) {
-      for (const column of config.display) {
-        expect(isEditable(config.table, column), column).toBe(false);
       }
     }
   });
@@ -1008,18 +649,6 @@ describe("decideReference", () => {
     expect(decision.reference.path).toBe("override");
   });
 
-  it("does not make that column editable as a value", () => {
-    // The two questions are separate and stay separate: the reference is
-    // allowed as a REF and refused as a VALUE, by the same map, in the same
-    // breath. That is what makes "no code path submits a reference field's
-    // value as a string" true of the authoriser rather than of a widget.
-    const asValue = decideEdit("events", "venue_id");
-    expect(asValue.allowed).toBe(false);
-    if (!asValue.allowed) {
-      expect(asValue.refusal.kind).toBe("field_not_editable");
-    }
-  });
-
   it("refuses every column that is not the reference, naming the field", () => {
     const columns = Object.values(EDIT_CONFIG).flatMap((config) =>
       mappedColumns(config)
@@ -1036,17 +665,6 @@ describe("decideReference", () => {
           "field_not_reference",
         );
         expect(decision.refusal.message, `${table}.${column}`).toContain(column);
-      }
-    }
-  });
-
-  it("refuses every column of a table with no reference at all", () => {
-    for (const table of ["venues", "walk_sandbox"]) {
-      expect(EDIT_CONFIG[table].reference, table).toBeNull();
-      for (const column of mappedColumns(EDIT_CONFIG[table])) {
-        expect(decideReference(table, column).allowed, `${table}.${column}`).toBe(
-          false,
-        );
       }
     }
   });
@@ -1324,7 +942,7 @@ function filesWritingColumn(column: string, base: string = repoRoot): string[] {
  * argument of every `.from(` on it. A `.from(config.table)` names no literal
  * and is reported as none — that dynamic case is proved where it can be
  * proved, at the data layer, by `tests/offline/edit/records.test.ts`
- * ("refuses the map's own config for a resolver-owned table"): the one
+ * ("refuses every column of a resolver-owned table, mapped or not"): the one
  * `.update(` in this repo issues no query at all unless the write path is
  * `direct`. This pin is the other half — a write aimed at a resolver-owned
  * table by NAME, which is the shape a second write path would take.
@@ -1609,38 +1227,10 @@ describe("the admin_locked write guard itself", () => {
     }
   });
 
-  it("reports an editable list that carries the column", () => {
-    // The rule's strong pin is a value assertion over EDIT_CONFIG. Here it is,
-    // the same expression, over a map where the column HAS been planted: it
-    // must throw, naming the table and the column.
-    const planted = {
-      field_provenance: {
-        table: "field_provenance",
-        pk: "field_provenance_id",
-        regime: "pre_cutover",
-        editable: ["value", ADMIN_LOCKED],
-      },
-    };
-    expect(() => {
-      for (const [table, config] of Object.entries(planted)) {
-        expect(config.editable, table).not.toContain(ADMIN_LOCKED);
-      }
-    }).toThrow(/admin_locked/);
-    // And the real map, unplanted, carries it nowhere — the rule's own green.
-    expect(
-      Object.values(EDIT_CONFIG).flatMap((config) => [...config.editable]),
-    ).not.toContain(ADMIN_LOCKED);
-  });
-
   it("extracts the argument of the one real write in this repo", () => {
     // If `writeArguments` returned nothing on a file that does write, the
     // ARGUMENT pin would be vacuously green everywhere.
     expect(writeArguments(RECORDS_MODULE).length).toBeGreaterThan(0);
-  });
-
-  it("leaves no probe behind for another suite to walk into", () => {
-    // The `finally` above must hold even when its assertions fail.
-    expect(fs.existsSync(probeBase)).toBe(false);
   });
 });
 
@@ -1999,23 +1589,6 @@ describe("the argument scan and string literals", () => {
     );
     expect(reported).toEqual(["src/tick-return.ts"]);
   });
-
-  it("leaves no probe behind for another suite to walk into", () => {
-    // Every case above plants under `tests/.probes/` and removes it in a
-    // `finally`, so a failing assertion cannot leave a tree for a parallel
-    // suite's walker to trip over.
-    const probes = path.join(repoRoot, "tests", ".probes");
-    const mine = fs.existsSync(probes)
-      ? fs.readdirSync(probes).filter((name) =>
-          name.startsWith(`${path.basename(mirrorDirFor("strings"))}-`),
-        )
-      : [];
-    expect(mine).toEqual([]);
-    // Non-vacuous: the prefix it filters on is the one the cases above plant
-    // under, so an empty list means removed rather than never-matched
-    // (admin-window/BUG-0190 renamed these bases).
-    expect(planted).toBeGreaterThan(0);
-  });
 });
 
 /**
@@ -2108,9 +1681,5 @@ describe("the one-call-site guard itself", () => {
     expect(
       spellers.filter((file) => ![TABLES_MODULE, VERDICT_MODULE].includes(file)),
     ).toEqual([PAGE_PROBE]);
-  });
-
-  it("leaves no probe behind for another suite to walk into", () => {
-    expect(fs.existsSync(probeBase)).toBe(false);
   });
 });

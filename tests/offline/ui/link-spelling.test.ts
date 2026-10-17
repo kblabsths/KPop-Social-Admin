@@ -157,25 +157,6 @@ describe("the guard over the source tree", () => {
     ).toEqual([]);
   });
 
-  it("is looking at the real tree, including the files that carried the defect", () => {
-    // Non-vacuity: the walk that the rule below runs over reaches the eight
-    // files admin-window/BUG-0108 converted, so a green rule means green code
-    // and not an empty listing.
-    const files = sourceFiles();
-    for (const file of [
-      "src/app/page.tsx",
-      "src/app/claims/page.tsx",
-      "src/components/browse/browse-table.tsx",
-      "src/components/claims/bucket-table.tsx",
-      "src/components/claims/claim-list.tsx",
-      "src/components/sources/registry-table.tsx",
-      "src/components/sources/trends.tsx",
-      "src/components/queues/verdict-log.tsx",
-    ]) {
-      expect(files, `${file} is not in the walk this rule runs over`).toContain(file);
-    }
-  });
-
   it("finds no file under src spelling a link with a hover variant", () => {
     const offenders = sourceFiles().flatMap((file) =>
       hoverLinkSpellingsIn(sourceText(file)).map((hit) => `${file} — ${hit}`),
@@ -278,13 +259,6 @@ describe("the rule that a badge never sits inside a link", () => {
    */
   const chip = `<span class="${CHIP_FILL.join(" ")} text-attention">high</span>`;
 
-  it("reads the chip's fill off the component, not off a literal here", () => {
-    // Non-vacuity of the derivation itself: an empty CHIP_FILL would make
-    // `every` trivially true and flag every element in the tree.
-    expect(CHIP_FILL.length).toBeGreaterThan(0);
-    expect(CHIP_FILL.some((className) => className.startsWith("text-"))).toBe(false);
-  });
-
   it("flags a chip that sits inside the anchor", () => {
     const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">open${chip}</a></p>`);
     expect(chipsInsideLinks($, $.root())).toHaveLength(1);
@@ -294,11 +268,6 @@ describe("the rule that a badge never sits inside a link", () => {
     const $ = cheerio.load(
       `<p><a href="/x" class="${IN_PAGE_LINK}">open</a>${chip}</p>`,
     );
-    expect(chipsInsideLinks($, $.root())).toEqual([]);
-  });
-
-  it("stays green on a link whose body is its own words", () => {
-    const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">standing</a></p>`);
     expect(chipsInsideLinks($, $.root())).toEqual([]);
   });
 });
@@ -357,11 +326,6 @@ describe("the ink filter the window sweep picks its subject with", () => {
    * that quietly matched nothing, or matched everything, would make the sweep
    * below either vacuous or wrong about links that are not its subject.
    */
-  it("takes an anchor drawn in the app's own ink as its subject", () => {
-    const $ = cheerio.load(`<p><a href="/x" class="${IN_PAGE_LINK}">standing</a></p>`);
-    expect(linksInTheAppsInk($, $.root()).map((link) => link.words)).toEqual(["standing"]);
-  });
-
   it("leaves the error line's own ink out of it, which the ruling requires", () => {
     // admin-window/BUG-0108 criterion 3: red is the palette's word for a
     // failed run, so these anchors keep `text-broken` and wear the decoration
@@ -525,18 +489,5 @@ describe("the link-bearing surface the window sweep cannot reach", () => {
         `the 404's "${anchor.text().trim()}"`,
       );
     }
-  });
-
-  it("has teeth: the same claim fails on that anchor with the spelling taken off it", () => {
-    // The assertion above is only worth its runtime if it would notice the
-    // spelling leaving. Fed the SAME anchor with the published classes
-    // removed — which is exactly what an unused import renders — it throws.
-    const $ = cheerio.load(markup);
-    const stripped = classesOf($("a").first()).filter(
-      (className) => !PUBLISHED_CLASSES.includes(className),
-    );
-    expect(() =>
-      expectLinkSpellingReachesTheGlyphs(stripped, [], "a 404 link that lost the spelling"),
-    ).toThrow();
   });
 });

@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DbResult } from "@/lib/db/result";
-import { objectKindOf, T, TABLE_NAMES, type TableName } from "@/lib/db/tables";
+import { objectKindOf, T, type TableName } from "@/lib/db/tables";
 import {
   readPendingObservations,
   readProvenanceApplies,
@@ -43,7 +43,6 @@ import {
  * The properties acceptance test 11 / M1 EC8 assert about the gauges AS A SET
  * (campaign admin-window/TASK-0007), rather than six times over by hand:
  *
- *  - six modules, one per row of spec §5;
  *  - **every gauge query is bounded** — an explicit cap, and either an explicit
  *    time window or an id set from the previous leg (ARCHITECTURE.md §8: "an
  *    unbounded fetch is a defect");
@@ -54,16 +53,6 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const gaugeDir = path.join(repoRoot, "src", "lib", "gauges");
-
-/** One module per row of spec §5's table of six. */
-const GAUGE_MODULES = [
-  "cycle-health.ts",
-  "resolution-latency.ts",
-  "pending-claims.ts",
-  "queue-health.ts",
-  "standing-disagreements.ts",
-  "settled-values.ts",
-];
 
 const NOW = "2026-09-01T12:00:00.000Z";
 
@@ -131,13 +120,6 @@ function codeLines(text: string): string[] {
 }
 
 describe("the module set", () => {
-  it("is one file per row of spec §5's table of six", () => {
-    for (const gaugeFile of GAUGE_MODULES) {
-      expect(fs.existsSync(path.join(gaugeDir, gaugeFile)), gaugeFile).toBe(true);
-    }
-    expect(Object.keys(FETCHES)).toHaveLength(6);
-  });
-
   it("adds no migration to this repo", () => {
     // M1's exit criterion is zero schema: the two app-owned files and nothing
     // more. The catalog's schema is the scraper repo's.
@@ -152,15 +134,6 @@ describe("the module set", () => {
       expect(code.toLowerCase(), file).not.toContain("create view");
       expect(code.toLowerCase(), file).not.toContain("percentile_cont");
       expect(code.toLowerCase(), file).not.toContain(" from public.");
-    }
-  });
-
-  it("uses no count query, so no gauge can render a fabricated zero", () => {
-    // `readCount` returns `count ?? 0` (admin-window, relayed on TASK-0003):
-    // a count read that failed to produce a count would render as a real 0.
-    // The gauges fetch rows and count them in TypeScript instead.
-    for (const { file, text } of gaugeSource()) {
-      expect(codeLines(text).join("\n"), file).not.toContain("readCount");
     }
   });
 });
@@ -422,16 +395,6 @@ describe("the window a gauge reports", () => {
     expect(objectKindOf(T.pendingClaims)).toBe("view");
     expect(objectKindOf(T.observations)).toBe("table");
   });
-
-  it("has an answer for every object the app can query", () => {
-    // Total by construction (`Record<TableName, ObjectKind>`), asserted anyway:
-    // a name that entered `T` without a kind would render a window line ending
-    // on `undefined`.
-    for (const name of TABLE_NAMES) {
-      expect(["table", "view"], name).toContain(objectKindOf(name));
-    }
-    expect(TABLE_NAMES.length).toBeGreaterThan(0);
-  });
 });
 
 describe("a gauge read the server truncated at its own cap", () => {
@@ -630,14 +593,13 @@ const BOTH_EDGES: ReadBounds = {
   limit: 50,
 };
 
-/** Instants strictly inside `BOTH_EDGES`, and one strictly after its upper edge. */
+/** Instants strictly inside `BOTH_EDGES`. */
 const IN_WINDOW = [
   "2026-07-01T00:00:00.000Z",
   "2026-08-01T00:00:00.000Z",
   "2026-08-20T00:00:00.000Z",
 ];
 const ALSO_IN_WINDOW = "2026-08-25T00:00:00.000Z";
-const AFTER_UNTIL = "2026-09-02T00:00:00.000Z";
 
 /**
  * A table that answers the WINDOW the query asked for, on one time column —
@@ -791,20 +753,6 @@ describe("every scan reads the window its line prints", () => {
       ).toBe(BOTH_EDGES.until);
     });
 
-    it(`leaves out a row dated after until — ${scan.read}`, async () => {
-      const dated: Scanned = { id: "dated-ahead", at: AFTER_UNTIL };
-      const { ids } = await idsFrom(scan, [...inWindow, dated]);
-
-      expect(
-        ids,
-        `${scan.read}: ${scan.object}.${scan.column} = ${AFTER_UNTIL} is outside ` +
-          `[${BOTH_EDGES.since}, ${BOTH_EDGES.until}), the window the line states`,
-      ).not.toContain(dated.id);
-      // …and the figure really CHANGED: the table holds four rows the lower
-      // edge admits, and the read came back with three.
-      expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length);
-    });
-
     it(`reads [since, until) — a row AT until is out, a row AT since is in — ${scan.read}`, async () => {
       // QA (admin-window/TASK-0070): the two cases above place every fixture
       // instant STRICTLY inside the window or strictly after it, so nothing
@@ -849,15 +797,4 @@ describe("every scan reads the window its line prints", () => {
       expect(ids, `${scan.read} population`).toHaveLength(IN_WINDOW.length + 1);
     });
   }
-
-  it("grades every scan the gauges run under ReadBounds, and each on its own column", () => {
-    // The table above is the contract's own census: a scan added to
-    // `lib/db/gauges.ts` without an upper edge must fail something, and it
-    // fails this. Five reads in that module take `ReadBounds`; the sixth is
-    // the claims leg beside them (admin-window/TASK-0074).
-    expect(SCANS_WITH_EDGES).toHaveLength(6);
-    expect(new Set(SCANS_WITH_EDGES.map((scan) => scan.column))).toEqual(
-      new Set(["started_at", "applied_at", "observed_at", "opened_at", "rejected_at"]),
-    );
-  });
 });

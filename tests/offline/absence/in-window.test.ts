@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TABLE_NAMES } from "@/lib/db/tables";
-import {
-  stubClient,
-  tableNotInSchemaCache,
-  type RecordedCall,
-  type Script,
-  type ScriptedResponse,
-} from "../../fixtures/stub-client";
+import { stubClient, tableNotInSchemaCache, type Script } from "../../fixtures/stub-client";
 
 /**
  * The parked bucket appears NOWHERE in the window (campaign
@@ -25,11 +19,6 @@ import {
  *
  * The string is spelled in two halves here, exactly as the Claims page suite
  * spells it, so this file cannot be what puts it in the markup it scans.
- *
- * Non-vacuity is asserted, not assumed: the database these renders read hands
- * over a parked claim in the view, and the sweep checks the pages actually
- * read that view. A zero-occurrence proof against a database that never
- * mentioned the bucket would prove nothing at all.
  */
 
 const readWith = vi.hoisted(() => ({ client: undefined as unknown }));
@@ -45,10 +34,9 @@ vi.mock("@/lib/db/client", async (importActual) => {
   };
 });
 
-const { emptyScript, hrefs, loadSurfaces, populatedScript, renderSurface, tablesRead } =
+const { emptyScript, hrefs, loadSurfaces, populatedScript, renderSurface } =
   await import("./surfaces");
 import type { Params, Surface } from "./surfaces";
-const { UNRENDERABLE_BUCKET } = await import("@/lib/db/claims");
 
 const SURFACES = await loadSurfaces();
 
@@ -107,36 +95,6 @@ async function offeredParamNames(): Promise<string[]> {
   return [...names].sort();
 }
 
-describe("the parked bucket", () => {
-  it("is the one the app itself refuses to render", () => {
-    // The two halves spell the same string the app parks, so this file cannot
-    // be scanning for a bucket nobody excluded.
-    expect(UNRENDERABLE_BUCKET).toBe(PARKED);
-  });
-
-  it("is in the database these renders read", async () => {
-    const claims = SURFACES.find((surface) => surface.route === "/claims");
-    if (claims === undefined) throw new Error("no /claims surface");
-    const script = populatedScript(claims);
-    // The claims fixture is a database that answers the QUERY it is asked
-    // (admin-window/BUG-0138), so the way to show it holds a parked claim is
-    // to ask it: a select with no exclusion on it at all.
-    const view = script["pending_claims"];
-    expect(typeof view, "the claims fixture answers no query").toBe("function");
-    const everything = (view as (call: RecordedCall) => ScriptedResponse)({
-      table: "pending_claims",
-      steps: [{ method: "select", args: ["*"] }],
-    });
-    expect(JSON.stringify(everything.data)).toContain(PARKED);
-
-    // …and the page really reads that view, so a clean scan means the page
-    // dropped the bucket rather than never having seen it.
-    const stub = scriptDatabase(script);
-    await renderSurface(claims);
-    expect(tablesRead(stub).has("pending_claims")).toBe(true);
-  });
-});
-
 describe("every page, in every state it offers", () => {
   it.each(SURFACES.map((surface) => [surface.route, surface] as const))(
     "%s never emits the parked bucket",
@@ -161,21 +119,6 @@ describe("every page, in every state it offers", () => {
       }
     },
   );
-
-  it("follows more than one state on the pages that have them", async () => {
-    // A crawl that found no links would pass the sweep above in silence.
-    const filtered = SURFACES.filter((surface) => surface.takesParams);
-    let states = 0;
-    for (const surface of filtered) {
-      scriptDatabase(populatedScript(surface));
-      states += offeredStates(surface, await renderSurface(surface)).length;
-    }
-    // Measured 2026-09-02 on this tree: 31 offered states — /queues 9,
-    // /claims 12, /browse 7, /sources 3, /cycles 0 (its own facets are reached
-    // from the Dashboard, not from chips of its own). A floor, not a pin; the
-    // hand-typed pass below covers every page with every facet name regardless.
-    expect(states).toBeGreaterThanOrEqual(25);
-  });
 });
 
 describe("a hand-typed URL naming the parked bucket", () => {

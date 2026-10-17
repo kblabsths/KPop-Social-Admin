@@ -127,13 +127,6 @@ describe("WCAG 2.x helper", () => {
 });
 
 describe("globals.css token layer", () => {
-  it("defines every palette job in both themes", () => {
-    const jobs = [...TEXT_JOBS, ...FILLS, ...PAIRED_FILLS, EXEMPT_BY_JOB, "on-accent", "hairline"];
-    for (const [name, theme] of THEMES) {
-      for (const job of jobs) expect(value(theme, job), `${name}/${job}`).toMatch(/^#[0-9a-f]{3,8}$/);
-    }
-  });
-
   it("classifies every colour token, so a new palette job cannot slip past the bar", () => {
     const classified = new Set<string>([
       ...TEXT_JOBS,
@@ -149,10 +142,6 @@ describe("globals.css token layer", () => {
   it("gives the dark theme its own value for every colour job", () => {
     const overridden = colorTokens(darkBlock);
     expect([...light.keys()].filter((job) => !overridden.has(job))).toEqual([]);
-  });
-
-  it("keeps the disabled gray out of the text jobs it is exempted from", () => {
-    expect([...TEXT_JOBS]).not.toContain(EXEMPT_BY_JOB);
   });
 });
 

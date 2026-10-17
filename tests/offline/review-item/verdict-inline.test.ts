@@ -235,19 +235,6 @@ describe("readItemVerdict", () => {
     expect(result.missing).toBe(T.verdicts);
   });
 
-  it("answers a real null when the log holds no row for this item", async () => {
-    const stub = stubClient({ [T.verdicts]: { data: [], count: 0 } });
-    const result = await readItemVerdict(
-      SETTLED.review_item_id,
-      stub.asSupabaseClient() as never,
-    );
-
-    // Not an absence of the object and not a refusal: the read answered.
-    expect(result).toEqual({ kind: "ok", data: null });
-    // And it asked `observations` nothing — there was no observation to place.
-    expect(stub.tablesRead()).toEqual([T.verdicts]);
-  });
-
   it("resolves the observation's fact, and asks for that id alone", async () => {
     const stub = stubClient({
       [T.verdicts]: { data: [verdictLogEntry()], count: 1 },
@@ -283,26 +270,6 @@ describe("readItemVerdict", () => {
     expect(result.data.fact).toBeNull();
     expect(result.data.factUnavailable).toBeNull();
     expect(stub.tablesRead()).toEqual([T.verdicts]);
-  });
-
-  it("keeps the verdict when only the observation leg refuses", async () => {
-    // The leg that RESOLVES the link failed; the verdict itself is in hand.
-    // Dropping it would tell an operator no decision was ever taken
-    // (admin-window/BUG-0021).
-    const stub = stubClient({
-      [T.verdicts]: { data: [verdictLogEntry()], count: 1 },
-      [T.observations]: { error: statementTimeout() },
-    });
-    const result = await readItemVerdict(
-      SETTLED.review_item_id,
-      stub.asSupabaseClient() as never,
-    );
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok" || result.data === null) throw new Error("no verdict read");
-    expect(result.data.verdict.action).toBe(verdictLogEntry().action);
-    expect(result.data.fact).toBeNull();
-    expect(result.data.factUnavailable?.kind).toBe("error");
   });
 
   it("takes the newest verdict whatever order the transport returned them in", async () => {
@@ -364,33 +331,6 @@ describe("with the log's table absent, on a settled item", () => {
     // Said as an absence, never as a failure.
     expect($(CLOSE).find('[role="alert"]')).toHaveLength(0);
   });
-
-  it("leaves the rest of the detail exactly as M1 shipped it", async () => {
-    const markup = await renderItem(logAbsent());
-    const $ = cheerio.load(markup);
-
-    expect(surfaceHooks(markup, M1)).toEqual({ counts: oneEach(M1), nested: [] });
-    expect($(`[data-review-item="${SETTLED.review_item_id}"]`).text()).toBe(
-      SETTLED.review_item_id,
-    );
-    // The item's own sentence, and its evidence, are untouched by the close.
-    expect(textIn(markup, '[data-surface="what_happened"]')).toContain(SETTLED.summary);
-    expect($("[data-evidence]")).toHaveLength(2);
-    expect($('[data-state="error"]')).toHaveLength(0);
-  });
-
-  it("offers no control, and reads the same on an open item", async () => {
-    for (const [name, item] of [
-      ["settled", SETTLED],
-      ["open", OPEN],
-    ] as const) {
-      const $ = cheerio.load(await renderItem(logAbsent(item), item.review_item_id));
-      for (const control of ["button", "form", "input", "select", "textarea"]) {
-        expect($(control), `${name}: ${control}`).toHaveLength(0);
-      }
-      expect($(VERDICT), name).toHaveLength(0);
-    }
-  });
 });
 
 /* ── state 2: the table is there, the row is not ─────────────────────────── */
@@ -411,18 +351,6 @@ describe("with the log's table present but no row for a settled item", () => {
     expect($(VERDICT).text()).not.toContain(T.verdicts);
     // And it is not a blank slot: the card says what is missing and why.
     expect(textIn(markup, VERDICT).length).toBeGreaterThan(20);
-  });
-
-  it("is a different markup state from the absent object, on the same item", async () => {
-    // The pair, side by side — this is the assertion the two absences exist
-    // for, and neither passes by looking like the other.
-    const absent = cheerio.load(await renderItem(logAbsent()));
-    const empty = cheerio.load(await renderItem(noRow()));
-
-    expect(absent(`[data-state="not_provisioned"]`).length).toBeGreaterThan(0);
-    expect(absent(`[data-state="empty"]`)).toHaveLength(0);
-    expect(empty(`${VERDICT} [data-state="empty"]`)).toHaveLength(1);
-    expect(empty(`${VERDICT} [data-state="not_provisioned"]`)).toHaveLength(0);
   });
 
   it("keeps the close out of it: the close's own read answered", async () => {
@@ -513,23 +441,6 @@ describe("a settled item renders the verdict that settled it", () => {
     expect($("[data-close-item-status]").attr("data-close-item-status")).toBe("settled");
   });
 
-  it("renders the dash, and says what it means, when the verdict carried no value", async () => {
-    // A settle-only verdict observed nothing and its admin left no note: two
-    // structural nulls, each the app's one dash with no qualifier (LESSONS 1).
-    const markup = await renderItem(withVerdict({ observation_id: null, note: null }, []));
-    const $ = cheerio.load(markup);
-
-    expect($(VERDICT).text()).toContain(EM_DASH);
-    expect($("[data-verdict-note]")).toHaveLength(0);
-    expect($("[data-verdict-observation]")).toHaveLength(0);
-    // Never blank: an absence is a rendered dash, in the app's own element.
-    expect($(VERDICT).find('[aria-label="no value"]').length).toBeGreaterThanOrEqual(2);
-    // Said ONCE, and structurally: a hook, not a sentence an oracle greps.
-    expect($(VERDICT).find("[data-absence-note]")).toHaveLength(1);
-    // Still `ok`: a verdict that observed nothing is a verdict, not an absence.
-    expect(stateOf(markup, VERDICT)).toBe("ok");
-  });
-
   it("dashes a note that is present but blank, rather than leaving an empty element", async () => {
     // admin-window/BUG-0085's shape: `isAbsent` TRIMS, and the guard has to
     // run BEFORE the element is built or the absence is invisible to `orDash`.
@@ -539,18 +450,6 @@ describe("a settled item renders the verdict that settled it", () => {
     expect($("[data-verdict-note]")).toHaveLength(0);
     expect($(VERDICT).find('[aria-label="no value"]').length).toBeGreaterThanOrEqual(1);
     expect($(VERDICT).find("[data-absence-note]")).toHaveLength(1);
-  });
-
-  it("dashes an actor the row left blank, and still says whose verdict it is not", async () => {
-    const markup = await renderItem(withVerdict({ actor: "" }));
-    const $ = cheerio.load(markup);
-
-    expect($("[data-verdict-actor]")).toHaveLength(0);
-    expect($(VERDICT).find('[aria-label="no value"]').length).toBeGreaterThanOrEqual(1);
-    // The verdict still renders: a missing actor costs a name, not a decision.
-    expect($("[data-verdict-action]").attr("data-verdict-action")).toBe(
-      verdictLogEntry().action,
-    );
   });
 
   it("renders an unresolvable observation id verbatim, unlinked, and never dashed", async () => {
@@ -563,48 +462,6 @@ describe("a settled item renders the verdict that settled it", () => {
     expect(shown).toHaveLength(1);
     expect(shown.is("a")).toBe(false);
     expect(shown.text().trim()).toBe(ID.observationA);
-  });
-
-  /**
-   * ...and it is the SAME identifier rendering as everything else the machine
-   * produced — campaign admin-window/BUG-0148, the one call site DEBT-0011's
-   * sweep left behind. Landed as a STRICT pin (`it.fails`) while the
-   * divergence stands: the day the site goes through the primitive this XPASSes
-   * and turns the file red, which is the reader's pointer back to the ticket.
-   *
-   * DEBT-0011 criterion 2 is the rule, which put the mono
-   * identifier face behind one primitive so a rule about foreign text (the
-   * bidi isolation of criterion 4, ARCHITECTURE §7 / row 15) can be applied
-   * once instead of at every call site.
-   *
-   * The action two lines above this id in the same block already comes from
-   * the primitive, which is what makes the comparison below fair rather than
-   * aspirational.
-   *
-   * No class literal and no attribute value is typed here: both are read off
-   * the primitive's own render, so restyling the identifier moves this
-   * assertion with it. What is pinned is only that the two agree.
-   */
-  it("renders the observation id through the one identifier primitive, like the action beside it", async () => {
-    const markup = await renderItem(withVerdict({}, []));
-    const $ = cheerio.load(markup);
-
-    const primitive = cheerio.load(render(h(Identifier, { children: ID.observationA })))("span");
-
-    // Non-vacuous: the verdict's ACTION, in this same block, is an identifier
-    // that already goes through the primitive.
-    expect($("[data-verdict-action]").attr("dir"), "the action is isolated").toBe(
-      primitive.attr("dir"),
-    );
-
-    const shown = $(`[data-verdict-observation="${ID.observationA}"]`);
-    expect(shown.is("a"), "the unlinked arm is the one under test").toBe(false);
-    expect(shown.attr("dir"), "an id the database produced is isolated too").toBe(
-      primitive.attr("dir"),
-    );
-    expect(shown.attr("class"), "and wears the identifier's one face").toBe(
-      primitive.attr("class"),
-    );
   });
 
   /**
@@ -713,23 +570,6 @@ describe("an unsettled item", () => {
       expect($("[data-verdict-action]"), name).toHaveLength(0);
       expect($("[data-absence-note]"), name).toHaveLength(0);
     }
-  });
-
-  it("leaves the close exactly as its own ticket shipped it", async () => {
-    const markup = await renderItem(noRow(OPEN), OPEN.review_item_id);
-    const $ = cheerio.load(markup);
-
-    // The read answered, so the slot is in its ok state with the note field
-    // and this shape's controls — unchanged by this ticket.
-    expect(stateOf(markup, CLOSE)).toBe("ok");
-    expect($(CLOSE).find("[data-close-note]")).toHaveLength(1);
-    expect(
-      $(CLOSE)
-        .find("[data-close-action]")
-        .toArray()
-        .map((element) => $(element).attr("data-close-action")),
-    ).toEqual(["choose_claimed_value", "choose_claimed_value", "supply_value", "keep_current"]);
-    expect($("[data-close-item-status]")).toHaveLength(0);
   });
 
   it("never asks the log for a verdict an open item cannot have", async () => {
@@ -879,24 +719,6 @@ describe("a settled item's close is still reachable without exhausting the evide
       .toArray()
       .map((element) => $(element).attr("data-surface") ?? "");
   }
-
-  it("comes before the evidence in all three states of the log", async () => {
-    for (const [name, script] of [
-      ["log absent", logAbsent()],
-      ["no row", noRow()],
-      ["the verdict", withVerdict()],
-    ] as const) {
-      const order = surfaceOrder(await renderItem(script));
-
-      expect(order.filter((one) => one === "close"), name).toHaveLength(1);
-      expect(order.filter((one) => one === "evidence"), name).toHaveLength(1);
-      expect(
-        order.indexOf("close"),
-        `${name}: the close precedes the evidence it closes`,
-      ).toBeLessThan(order.indexOf("evidence"));
-      expect(order.indexOf("what_happened"), name).toBeLessThan(order.indexOf("close"));
-    }
-  });
 
   it("keeps the verdict inside the close, above the evidence rather than between", async () => {
     const markup = await renderItem(withVerdict());

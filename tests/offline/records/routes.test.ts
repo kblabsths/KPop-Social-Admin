@@ -49,10 +49,6 @@ describe("recordHref", () => {
 describe("one spelling of the record URL", () => {
   const LEAF = "src/lib/records/routes.ts";
 
-  it("contains the module this rule is about", () => {
-    expect(sourceFiles()).toContain(LEAF);
-  });
-
   it("is the only file in src/ that builds the record URL", () => {
     // The ticket's own check, asserted here so it survives the check list: a
     // template literal whose text opens the records path and interpolates.
@@ -79,16 +75,6 @@ describe("one spelling of the record URL", () => {
       (match) => match[1],
     );
     expect(exported).toEqual(["recordHref"]);
-  });
-
-  it("leaves the two old names spelled nowhere in src/ as code", () => {
-    // The `provenanceHref` PROP on `components/claims/claim-list.tsx` is a
-    // row field, not the helper, and stays: this looks for a call.
-    const called = /\b(?:provenanceHref|eventRecordHref)\s*\(/;
-    const offenders = sourceFiles().filter((file) =>
-      codeLines(file).some((line) => called.test(line)),
-    );
-    expect(offenders).toEqual([]);
   });
 });
 

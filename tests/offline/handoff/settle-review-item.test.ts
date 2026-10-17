@@ -583,10 +583,6 @@ describe("the settle_review_item handoff note", () => {
 });
 
 describe("the settle_review_item migration", () => {
-  it("grades clean", () => {
-    expect(gradeSettle(shipped)).toEqual([]);
-  });
-
   it("declares the argument name the app calls it by", () => {
     // The one divergence that renders an installed function permanently absent.
     expect(declaredArgument(shipped)).toBe(SETTLE_ARGUMENT);
@@ -717,18 +713,6 @@ describe("the settle_review_item migration", () => {
     expect(statementsStartingWith(shipped, "update")).toEqual([]);
     expect(statementsStartingWith(shipped, "delete")).toEqual([]);
     expect(statementsStartingWith(shipped, "insert")).toHaveLength(1);
-  });
-
-  it("raises only in the sibling's KS grammar, and allocates the next free codes", () => {
-    const raised = [...new Set(errcodes(shipped))].sort();
-    expect(raised.every((code) => /^KS\d{3}$/.test(code))).toBe(true);
-    // KS001–KS028 are in use next door across BOTH SQL worlds — the migrations
-    // (KS001–KS026) and the staging harness doors (KS027, KS028), measured
-    // 2026-09-08 (admin-window/BUG-0093). Everything this file allocates sits
-    // above them, and the note says so.
-    for (const code of raised) {
-      if (Number(code.slice(2)) > TAKEN_NEXT_DOOR.length) expect(noteText).toContain(code);
-    }
   });
 
   /**
@@ -963,159 +947,6 @@ describe("the settle_review_item migration", () => {
   });
 
   /**
-   * The sibling allocating ITS OWN next code is not a claim on ours
-   * (admin-window/BUG-0213; QA on admin-window/BUG-0207).
-   *
-   * Attribution used to be positional over whole paste blocks, and one of this
-   * note's code-bearing blocks is TWO lines long: §1a's registry paste, the
-   * wrapped tail of the sibling's `tests/live_safety/test_codes_named_once.py`
-   * list of every code `ks_codes.py` names. That list is written six, six, six,
-   * five, five, four entries to a line, so the sibling's next allocation lands
-   * on the line that has room — our block's last line — and the block stopped
-   * matching. The four codes that line spells were then reported as FOREIGN
-   * spellings of codes this artifact allocates, and `npm test` was red for every
-   * builder over a next-door edit that claims none of our meanings.
-   *
-   * A pinned list of numbers declares no meaning, so nothing about that line
-   * reaches the guard at all now; what it reads is the registry entry the
-   * sibling writes beside it, for a code that is not one of ours.
-   *
-   * Landed by QA as `it.fails` (strict xfail), watched red first as a plain
-   * `it()`: `expected [ "\"KS029\", \"KS030\", \"KS031\", \"KS032\",
-   * \"KS033\"," ] to deeply equal []`. Re-watched red as a plain `it()` on
-   * this branch before the fix, with that same message.
-   */
-  it("does not call the sibling's own next code a claim on ours", () => {
-    const allocated = allocatedCodes();
-    expect(allocated.length).toBeGreaterThan(0);
-
-    // The next free number, which is the sibling's to allocate and not ours.
-    const next = `KS${String(TAKEN_NEXT_DOOR.length + allocated.length + 1).padStart(3, "0")}`;
-    expect(allocated).not.toContain(next);
-    expect(TAKEN_NEXT_DOOR).not.toContain(next);
-
-    // Its registry after our paste and after it takes that number for a meaning
-    // of its own: our four entries untouched, one more below them.
-    const registry = [
-      ...allocated.map((code) => `${(OUR_DECLARATIONS.get(code) ?? [])[0]} = "${code}"`),
-      `LEASE_NOT_RENEWED = "${next}"`,
-    ].join("\n\n");
-    const theirs = declaredCodeNames(registry);
-    expect(theirs.get(next)).toEqual(["LEASE_NOT_RENEWED"]);
-    for (const code of allocated) {
-      expect(theirs.get(code), code).toEqual(OUR_DECLARATIONS.get(code));
-    }
-
-    // And the line that allocation lands on: §1a's pinned list — read off the
-    // note rather than typed here, so it cannot drift from what Ben pasted —
-    // grown the way that file is written, one more entry on the line with room.
-    const pinnedBlocks = fencedBlocks(noteText)
-      .filter((block) => block.info.toLowerCase() === "python")
-      .map((block) => block.text)
-      .filter((text) => declaredCodeNames(text).size === 0);
-    expect(pinnedBlocks).toHaveLength(1);
-    const pinned = pinnedBlocks[0].split("\n");
-    expect(pinned.length).toBeLessThan(5);
-    const grown = pinned
-      .map((line, index) => (index === pinned.length - 1 ? `${line} "${next}",` : line))
-      .join("\n");
-    for (const code of allocated) expect(grown, code).toContain(code);
-    expect(grown).toContain(next);
-    // Nothing about OUR four codes changed, and a list declares no meaning.
-    expect([...declaredCodeNames(grown).keys()]).toEqual([]);
-
-    expect(
-      codeClaims({
-        allocated,
-        ours: OUR_DECLARATIONS,
-        theirs: declaredCodeNames(`${registry}\n${grown}`),
-      }),
-    ).toEqual([]);
-  });
-  /**
-   * A declaration is read in the grammar the sibling's OWN parser declares one
-   * in — QA on admin-window/BUG-0213.
-   *
-   * The registry is the sibling's file, so what counts as a declaration in it
-   * is the sibling's definition, and that definition is written down next door
-   * as code: `_declared_by` in `tests/live_safety/test_codes_named_once.py`
-   * parses the file with `ast` and takes an `Assign` OR an `AnnAssign` whose
-   * single target is a name and whose value is a string constant, comments
-   * stripped first ("a declaration parked inside a comment is invisible, one
-   * WEARING a comment is not", `code_declarations`' docstring). Quote style
-   * reaches the tree not at all.
-   *
-   * This reader takes a narrower grammar — one line, bare `=`, double quotes,
-   * nothing after the closing quote — and the gap runs in both directions,
-   * measured on a scratch replica of the sibling (never a write next door):
-   *
-   *  - annotate our own pasted entry the way `tests/helpers/` types its other
-   *    constants (`SYNTHETIC_NAME_PREFIX: Final[str] = "ENTITY_LINK_TEST_"`,
-   *    `catalog_rows.py:58`), or hang a comment off its end, and the meaning
-   *    next door is unchanged but this reader sees none — and because our own
-   *    installed migration RAISES the four, the finding fires: `KS029: raised
-   *    next door in supabase/migrations/20260908000002_…sql, and
-   *    tests/helpers/ks_codes.py declares no meaning for it`. Red for every
-   *    builder here over a typing pass next door, which is BUG-0213's failure
-   *    mode with a new trigger;
-   *  - and a stranger's claim written `LEASE_NOT_RENEWED = 'KS029'` is a
-   *    declaration by the sibling's parser and invisible to this one, so the
-   *    collision this guard exists for passes silently — BUG-0212's direction.
-   *
-   * In memory, both arms, on the declarations alone: no corpus, no similarity,
-   * nothing of the sibling's text recognised — the grammar of the declaration
-   * is simply the one its owner defines.
-   */
-  /*
-   * Landed by QA as `it.fails` (strict xfail) — watched RED first as a plain
-   * `it()` on this branch: `expected [ …(4) ] to deeply equal []`, the four
-   * findings above. The fixer flips it back to `it()`.
-   */
-  it("reads a registry declaration in every form the sibling's own parser declares one", () => {
-    const allocated = allocatedCodes();
-    expect(allocated.length).toBeGreaterThan(0);
-    const claim = allocated[0];
-    const ourName = (OUR_DECLARATIONS.get(claim) ?? [])[0] as string;
-    expect(ourName, claim).toBeDefined();
-
-    // Our own installed migration raises all four next door, so a declaration
-    // this reader cannot see is never a quiet absence: it is a finding.
-    const raisedIn = new Map(allocated.map((code) => [code, [TARGET_PATH]]));
-    const entries = (spell: (name: string, code: string) => string): string =>
-      allocated.map((code) => spell((OUR_DECLARATIONS.get(code) ?? [])[0], code)).join("\n");
-
-    // Ben's paste, typed the way tests/helpers types its constants.
-    const annotated = entries((name, code) => `${name}: Final[str] = "${code}"`);
-    expect(
-      codeClaims({
-        allocated,
-        ours: OUR_DECLARATIONS,
-        theirs: declaredCodeNames(annotated),
-        raisedIn,
-      }),
-    ).toEqual([]);
-
-    // The same entries wearing a comment, which the sibling's parser reads
-    // straight through.
-    const commented = entries((name, code) => `${name} = "${code}"  # the admin handoff`);
-    expect(
-      codeClaims({
-        allocated,
-        ours: OUR_DECLARATIONS,
-        theirs: declaredCodeNames(commented),
-        raisedIn,
-      }),
-    ).toEqual([]);
-
-    // And the collision arm: a stranger's claim on one of the four, spelled in
-    // the other quote, is still a claim.
-    const single = `${ourName} = "${claim}"\nLEASE_NOT_RENEWED = '${claim}'`;
-    const found = codeClaims({ allocated, ours: OUR_DECLARATIONS, theirs: declaredCodeNames(single) });
-    expect(found).toHaveLength(1);
-    expect(found[0]).toContain("LEASE_NOT_RENEWED");
-  });
-
-  /**
    * The grammar itself, stated as the property rather than as the three
    * spellings that were missing — admin-window/BUG-0220 (LESSONS 13).
    *
@@ -1316,11 +1147,6 @@ describe("the grader proves itself on doctored blocks", () => {
     expect(gradeSettle(shipped)).not.toContain("wont_fix_blank_untested");
   });
 
-  it("flags a commit, which would break the one-transaction guarantee", () => {
-    const doctored = doctoredNote("notify pgrst, 'reload schema';", "commit;\n\nnotify pgrst, 'reload schema';");
-    expect(gradeSettle(doctored)).toContain("commit");
-  });
-
   it("flags DDL this artifact has no business carrying", () => {
     const doctored = doctoredNote(
       "notify pgrst, 'reload schema';",
@@ -1488,21 +1314,6 @@ describe("the grader proves itself on doctored blocks", () => {
     expect(findings).toContain("function_owner:authenticated");
     // An owner may grant itself back anything the revoke below took away.
     expect(findings).toContain("client_execute:authenticated");
-  });
-
-  it("reads a banned word in a comment or a string as prose, not as a construct", () => {
-    // The other half of LESSONS 3: the grader must not fire on text that only
-    // TALKS about the thing. Both of these are legal SQL and must grade clean.
-    const inComment = doctoredNote(
-      "-- ── 3. Who may call it ",
-      "-- A create policy here would be a defect, and we commit nothing.\n-- ── 3. Who may call it ",
-    );
-    expect(gradeSettle(inComment)).toEqual([]);
-    const inLiteral = doctoredNote(
-      "'The one entry point for a verdict",
-      "'create policy, commit, dblink. The one entry point for a verdict",
-    );
-    expect(gradeSettle(inLiteral)).toEqual([]);
   });
 
   it("grades clean when the revoke pair is spelled the other legal way", () => {

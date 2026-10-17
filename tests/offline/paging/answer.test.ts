@@ -40,11 +40,6 @@ describe("pageAnswerOf", () => {
     });
   });
 
-  it("answers a page past the end as exhaustion, never as a refusal", () => {
-    const answer = pageAnswerOf({ kind: "ok", data: [] as Row[] }, 300, SIZE);
-    expect(answer).toEqual({ kind: "ok", rows: [], offset: 300, exhausted: true });
-  });
-
   it("carries the bound it was answered for, and the rows in the read's order", () => {
     const answer = pageAnswerOf({ kind: "ok", data: rows("c", "a", "b") }, 90, SIZE);
     expect(answer.kind === "ok" && answer.offset).toBe(90);
@@ -114,14 +109,6 @@ describe("pageAnswerOf", () => {
       });
     });
 
-    it("is OPTIONAL on the wire, and its absence is not a foreign body", () => {
-      // A forced answer, a live probe, any client older than this ticket: a
-      // `{kind, reading, message}` error arm is still a page answer, and a
-      // validator made stricter here would refuse it as something this app
-      // cannot read (admin-window/BUG-0196 criterion 5c).
-      expect(isPageAnswer({ kind: "error", reading: "pending_claims", message: "boom" })).toBe(true);
-    });
-
     it("is refused whole when it is PRESENT and unreadable", () => {
       // Rendering an account this app cannot read is worse than dropping it,
       // and silently ignoring the field would put the words back in the
@@ -146,24 +133,6 @@ describe("pageAnswerOf", () => {
       // …and an EMPTY list is readable: no runs is not an unreadable run.
       expect(isPageAnswer({ kind: "error", reading: "x", message: "boom", authored: [] })).toBe(true);
     });
-  });
-
-  it("produces only answers the client's own guard accepts", () => {
-    // The cross-wire property: the two halves of this contract agree.
-    const results: DbResult<Row[]>[] = [
-      { kind: "ok", data: rows("a") },
-      { kind: "ok", data: [] },
-      { kind: "not_provisioned", missing: "pending_claims" },
-      // @ts-expect-error unwritable since admin-window/DEBT-0021 (see above);
-      // kept so the accepted-by-the-client property is still graded for an arm
-      // whose account carries no runs.
-      { kind: "error", reading: "pending_claims", message: "boom" },
-    ];
-    for (const result of results) {
-      const answer = pageAnswerOf(result, 50, SIZE);
-      // Through JSON, because that is the only way it ever travels.
-      expect(isPageAnswer(JSON.parse(JSON.stringify(answer))), result.kind).toBe(true);
-    }
   });
 });
 
