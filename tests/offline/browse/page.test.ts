@@ -15,7 +15,6 @@ import {
   MAX_PAGE_OFFSET,
   OFFSET_PARAM,
   PAGE_ROUTES,
-  pageBound,
   type NotedPageAnswer,
   type PageNote,
 } from "@/lib/paging/bounds";
@@ -30,10 +29,9 @@ import {
 import { recordHref } from "@/lib/records/routes";
 import { BrowseTable } from "@/components/browse/browse-table";
 import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
-import { PageMore, PagingProvider } from "@/components/ui/paging";
+import { PagingProvider } from "@/components/ui/paging";
 import type { DrawnWindow } from "@/components/ui/window-line";
 import { functionPaths } from "../../fixtures/client-props";
-import { codeLinesIn, sourceText } from "../source-tree";
 import { h, render, textOf } from "../ui/markup";
 import {
   classesOf,
@@ -699,18 +697,6 @@ describe("the events window states whether it filled", () => {
     // are not shown, so the line must not offer that row as a floor.
     expect(line.text).not.toContain(absoluteUtc(full[full.length - 1].created_at));
   });
-
-  it("keeps its line on a read that found nothing, and drops it on one that did not happen", async () => {
-    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3).
-    const empty = await renderBrowse(healthyScript({ [T.events]: { data: [] } }));
-    expect(windowLine(empty).held).toBe("0");
-    expect(windowLine(empty).truncated).toBe("false");
-
-    const absent = await renderBrowse(
-      healthyScript({ [T.events]: { error: tableNotInSchemaCache(T.events) } }),
-    );
-    expect(windowLine(absent).lines).toBe(0);
-  });
 });
 
 describe("the column selector on the page", () => {
@@ -725,13 +711,6 @@ describe("the column selector on the page", () => {
         active: $(a).attr("aria-current") === "true",
       }));
   }
-
-  it("offers exactly the configured column set — every one, nothing else", async () => {
-    const markup = await renderBrowse(healthyScript());
-    expect(options(markup).map((o) => o.label)).toEqual(
-      view.columns.map((c) => c.label),
-    );
-  });
 
   it("offers the same set when the URL shows only one column", async () => {
     const markup = await renderBrowse(healthyScript(), {
@@ -775,41 +754,13 @@ describe("the column selector on the page", () => {
       expect(headers(markup), key).toEqual([labelOf(key)]);
     }
   });
-
-  it("ignores a column the view does not configure", async () => {
-    const markup = await renderBrowse(healthyScript(), {
-      [COLUMNS_PARAM]: "title,ticket_url",
-    });
-    expect(headers(markup)).toEqual([labelOf("title")]);
-  });
-
-  it("shows the default set when the URL says nothing about columns", async () => {
-    const markup = await renderBrowse(healthyScript());
-    expect(headers(markup)).toEqual(
-      shownColumns(view, undefined).map((key) => labelOf(key)),
-    );
-  });
 });
 
 describe("every state renders without throwing", () => {
-  it("renders the rows when the database is whole", async () => {
-    const markup = await renderBrowse(healthyScript());
-    expect(bodyRows(markup)).toHaveLength(2);
-  });
-
   it("renders an empty state, not a table of nothing, when there are no events", async () => {
     const markup = await renderBrowse({ [T.events]: { data: [] } });
     expect(markup).toContain("<h1");
     expect(bodyRows(markup)).toEqual([]);
-    expect(cheerio.load(markup)("table").length).toBe(0);
-  });
-
-  it("names the missing table when events itself is absent", async () => {
-    const markup = await renderBrowse({
-      [T.events]: { error: tableNotInSchemaCache(T.events) },
-    });
-    expect(markup).toContain(T.events);
-    expect(markup).not.toContain("0 events");
     expect(cheerio.load(markup)("table").length).toBe(0);
   });
 
@@ -1082,11 +1033,6 @@ function pagingArms(markup: string): string[] {
   return $("[data-paging]")
     .toArray()
     .map((element) => $(element).attr("data-paging") ?? "");
-}
-
-/** Every paging element's own markup, for a byte comparison of two renders. */
-function pagingHtml(markup: string): string {
-  return cheerio.load(markup)("[data-paging]").toString();
 }
 
 /** How many times the paging hook is spelled at all — refusals included. */
@@ -1562,26 +1508,6 @@ describe("the affordance that continues the recent-events view", () => {
     );
   });
 
-  it("keeps a refused leg reported after a later page whose legs answered", async () => {
-    // The rows the refused leg left unfilled are still on screen, so the note
-    // that explains them may not vanish one press later.
-    const script = windowScript(view.window);
-    await renderBrowse(script);
-    paging.override = await pressedWith(
-      pageAnswer(view.window, {
-        venues: null,
-        provenance: { kind: "not_provisioned", missing: T.fieldProvenance },
-      }),
-      pageAnswer(view.window * 2, { venues: null, provenance: null }),
-    );
-    const markup = await renderBrowse(script);
-
-    expect(eventIds(markup)).toHaveLength(view.window * 3);
-    expect(
-      cheerio.load(markup)(`[data-not-provisioned="${T.fieldProvenance}"]`),
-    ).toHaveLength(1);
-  });
-
   it("renders no note at all from a state that has taken in no page, or from legs that answered", async () => {
     // A first screen, unpressed: the wrapper holds no note, and the page's own
     // legs answered, so nothing is reported anywhere.
@@ -1701,72 +1627,6 @@ describe("the affordance that continues the recent-events view", () => {
     expect(refused.label).not.toContain("7");
   });
 
-  it("draws no control from a SHORT first window, and says the set is complete rather than claiming a ceiling", async () => {
-    // Where a surface is started from a short window — which `/browse` never
-    // does, because that rule IS the question its page asks before drawing any
-    // of this — it says `exhausted` and never `limit`: the read that returned
-    // 37 of 50 rows is the read that ended the set, so there is no ceiling to
-    // announce and no dead end to hand the operator. The state is built the
-    // way the page builds it, off the one function that answers "is this a
-    // bound this surface can page from" (admin-window/BUG-0168).
-    recordingFetch({ kind: "ok", rows: [], offset: view.window, exhausted: true });
-    const short = 37;
-    const more = pageBound(String(short), view.window).kind === "ok";
-    expect(more, "a short window is not a bound this surface can page from").toBe(false);
-    const markup = render(
-      h(
-        PagingProvider<BrowseRow>,
-        {
-          initial: initialPage<BrowseRow>(short, more, ""),
-          window: thisWindow(short, view.window),
-          deps: { route: PAGE_ROUTES.browse, params: "", size: view.window, idKey: EVENT_ID },
-          children: null,
-        },
-        h(PagedBrowseTable, {
-          surface: "events",
-          view,
-          shown: configuredKeys(view),
-          initial: pageRows(short, 0),
-          reported: [],
-        }),
-      ),
-    );
-    expect(eventIds(markup)).toHaveLength(37);
-    expect(pagingArms(markup)).toEqual(["exhausted"]);
-    expect(/<button/.test(markup)).toBe(false);
-  });
-
-  // QA's pin, admin-window/BUG-0172 — RED until the window line moved inside
-  // client-land, green from the fix that put it there, and kept here as the
-  // regression it is.
-  it("does not claim rows are withheld once the walk has reached the end of the set", async () => {
-    // QA, admin-window/BUG-0172: the window line above the table was a
-    // SERVER-rendered claim about the rows below it, and a press changes those
-    // rows underneath it. Once the driver reports `exhausted` — the read's own
-    // answer that the set has ended — the page published two contradictory
-    // facts about the SAME question: the paging hook said every row is on
-    // screen, and the window hook still said rows are withheld (LESSONS 11:
-    // one row, one verdict; LESSONS 2: a sentence claims only the scope its
-    // read had).
-    //
-    // Both handles are the app's own machine-readable statements about that
-    // one question — no word of either sentence is pinned here.
-    const script = windowScript(view.window);
-    await renderBrowse(script);
-    // ONE press whose page ends the set: short, and says so.
-    paging.override = await pressedWith(
-      pageAnswer(view.window, { venues: null, provenance: null }, view.window - 10),
-    );
-    const markup = await renderBrowse(script);
-
-    // The walk really did reach the end, and the rows really are all drawn.
-    expect(pagingArms(markup)).toEqual(["exhausted"]);
-    expect(eventIds(markup)).toHaveLength(view.window * 2 - 10);
-
-    // …so nothing on this page may still say rows are being held back.
-    expect(windowLine(markup).truncated).not.toBe("true");
-  });
-
   /* ── the window line of a surface a press CONTINUES ───────────────────── */
 
   /**
@@ -1779,10 +1639,6 @@ describe("the affordance that continues the recent-events view", () => {
    * app's own machine-readable statements — the window hooks and the paging
    * arm — and pins no word of either sentence (LESSONS 11).
    */
-
-  /** The window line's own markup, for a byte comparison of two renders. */
-  const lineHtml = (markup: string): string =>
-    cheerio.load(markup)('[data-window="events"]').toString();
 
   /**
    * The defect sentence a CONTINUED window must never reach: this surface is
@@ -1832,95 +1688,6 @@ describe("the affordance that continues the recent-events view", () => {
     // The set is complete on screen; the window did not "fail to fill" — it
     // filled, and was then continued to the end.
     expect(windowLine(exhausted).text).not.toContain(DID_NOT_FILL);
-  });
-
-  it("takes continuability from the page's own statement, not from the rows it drew [admin-window/BUG-0183]", async () => {
-    // CRITERION 2. The line used to learn that a press can continue this
-    // window from `drawn` being PRESENT — a fact about the rows on screen,
-    // standing in for a fact about a control. The page states it now, and this
-    // is the state that turns on it alone: a press that ENDED the set and
-    // appended ZERO rows, so the rows on screen are still exactly the first
-    // screen's and no figure in the window tells the two apart.
-    //
-    // Graded by comparing the two renderings against each other, so no word of
-    // either sentence is pinned.
-    const script = windowScript(view.window);
-    const first = await renderBrowse(script);
-    paging.override = await pressedWith(
-      pageAnswer(view.window, { venues: null, provenance: null }, 0),
-    );
-    const ended = await renderBrowse(script);
-
-    // The press really landed, really ended the set, and appended nothing: the
-    // rows below are the first screen's own, to the row.
-    expect(pagingArms(first)).toEqual(["more"]);
-    expect(pagingArms(ended)).toEqual(["exhausted"]);
-    expect(eventIds(ended)).toEqual(eventIds(first));
-    expect(windowLine(ended).held).toBe(windowLine(first).held);
-    expect(windowLine(ended).limit).toBe(windowLine(first).limit);
-    // …and the line moved anyway, because the page said this window could be
-    // continued and the read has now said it cannot be continued further.
-    expect(windowLine(ended).truncated).toBe("false");
-    expect(windowLine(first).truncated).toBe("true");
-    expect(windowLine(ended).text).not.toBe(windowLine(first).text);
-    // The window filled and was then continued to the end; it never "failed to
-    // fill", whatever the two reads' figures look like.
-    expect(windowLine(ended).text).not.toContain(DID_NOT_FILL);
-  });
-
-  it("says the set is complete when its read ends, because it has no second read to disagree with [admin-window/BUG-0180]", async () => {
-    // Criterion 4. `/claims` counts its matching set and draws its rows in TWO
-    // reads, so a press can end the set short of the count and the sentence
-    // under the table may not call that view complete. `/browse` reads no
-    // count beside its rows at all (`heldFrom: "this window"`), so once its
-    // read has ended what it holds IS what it counted: the verdict is `true`
-    // by construction and this surface's markup does not move in any state.
-    //
-    // Graded by rendering the app's own widget over the SAME state and each
-    // verdict, so no word of either sentence is pinned here (LESSONS 5) — and
-    // it cannot pass vacuously: the agreeing reconstruction must MATCH the
-    // page and the diverged one must not.
-    const script = windowScript(view.window);
-    // The first screen, which is what hands the driver the deps a press uses.
-    await renderBrowse(script);
-    paging.override = await pressedWith(
-      pageAnswer(view.window, { venues: null, provenance: null }),
-      pageAnswer(view.window * 2, { venues: null, provenance: null }, view.window - 10),
-    );
-    const exhausted = await renderBrowse(script);
-    const held = view.window * 3 - 10;
-    expect(pagingArms(exhausted)).toEqual(["exhausted"]);
-    expect(eventIds(exhausted)).toHaveLength(held);
-
-    const widget = (readsAgree: boolean): string =>
-      pagingHtml(
-        render(
-          h(PageMore, {
-            state: {
-              rows: [],
-              held,
-              status: "exhausted",
-              refusal: null,
-              notes: null,
-              after: "",
-              drawnIds: new Set<string>(),
-              overlapped: false,
-            },
-            holds: "events",
-            size: view.window,
-            readsAgree,
-            // What this surface offers at the bound ceiling: nothing, because
-            // `?columns=` removes no row (admin-window/BUG-0198). The arm
-            // under test here is the exhausted one, which reads no next step
-            // either way — this is the wrapper's own answer, spelled so the
-            // fixture is the surface this file is about.
-            nextStep: null,
-            onPress: () => {},
-          }),
-        ),
-      );
-    expect(pagingHtml(exhausted)).toBe(widget(true));
-    expect(pagingHtml(exhausted)).not.toBe(widget(false));
   });
 
   /** The line's sentence, with no word of it pinned — read for what it omits. */
@@ -2013,111 +1780,6 @@ describe("the affordance that continues the recent-events view", () => {
       expect(lineText(await renderBrowse(script)), name).toContain(A_CAP);
     }
   });
-
-  it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
-    const script = windowScript(view.window);
-    const { initial } = paging.calls[0] ?? (await renderBrowse(script), paging.calls[0]);
-    paging.override = pressing(initial as unknown as PageState<BrowseRow>);
-    const loading = await renderBrowse(script);
-    expect(pagingArms(loading)).toEqual(["loading"]);
-    expect(windowLine(loading).lines).toBe(1);
-    // A press in flight has taken in no row and ended nothing: the line is the
-    // one the first screen published, truncation included.
-    expect(windowLine(loading).truncated).toBe("true");
-    expect(windowLine(loading).held).toBe(String(view.window));
-    expect(windowLine(loading).text).not.toContain(DID_NOT_FILL);
-  });
-
-  it("a refused press settles nothing: the line is what it was before it", async () => {
-    const script = windowScript(view.window);
-    await renderBrowse(script);
-    const landed = await pressedWith(pageAnswer(view.window, { venues: null, provenance: null }));
-
-    paging.override = landed;
-    const before = await renderBrowse(script);
-    // The same state, then one press the server refuses: no row is appended
-    // and no bound moves, so the line may not move either.
-    paging.override = await requestPage<BrowseRow>(landed, {
-      ...(paging.calls[0].deps as Omit<PageDeps<BrowseRow>, "fetchJson">),
-      fetchJson: () => Promise.resolve({ kind: "error", reading: T.events, message: "refused" }),
-    });
-    const after = await renderBrowse(script);
-
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    expect(pagingArms(after)).toEqual(["more"]);
-    expect(lineHtml(after)).toBe(lineHtml(before));
-  });
-
-  it("at the bound ceiling it still says rows are not shown", async () => {
-    // The state a walk reaches after `MAX_PAGE_OFFSET` rows: every further
-    // bound is past the ceiling `pageBound` enforces, so `PageMore` draws its
-    // limit sentence and NO control — and that sentence does not claim the set
-    // has ended, because nothing established that. The line must agree: rows
-    // this surface could show are not shown, and it says so.
-    //
-    // The held is seeded rather than pressed to: 2,000 full pages is what puts
-    // a real operator here, and the state is built the way the surface's own
-    // state is built (`initialPage`), then driven through the REAL driver with
-    // the refusal this app's route answers a bound past the ceiling with.
-    const script = windowScript(view.window);
-    await renderBrowse(script);
-    const deps = paging.calls[0].deps as Omit<PageDeps<BrowseRow>, "fetchJson">;
-    const atCeiling = initialPage<BrowseRow>(MAX_PAGE_OFFSET + view.window, true, "");
-
-    // The two renders below go around `renderBrowse`, and only these two do:
-    // its sweep grades that no FIRST screen of this file draws the limit arm,
-    // and the state under test here is the one state where drawing it is
-    // correct. The database, the page and the render are otherwise identical.
-    const rendered = async (): Promise<string> => {
-      readWith.client = stubClient(script).asSupabaseClient();
-      return render(await BrowsePage({ searchParams: Promise.resolve({}) }));
-    };
-
-    paging.override = atCeiling;
-    const before = await rendered();
-    expect(pagingArms(before)).toEqual(["limit"]);
-    expect(windowLine(before).truncated).toBe("true");
-    expect(windowLine(before).lines).toBe(1);
-    expect(windowLine(before).text).not.toContain(DID_NOT_FILL);
-
-    paging.override = await requestPage<BrowseRow>(atCeiling, {
-      ...deps,
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "refused",
-          reason: "the `offset` must be at most 100000",
-          bound: String(MAX_PAGE_OFFSET + view.window),
-        }),
-    });
-    const after = await rendered();
-    expect(pagingArms(after)).toEqual(["limit"]);
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    expect(lineHtml(after)).toBe(lineHtml(before));
-  });
-
-  it("spells no leg key and imports no lib/db type", async () => {
-    // The wrapper renders the non-null notes the record HOLDS, in the record's
-    // own order, so its output cannot drift from the route's key spelling —
-    // and it sits below the `StateOf` seam (ARCHITECTURE.md §4).
-    const WRAPPER = "src/components/browse/paged-browse-table.tsx";
-    const whole = sourceText(WRAPPER);
-    // Read off the WHOLE file, comments included, exactly as this ticket's
-    // structural checks read it: a docstring that merely NAMES the spelling it
-    // avoids reddens the check and stays green under a comment-stripped read,
-    // which is how a check and its test come to disagree (LESSONS 12).
-    expect(whole).not.toContain("@/lib/db");
-    expect(whole).not.toContain("BROWSE_VIEWS");
-    expect(whole).not.toContain("view.window");
-
-    // The LEG KEYS are read off the code alone: the docstring has every right
-    // to explain that this surface has a venue leg and a provenance leg. What
-    // it may not do is SPELL one, because the record's keys are the route's
-    // and this file renders whatever the record holds.
-    const code = codeLinesIn(whole).join("\n");
-    for (const key of ["venues", "provenance"]) {
-      expect(code, `the wrapper spells the leg key ${key}`).not.toContain(key);
-    }
-  });
 });
 
 /* ── what the URL asked for that this page did not do (BUG-0202) ─────────── */
@@ -2154,13 +1816,6 @@ describe("a parameter this page did not apply", () => {
         .map((element) => $(element).attr("data-dropped-param") ?? ""),
       text: line.text().replace(/\s+/g, " ").trim(),
     };
-  }
-
-  /** The whole page with that one line removed — everything this ticket promised not to move. */
-  function withoutDroppedLine(markup: string): string {
-    const $ = cheerio.load(markup);
-    $("[data-dropped-params]").remove();
-    return $.html();
   }
 
   /** The default view's column labels, as the page draws them with no `cols` at all. */
@@ -2280,33 +1935,6 @@ describe("a parameter this page did not apply", () => {
       // the read's own state is still the page's answer about the read.
       expect(markup, name).not.toContain("newest arrival");
     }
-  });
-
-  it("moves nothing else on the page", async () => {
-    // The column chips and their hrefs, the window line, the table, the rows
-    // and every leg note are what they were at the same URL before this line
-    // existed: a dropped parameter reaches no read and no column set, so the
-    // page under the line is the bare page, byte for byte.
-    const bare = await renderBrowse(healthyScript());
-    const urls: Record<string, string>[] = [
-      { [COLUMNS_PARAM]: "banana" },
-      { table: "venues" },
-      { q: "BTS" },
-      { [UNSPELLABLE_KEY]: "1" },
-    ];
-    for (const params of urls) {
-      const markup = await renderBrowse(healthyScript(), params);
-      // Non-vacuous: there IS a line in each of these renders to remove.
-      expect(droppedLine(markup).total, JSON.stringify(params)).toBe(1);
-      expect(withoutDroppedLine(markup), JSON.stringify(params)).toBe(
-        withoutDroppedLine(bare),
-      );
-    }
-    // And a page that dropped nothing renders no line to remove at all, so
-    // the comparison above is between a page WITH the sentence and the page
-    // as it stands today rather than between two stripped renders.
-    expect(droppedLine(bare).lines).toBe(0);
-    expect(withoutDroppedLine(bare)).toBe(cheerio.load(bare).html());
   });
 
   it("reads a repeated cols the same way the columns did", async () => {

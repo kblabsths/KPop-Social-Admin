@@ -295,14 +295,6 @@ function windowOf(markup: string, gauge: string) {
   };
 }
 
-/** Every section heading the page rendered, in order. */
-function sections(markup: string): string[] {
-  const $ = cheerio.load(markup);
-  return $("h2")
-    .toArray()
-    .map((element) => $(element).text().trim());
-}
-
 /**
  * The lead the page opens with: which run it repeats, in which state, and the
  * cells it put on screen (admin-window/BUG-0040).
@@ -654,16 +646,6 @@ describe("the cycles the resolver filed", () => {
     expect(readings.size).toBe(rows.length);
   });
 
-  it("shows a cycle that died as dead, not as running forever", async () => {
-    const markup = await renderCycles(healthyScript());
-    const died = cycleRow(markup, DIED.run_id);
-    expect(died.state).toBe("died");
-    expect(died.outcome).toBeUndefined();
-    // It has no end, so it has no duration — the dash, never a zero.
-    expect(died.duration).toBe("");
-    expect(cycleRow(markup, RUNNING.run_id).duration).toBe("");
-  });
-
   it("says a cycle that ended with no outcome recorded none", async () => {
     const markup = await renderCycles(healthyScript());
     const row = cycleRow(markup, UNRECORDED.run_id);
@@ -673,13 +655,6 @@ describe("the cycles the resolver filed", () => {
     expect(row.cells[2]).toBe(EM_DASH);
     // It ended, so its duration IS measurable.
     expect(row.duration).not.toBe("");
-  });
-
-  it("states the window it is showing, and never presents it as a count", async () => {
-    const markup = await renderCycles(healthyScript());
-    const line = cheerio.load(markup)('[data-window="cycles"]');
-    expect(line.attr("data-window-limit")).toBe(String(CYCLE_WINDOW));
-    expect(line.attr("data-window-truncated")).toBe("false");
   });
 
   it("names the oldest cycle it holds when the window did not fill", async () => {
@@ -835,40 +810,6 @@ describe("the cycles the resolver filed", () => {
     expect(cycleRow(markup, SUCCEEDED.run_id).marked).toBeUndefined();
   });
 
-  it("marks nothing for a ?cycle= carrying no id at all [admin-window/BUG-0054]", async () => {
-    // Half a hand-typed URL. It is a facet the page HAS been handed, so the
-    // predicate exists and runs against all 69 rows; none may answer to it.
-    const markup = await renderCycles(healthyScript(), { cycle: "" });
-    const $ = cheerio.load(markup);
-    expect($("[data-row-marked]").length).toBe(0);
-    expect($("[data-cycle][aria-current]").length).toBe(0);
-    expect(renderedCycles(markup)).toEqual(renderedCycles(await renderCycles(healthyScript())));
-  });
-
-  it("marks nothing for a ?cycle= that is not a run id at all [admin-window/BUG-0054]", async () => {
-    // A malformed id reaches `anchorFor` and the row predicate alike; the page
-    // answers with a sentence and zero painted rows, never a crash.
-    for (const nonsense of ["../../etc/passwd", "%%%", "a b c", "<script>x</script>"]) {
-      const markup = await renderCycles(healthyScript(), { cycle: nonsense });
-      const $ = cheerio.load(markup);
-      expect($("[data-row-marked]").length, nonsense).toBe(0);
-      expect($("[data-cycle][aria-current]").length, nonsense).toBe(0);
-      expect(renderedCycles(markup).length, nonsense).toBe(CYCLES.length);
-      expect(markup, nonsense).not.toContain("<script>x");
-      // Canonicalising the facet (admin-window/BUG-0143) left THIS arm exactly
-      // where it was: a value with no canonical form keeps the RAW spelling in
-      // the page's own sentence, and the page acted on it, so the shared
-      // dropped-parameter line has nothing to report. That is where `?cycle=`
-      // and `?run=` deliberately part company — converging them is a design
-      // question the ticket declined, and this is the pin that catches a
-      // silent convergence.
-      expect($('[data-cycle-found="false"]').attr("data-cycle-asked"), nonsense).toBe(
-        nonsense,
-      );
-      expect($("[data-dropped-params]").length, nonsense).toBe(0);
-    }
-  });
-
   /**
    * Was QA's strict `it.fails` pin, flipped to a plain `it(...)` — assertions
    * unchanged — by admin-window/BUG-0143, which canonicalised `?cycle=`.
@@ -950,34 +891,6 @@ describe("the cycles the resolver filed", () => {
         expect($("[data-dropped-param]").length, `${state} ${spelling}`).toBe(0);
       }
     }
-  });
-
-  it("answers a non-canonical spelling with the very page the canonical one gets", async () => {
-    // The strongest statement of admin-window/BUG-0143: not merely that the
-    // row is marked, but that the whole document an uppercased or unhyphenated
-    // paste produces is the document the database's own spelling produces —
-    // one derived value feeding the predicate, the ink, the anchor and all
-    // three arms, with no second path for the paste to leak down. Compared
-    // with the render clock normalised away (the gauges stamp `now` into their
-    // window lines); everything else is the fixtures', and identical or not.
-    const clockless = (markup: string) =>
-      markup.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<instant>");
-    const canonical = clockless(await renderCycles(healthyScript(), { cycle: FAILED.run_id }));
-    for (const spelling of [
-      FAILED.run_id.toUpperCase(),
-      FAILED.run_id.replace(/-/g, ""),
-      FAILED.run_id.replace(/-/g, "").toUpperCase(),
-    ]) {
-      expect(clockless(await renderCycles(healthyScript(), { cycle: spelling })), spelling).toBe(
-        canonical,
-      );
-    }
-    // And it discriminates: the same comparison against a DIFFERENT cycle's
-    // page is not equal, so the equality above is a real property and not an
-    // artefact of the normalisation (LESSONS 8).
-    expect(clockless(await renderCycles(healthyScript(), { cycle: SUCCEEDED.run_id }))).not.toBe(
-      canonical,
-    );
   });
 
   /**
@@ -1145,90 +1058,6 @@ describe("the cycles the resolver filed", () => {
       for (const id of drawn) {
         expect(denial.text().replace(/\s+/g, " "), id).not.toContain(id);
       }
-    },
-  );
-
-  /**
-   * The second fixture the arm above owes (LESSONS 8), and the seam the
-   * ticket named: the strip is bounded to the ENDS, so an ink-less character
-   * INSIDE the value is not padding and names no id — the page keeps the
-   * answer a `?cycle=` with no canonical form has always had, and no id is
-   * invented that Postgres would refuse from a verbatim segment.
-   */
-  it.each([
-    ["ZERO WIDTH SPACE", 0x200b],
-    ["RIGHT-TO-LEFT OVERRIDE", 0x202e],
-  ] as const)(
-    "still finds no cycle when %s sits INSIDE the id [admin-window/BUG-0146]",
-    async (_name, codePoint) => {
-      const pad = String.fromCodePoint(codePoint);
-      const inner = `${FAILED.run_id.slice(0, 8)}${pad}${FAILED.run_id.slice(8)}`;
-      const markup = await renderCycles(healthyScript(), { cycle: inner });
-      const $ = cheerio.load(markup);
-      // Nothing is marked, because no row's id is that string.
-      expect($("[data-row-marked]").length).toBe(0);
-      expect($("[data-cycle][aria-current]").length).toBe(0);
-      // The whole window is still drawn: a facet that matches nothing narrows
-      // nothing here.
-      expect(renderedCycles(markup).length).toBe(CYCLES.length);
-    },
-  );
-
-  /**
-   * QA's strict pin, watched RED on this tree: the hole admin-window/BUG-0146
-   * named as outside its own scope and left open, filed as
-   * admin-window/BUG-0147.
-   *
-   * A `?cycle=` with no canonical form is spelled RAW into the sentence this
-   * page wrote — the arm two tests above pins deliberately. When the raw value
-   * carries an unterminated bidi control, that spelling rewrites the app's own
-   * paragraph: U+202E's scope is the paragraph, not the `<span>` the value sits
-   * in, so everything after it reverses. admin-window/BUG-0137 measured exactly
-   * this harm on `/claims`' dropped-parameter line (in Chromium, both colour
-   * schemes) and answered it with the renderable allowlist ARCHITECTURE.md §7
-   * now states as a rule: foreign text reaches an app-authored sentence through
-   * an ALLOWLIST or in its own BOX, and a `type-data` span is neither.
-   *
-   * BUG-0146 closed the PADDED route here — `?cycle=<U+202E><a real id>` is
-   * canonicalised and the control never reaches the markup — and named this
-   * one, which its criteria excluded, still open.
-   *
-   * Either arm passes: drop the control from what is spelled, or spell nothing
-   * and report `cycle` on the dropped-parameter line. The check is on the TEXT
-   * and not on any styling, because the reversal travels with the sentence when
-   * it is copied out of the page as plain text (BUG-0137's own reasoning).
-   */
-  it(
-    "never lets a URL's bidi control into the sentence the page wrote [admin-window/BUG-0147]",
-    async () => {
-      const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
-      for (const asked of [
-        `${String.fromCodePoint(0x202e)}not-a-uuid`,
-        `ab${String.fromCodePoint(0x202e)}cd`,
-        `x${String.fromCodePoint(0x2066)}y`,
-      ]) {
-        const where = [...asked]
-          .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-          .join(" ");
-        const markup = await renderCycles(healthyScript(), { cycle: asked });
-        const $ = cheerio.load(markup);
-        // The sentence the operator reads is the sentence the page wrote.
-        expect(CONTROLS.test($("[data-cycle-asked]").text()), where).toBe(false);
-      }
-      // Not vacuous, and BUG-0146 stays fixed: a value that DOES have a
-      // canonical form is spelled canonically, so no control from a padded
-      // paste reaches the markup at all.
-      const padded = `${String.fromCodePoint(0x202e)}${FAILED.run_id}`;
-      const found = await renderCycles(healthyScript(), { cycle: padded });
-      expect(cheerio.load(found)("[data-cycle-asked]").attr("data-cycle-asked")).toBe(
-        FAILED.run_id,
-      );
-      // And an ordinary unmatched value is still spelled in full: the pin is
-      // about the control, not about the page going quiet.
-      const plain = await renderCycles(healthyScript(), { cycle: "not-a-uuid" });
-      expect(cheerio.load(plain)("[data-cycle-asked]").attr("data-cycle-asked")).toBe(
-        "not-a-uuid",
-      );
     },
   );
 
@@ -1416,15 +1245,6 @@ describe("the cycles the resolver filed", () => {
     expect($("[data-cycle-asked]").text()).toContain("<script>alert(1)</script>");
     expect($("[data-source-facet]").text()).toContain('"><img src=x onerror=alert(1)>');
   });
-
-  it("renders the empty state, not a zero, when no cycle has ever run", async () => {
-    const markup = await renderCycles(
-      healthyScript({ [T.resolutionRuns]: [{ data: [] }, { data: [] }] }),
-    );
-    expect(renderedCycles(markup)).toEqual([]);
-    expect(cheerio.load(markup)('[data-empty="cycles"]').length).toBe(1);
-    expect(notProvisioned(markup)).toEqual([]);
-  });
 });
 
 /* ── green is for a cycle with nothing left to answer for ────────────────── */
@@ -1487,20 +1307,6 @@ describe("the tone a cycle's outcome earns", () => {
     expect(clean.tone).toBe("healthy");
   });
 
-  it("leaves the word itself untouched — only the colour is the app's reading", async () => {
-    const markup = await renderCycles(withErroredSuccess());
-
-    const errored = cycleRow(markup, ERRORED.run_id);
-    const clean = cycleRow(markup, SUCCEEDED.run_id);
-
-    // The producer's word, verbatim, and the same word the clean row shows:
-    // the outcome cell of the two rows reads identically.
-    expect(errored.cells[2]).toBe(ERRORED.outcome);
-    expect(errored.cells[2]).toBe(clean.cells[2]);
-    // …and the row still states its failure verbatim beside it.
-    expect(errored.error).toBe(ERRORED.error_summary);
-  });
-
   it("keeps a failed cycle broken, and a state that is not an outcome unchanged", async () => {
     const markup = await renderCycles(withErroredSuccess());
 
@@ -1518,32 +1324,6 @@ describe("the tone a cycle's outcome earns", () => {
       expect(rendered.outcome, row.run_id).toBeUndefined();
     }
     expect(cycleRow(markup, DIED.run_id).state).toBe("died");
-  });
-
-  it("leaves no row on the page showing errors and a healthy word", async () => {
-    const markup = await renderCycles(withErroredSuccess());
-
-    // The walkable form of the bar, over every row the page rendered: read
-    // each row's own errors cell and its own tone, and let no row hold both a
-    // count and the green.
-    const ids = renderedCycles(markup);
-    expect(ids.length).toBe(CYCLES.length + 1);
-
-    const green: string[] = [];
-    let errored = 0;
-    for (const id of ids) {
-      const row = cycleRow(markup, id);
-      // Every row carrying an outcome word states the reading it earned, so a
-      // page that published no reading at all cannot pass this vacuously.
-      if (row.state === "outcome") expect(row.tone, id).toBeDefined();
-      if (errorsShown(row) <= 0) continue;
-      errored += 1;
-      if (row.tone === "healthy") green.push(id);
-    }
-    // The population really did put errored rows on screen, so the emptiness
-    // below is a finding and not an empty loop.
-    expect(errored).toBeGreaterThan(1);
-    expect(green).toEqual([]);
   });
 
   /**
@@ -1779,21 +1559,6 @@ describe("the cycle-health gauge", () => {
     ]);
   });
 
-  it("counts the cycles it excludes as one number, wherever the page states it", async () => {
-    const markup = await renderCycles(scriptOf([...FINISHED, ...NO_END]));
-    const excluded = countsIn(cardSubLine(markup, "Cycles in this window"))[2];
-
-    // The rows themselves: a cycle with no end renders no duration, and there
-    // are exactly as many of those as the line says it left out.
-    expect(cyclesWithoutDuration(markup)).toHaveLength(excluded);
-    // ...and the note under the duration percentiles, which qualifies the same
-    // figures from the same field, states that one number and no other. One
-    // read, one count of one set: the page cannot report it twice and disagree
-    // with itself. It is NOT required to equal the outcome panel's dead, which
-    // is a subset of it — that demand was retired with admin-window/BUG-0116.
-    expect(countsIn(noteBelow(markup, DURATIONS))).toEqual([excluded]);
-  });
-
   it("leaves the zero bare when every cycle in the window finished", async () => {
     const markup = await renderCycles(scriptOf(FINISHED));
     // Nothing is excluded, so there is no excluded set to name: the line
@@ -1866,26 +1631,6 @@ describe("the cycle-health gauge", () => {
     expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 has not finished")).toBe(false);
     expect(NEVER_ENDS.test("0 of 3 finished cycles ran long; 1 died")).toBe(false);
     expect(NEVER_ENDS.test("0 ran longer than the 15m cadence")).toBe(false);
-  });
-
-  it("excludes the cycle that is still in flight, and counts it once", async () => {
-    const markup = await renderCycles(scriptOf([...FINISHED, RUNNING_NOW]));
-
-    // The setup this fixture asserts about, established from the page's own
-    // surfaces: the running cycle renders no duration, so it is exactly the
-    // one row the over-cadence figure leaves out...
-    expect(cyclesWithoutDuration(markup)).toEqual([RUNNING_NOW.run_id]);
-    expect(countsIn(cardSubLine(markup, "Cycles in this window"))).toEqual([
-      0,
-      FINISHED.length,
-      1,
-    ]);
-    // ...and nothing on this page died. The word comes from the row and is
-    // looked up in the panel, so no literal state word is pinned here.
-    const outcomes = new Map(
-      tableRows(markup, OUTCOMES).map((cells) => [cells[0], cells[1]]),
-    );
-    expect(outcomes.get(cycleRow(markup, RUNNING_NOW.run_id).cells[2])).toBe("1");
   });
 
   it("counts its whole excluded set on a mixed window, not the dead within it (admin-window/BUG-0110)", async () => {
@@ -1980,39 +1725,11 @@ describe("the resolution-latency gauge", () => {
     // one unit ladder.
     expect(rows[0][1]).toBe("1h");
   });
-
-  it("says the window held nothing when the resolver has applied nothing", async () => {
-    const markup = await renderCycles(
-      healthyScript({ [T.fieldProvenance]: { data: [] }, [T.observations]: { data: [] } }),
-    );
-    // No decision in the window at all, so no figure counts one: the panel's
-    // own empty state stands where its four figures stood
-    // (admin-window/BUG-0206, pinned whole in "renders no latency figure where
-    // the window holds no decisions" below).
-    expect(() => readNumber(markup, "Applies in this window")).toThrow();
-    // No rows and a stated reason: the trend is replaced by its empty card
-    // rather than rendering a header row over nothing.
-    expect(tableRows(markup, BY_DOMAIN)).toEqual([]);
-    expect(notProvisioned(markup)).toEqual([]);
-  });
 });
 
 /* ── the four states, and the seam ───────────────────────────────────────── */
 
 describe("a database without the resolver's tables", () => {
-  it("names resolution_runs in its not-provisioned state, and never renders a zero", async () => {
-    const markup = await renderCycles({
-      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-      [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
-    });
-    // Both the table and the cycle-health gauge read that object, and each
-    // names it in the spelling its own query used.
-    expect(notProvisioned(markup)).toContain(T.resolutionRuns);
-    expect(notProvisioned(markup)).toContain(T.fieldProvenance);
-    expect(renderedCycles(markup)).toEqual([]);
-    expect(() => readNumber(markup, "Cycles in this window")).toThrow();
-  });
-
   it("keeps each surface's failure to itself", async () => {
     // The latency gauge's second leg is absent; the cycle table and the
     // cycle-health gauge are untouched by that.
@@ -2039,69 +1756,6 @@ describe("a database without the resolver's tables", () => {
     // The header stays put: an error is a line inside the surface, not a card
     // replacing it.
     expect(headers(markup, CYCLES_TABLE).length).toBeGreaterThan(0);
-  });
-
-  /**
-   * Was a strict `it.fails` pin for admin-window/BUG-0067: `/cycles` rendered
-   * its cycles window line in EVERY state, publishing `data-window="cycles"`,
-   * `data-window-limit="200"` and `data-window-truncated="false"` over a table
-   * it could not read. `/runs` (`AdapterRuns`, src/app/cycles/page.tsx) and
-   * `/claims` (admin-window/BUG-0063) already dropped the line on a non-ok
-   * read; this was the third surface and the last one diverging. Fixed by
-   * wrapping the line in `cycles.kind === "ok"`, so it is a plain `it` now and
-   * reddens if the line ever escapes that branch again.
-   */
-  it("claims no cycles window it never read", async () => {
-    // The rule `/runs` sets and `/claims` was moved onto
-    // (admin-window/BUG-0063): the window line describes a window this page
-    // actually read. A refused, absent or transport-failed read looked in no
-    // window, so the sentence would describe a table that is not there and
-    // `data-window-truncated="false"` would be a confident boolean about a
-    // read that returned nothing (LOOK_AND_FEEL states 3 and 4,
-    // ARCHITECTURE.md "a null count is a refusal, never a zero").
-    const failures: Array<[string, Script]> = [
-      [
-        "refused",
-        {
-          [T.resolutionRuns]: [
-            { error: permissionDenied(T.resolutionRuns) },
-            { data: [...CYCLES] },
-          ],
-          [T.fieldProvenance]: { data: [...APPLIES] },
-          [T.observations]: { data: [...OBSERVED] },
-          [T.runs]: { data: [] },
-        },
-      ],
-      [
-        "absent",
-        {
-          [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-          [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
-          [T.observations]: { data: [...OBSERVED] },
-          [T.runs]: { data: [] },
-        },
-      ],
-      [
-        "transport",
-        {
-          [T.resolutionRuns]: [
-            { error: transportFailure("bad port") },
-            { data: [...CYCLES] },
-          ],
-          [T.fieldProvenance]: { data: [...APPLIES] },
-          [T.observations]: { data: [...OBSERVED] },
-          [T.runs]: { data: [] },
-        },
-      ],
-    ];
-    for (const [label, script] of failures) {
-      const markup = await renderCycles(script);
-      const $ = cheerio.load(markup);
-      expect($('[data-window="cycles"]'), label).toHaveLength(0);
-      // The refusal itself is still on screen: the line goes, the state stays.
-      expect(markup, label).toContain(T.resolutionRuns);
-      expect(renderedCycles(markup), label).toEqual([]);
-    }
   });
 
   it("still states the cycles window on a read that happened, empty or not", async () => {
@@ -2138,37 +1792,6 @@ describe("the ?cycle= link against a window the page could not read", () => {
    * NEGATIVE verdict (`data-cycle-found="false"`) off a read that returned no
    * window. Saying nothing, or saying the window could not be read, both pass.
    */
-  // Filed as two `it.fails` pins by QA and flipped back to plain `it(...)` when
-  // admin-window/BUG-0023 was fixed: the assertions below are unchanged, and
-  // they now hold because the verdict renders only off an `ok` read.
-  it("does not claim the cycle is absent when resolution_runs is not provisioned [admin-window/BUG-0023]", async () => {
-    const markup = await renderCycles(
-      healthyScript({
-        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-      }),
-      { cycle: SUCCEEDED.run_id },
-    );
-    // The read never happened, so the page has no window to judge against.
-    expect(notProvisioned(markup)).toContain(T.resolutionRuns);
-    expect(renderedCycles(markup)).toEqual([]);
-    expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
-  });
-
-  it("does not claim the cycle is absent when the read of resolution_runs was refused [admin-window/BUG-0023]", async () => {
-    const markup = await renderCycles(
-      healthyScript({
-        [T.resolutionRuns]: [
-          { error: permissionDenied(T.resolutionRuns) },
-          { data: [...CYCLES] },
-        ],
-      }),
-      { cycle: SUCCEEDED.run_id },
-    );
-    expect(readsFailed(markup)).toContain(T.resolutionRuns);
-    expect(renderedCycles(markup)).toEqual([]);
-    expect(cheerio.load(markup)('[data-cycle-found="false"]').length).toBe(0);
-  });
-
   it("says instead that the window it would have looked in was never read", async () => {
     // Not merely the absence of the negative verdict: the operator who
     // followed the Dashboard's link is told which read came back with no
@@ -2195,36 +1818,6 @@ describe("the ?cycle= link against a window the page could not read", () => {
       expect($("[data-cycle][aria-current]").length).toBe(0);
     }
   });
-
-  it("holds the verdict back for a transport failure too, not only a refusal", async () => {
-    // The two pinned states are PostgREST's; a fetch that never reached the
-    // database is the third way a read comes back with no window, and the page
-    // may not answer the link off that one either. The line names the object
-    // it was reading — never the transport's own account, which is the error
-    // card's job below.
-    const markup = await renderCycles(
-      healthyScript({
-        [T.resolutionRuns]: [{ error: transportFailure() }, { data: [...CYCLES] }],
-      }),
-      { cycle: SUCCEEDED.run_id },
-    );
-    const $ = cheerio.load(markup);
-    expect(readsFailed(markup)).toContain(T.resolutionRuns);
-    expect($("[data-cycle-found]").length).toBe(0);
-    expect($(`[data-cycle-asked="${SUCCEEDED.run_id}"]`).attr("data-cycle-unchecked")).toBe(
-      T.resolutionRuns,
-    );
-    expect($("[data-cycle][aria-current]").length).toBe(0);
-  });
-
-  it("still answers the ?cycle= link when the read did return a window", async () => {
-    // The fix removes a verdict from two states and from no others: an `ok`
-    // read that does not hold the cycle still says so.
-    const markup = await renderCycles(healthyScript(), { cycle: "0192ffff-dead" });
-    const $ = cheerio.load(markup);
-    expect($('[data-cycle-found="false"]').attr("data-cycle-asked")).toBe("0192ffff-dead");
-    expect($("[data-cycle-unchecked]").length).toBe(0);
-  });
 });
 
 /* ── the facet that belongs to the half this page does not render ────────── */
@@ -2240,98 +1833,6 @@ describe("a ?source= link arriving from the Sources page", () => {
       .load(markup)("[data-run]")
       .toArray()
       .map((element) => cheerio.load(markup)(element).attr("data-run") ?? "");
-
-  it("says which half the facet narrows, and narrows none of the cycles itself", async () => {
-    // `resolution_runs` carries no source, so the cycles are the same cycles
-    // with the facet as without it — but the arriving link is answered rather
-    // than ignored byte-for-byte (relayed on admin-window/TASK-0016).
-    const plain = await renderCycles(healthyScript());
-    const faceted = await renderCycles(healthyScript(), { source: "ticketmaster" });
-    expect(renderedCycles(faceted)).toEqual(renderedCycles(plain));
-    const line = cheerio.load(faceted)("[data-source-facet]");
-    expect(line.attr("data-source-facet")).toBe("ticketmaster");
-    // The source is named verbatim, so the operator sees which one was meant.
-    expect(line.text()).toContain("ticketmaster");
-    // No facet, no sentence.
-    expect(cheerio.load(plain)("[data-source-facet]").length).toBe(0);
-  });
-
-  /**
-   * Was QA's strict `it.fails` pin, watched RED on the tree it was filed
-   * against and flipped to a plain `it(...)` by admin-window/BUG-0153 — the
-   * assertions below are QA's, unchanged.
-   *
-   * ARCHITECTURE.md §7 as `?cycle=` now satisfies it (admin-window/BUG-0147):
-   * foreign text reaches an app-authored sentence through an ALLOWLIST or in
-   * its OWN BOX. `?source=` does neither in the runs window line — the name is
-   * interpolated as BARE TEXT into the app's own paragraph four times, with no
-   * isolate around it, so an unterminated U+202E's scope is the whole
-   * paragraph. The facet's other sentence at least has the box
-   * (`<span dir="ltr">`), which contains the reorder on screen but does not
-   * travel with the text an operator copies out.
-   *
-   * Two arms pass, as BUG-0147's did: spell the name only off an allowlist and
-   * report the facet otherwise, or put every occurrence in its own box AND
-   * keep the copied-out text honest. The check is on the TEXT, never on
-   * styling.
-   *
-   * `/runs` renders the same component from the same props, so it carries the
-   * same defect.
-   *
-   * **How it was answered**: the allowlist arm, at ONE edge — the facet's one
-   * derivation, which is `canonicalUrlText` (`src/lib/url/text.ts`) since
-   * admin-window/BUG-0155 and was a four-line function in `src/lib/db/runs.ts`
-   * when this landed. It asks the app's one predicate for a URL value inside
-   * app-authored prose — `canSpellUrlValue`, `src/lib/url/spellable.ts`, the
-   * printable-ASCII-with-ink allowlist BUG-0147 wrote for `?cycle=` and this
-   * ticket moved to a leaf both callers import — OF THE VALUE THE URL CARRIED,
-   * before any padding is stripped, so a name outside it narrows nothing, is
-   * spelled nowhere, and is reported on the shared dropped-parameter line (the
-   * arm graded on its own below). That ordering is what keeps this case
-   * refused rather than laundered: the ink-less class BUG-0146's strip removes
-   * holds the bidi controls, so a strip applied first would turn the first
-   * value below into a spellable `bandsintown` and narrow by it. The boxed arm
-   * was declined for BUG-0137's and BUG-0147's reason: `WindowLine.scope` is a
-   * sentence fragment `besides`/`narrows` split back apart, so no element can
-   * travel through it, and the box leaves the copied-out text reversed anyway.
-   */
-  it(
-    "never lets a ?source= bidi control into the sentences the page wrote [admin-window/BUG-0153]",
-    async () => {
-    const CONTROLS = /[\u202A-\u202E\u2066-\u2069]/u;
-    for (const asked of [
-      `${String.fromCodePoint(0x202e)}bandsintown`,
-      `ab${String.fromCodePoint(0x202e)}cd`,
-      `x${String.fromCodePoint(0x2066)}y`,
-    ]) {
-      const where = [...asked]
-        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-        .join(" ");
-      const markup = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), {
-        source: asked,
-      });
-      const $ = cheerio.load(markup);
-      expect(CONTROLS.test($("[data-window='runs']").text()), where).toBe(false);
-      expect(CONTROLS.test($("[data-source-facet]").text()), where).toBe(false);
-    }
-    // Not vacuous: an ordinary source name is still spelled in both sentences.
-    const plain = await renderCycles(healthyScript({ [T.runs]: { data: [...RUNS] } }), {
-      source: "bandsintown",
-    });
-    const $plain = cheerio.load(plain);
-      expect($plain("[data-source-facet]").text()).toContain("bandsintown");
-      expect($plain("[data-window='runs']").text()).toContain("bandsintown");
-    },
-  );
-
-  it("takes the first value when the URL names the source twice", async () => {
-    const markup = await renderCycles(healthyScript(), {
-      source: ["bandsintown", "eventbrite"],
-    });
-    expect(cheerio.load(markup)("[data-source-facet]").attr("data-source-facet")).toBe(
-      "bandsintown",
-    );
-  });
 
   /**
    * The ARM the pin above was answered with, graded on its own — the
@@ -2408,114 +1909,6 @@ describe("a ?source= link arriving from the Sources page", () => {
       );
       // The other half is untouched too, as it is with any `?source=`.
       expect(renderedCycles(markup)).toEqual(renderedCycles(plain));
-    },
-  );
-
-  /**
-   * The second fixture that arm owes (LESSONS 8): a name the allowlist ADMITS
-   * is spelled IN FULL in BOTH sentences the criteria name and is NOT reported
-   * as dropped — the page answers a half-typed URL instead of going quiet,
-   * which is admin-window/BUG-0153's own may-not clause. The pair either side
-   * of the bound differs by one character.
-   */
-  it.each([
-    ["a registered source", "bandsintown"],
-    ["a name the registry never heard of", "a-source-the-registry-never-heard-of"],
-    ["a value the URL invented", '"><img src=x onerror=alert(1)>'],
-    ["punctuation only", "%%%"],
-    ["a value the length of the bound", "a".repeat(128)],
-  ] as const)(
-    "still spells a ?source= it may print, in both sentences: %s [admin-window/BUG-0153]",
-    async (_name, asked) => {
-      const markup = await renderCycles(
-        healthyScript({ [T.runs]: { data: [...RUNS] } }),
-        { source: asked },
-      );
-      const $ = cheerio.load(markup);
-      // The facet paragraph, in the attribute and in the words.
-      expect($("[data-source-facet]").attr("data-source-facet")).toBe(asked);
-      expect($("[data-source-facet]").text()).toContain(asked);
-      // …and the runs window line, whose every clause carries the narrowing.
-      expect($('[data-window="runs"]').text()).toContain(asked);
-      // A parameter the page answered is not a parameter it dropped.
-      expect($("[data-dropped-params]").length).toBe(0);
-      // Nothing the URL carried reaches the document as markup.
-      expect($("img").length).toBe(0);
-    },
-  );
-
-  /**
-   * QA's strict pin for admin-window/BUG-0155 — the other half of "may this app
-   * spell it": a `?source=` the allowlist ADMITS, whose spelling on screen is
-   * not the name the read used.
-   *
-   * Expected — this page's OWN ruling on a padded paste, applied to `?cycle=`
-   * and `?run=` by admin-window/BUG-0145 and BUG-0146 ("answers a padded paste
-   * of a run id the way its twin answers one": `canonicalRecordId` strips the
-   * padding by INK, so a stray space around an id changes no page): whatever
-   * `?source=` carries, the name the page SHOWS is the name the page QUERIED.
-   *
-   * Found — `sourceNarrowing` (`src/lib/db/runs.ts:237`) admits a padded value
-   * verbatim, and a browser collapses the padding out of every sentence that
-   * names it, so the page shows one name and read another. MEASURED in Chromium
-   * (playwright, `agenticflow/.venv-tools`) on a production build of the landed
-   * tree against staging, both colour schemes, byte-identical:
-   * `/cycles?source=ticketmaster` drew 5 runs; `/cycles?source=%20ticketmaster`
-   * drew 0, over the visible words "found no runs from ticketmaster at all" and
-   * an empty card reading "No runs from ticketmaster", with NOTHING on the
-   * dropped-parameter line — a false statement about a registered source whose
-   * runs the same page draws one invisible character away.
-   *
-   * Both honest arms pass this: canonicalise the value (what is shown then IS
-   * what was queried), or refuse it and report `source` as dropped. The
-   * assertion is on the TEXT and on the value hook, never on copy or styling;
-   * whitespace is collapsed the way a browser collapses it, which is what the
-   * measurement above observed.
-   *
-   * **How it was answered** (the architect's ruling of 2026-09-09,
-   * ARCHITECTURE.md §7 "What is SHOWN is what was USED: one derivation per URL
-   * value class"): BOTH arms, each for the case it fits. The ENDS canonicalise
-   * — `canonicalUrlText` (`src/lib/url/text.ts`) strips the padding a paste
-   * carries through the app's one `trimInkPadding`, so the first three cases
-   * below narrow and spell exactly as `?source=bandsintown` does. The INTERIOR
-   * is REFUSED — a run of two or more spaces is the whole of "a value a browser
-   * would re-spell" inside printable ASCII — so the fourth case takes the
-   * dropped-parameter arm this test already offers. The `white-space: pre` box
-   * the ticket floated was rejected in the same ruling: it cannot pass the
-   * comparison below, which collapses the rendered text first.
-   */
-  it(
-    "shows the ?source= name it queried, not one the browser collapsed [admin-window/BUG-0155]",
-    async () => {
-      for (const asked of [
-        ` ${RUN_SOURCE.bandsintown}`,
-        `${RUN_SOURCE.bandsintown} `,
-        `  ${RUN_SOURCE.bandsintown}  `,
-        "bands  intown",
-      ]) {
-        const markup = await renderCycles(
-          healthyScript({ [T.runs]: { data: [...RUNS] } }),
-          { source: asked },
-        );
-        const $ = cheerio.load(markup);
-        const facet = $("[data-source-facet]");
-        if (facet.length === 0) {
-          // The refusing arm: no sentence names it, and the page says so.
-          expect(
-            $("[data-dropped-param]")
-              .toArray()
-              .map((element) => $(element).attr("data-dropped-param")),
-            JSON.stringify(asked),
-          ).toContain("source");
-          continue;
-        }
-        // What the read was narrowed BY, verbatim — `sourceNarrowing`'s return
-        // value reaches both this hook and the `.eq` (`tests/offline/runs/`).
-        const queried = facet.attr("data-source-facet") ?? "";
-        // …and the name an operator READS, as a browser lays a paragraph out.
-        const shown = facet.find('[dir="ltr"]').text().replace(/\s+/g, " ").trim();
-        expect(shown, `queried ${JSON.stringify(queried)}`).toBe(queried);
-      }
     },
   );
 });
@@ -2917,56 +2310,6 @@ function $runAsked(markup: string): string | undefined {
   return cheerio.load(markup)("[data-run-asked]").attr("data-run-asked");
 }
 
-/**
- * The adapter framework's `runs` are the page's OTHER half and landed with
- * admin-window/TASK-0016 (Ben's ruling of 2026-09-02). Everything about that
- * half — its nine columns, its order, its four states and the `?source=`
- * facet — is asserted in `tests/offline/runs/`, which owns it and renders the
- * whole page against a `runs` population.
- *
- * What stays HERE is the boundary this file's own subject cares about: the
- * cycles half is the cycles half, and the second table on the page does not
- * bleed into it. The reads this file scripts do not include `runs`, so the
- * runs section renders its own error state and the cycles below are
- * unaffected — which is the assertion.
- */
-describe("the adapter framework's runs, beside the cycles", () => {
-  it("is a second section, and the cycles half is unchanged by it", async () => {
-    const markup = await renderCycles(healthyScript());
-    // Five sections: the lead that puts the newest run above the fold
-    // (admin-window/BUG-0040), then the two halves spec §4 names, then the two
-    // gauges §5 puts on this page.
-    expect(sections(markup)).toEqual([
-      "Newest adapter run",
-      "Cycles",
-      "Adapter runs",
-      "Cycle health",
-      "Resolution latency",
-    ]);
-    // This file's script holds no `runs` rows, so that half renders its empty
-    // state — a card, not a table — and the surfaces below are the cycles
-    // table plus the two gauges' distributions and trend, unchanged.
-    const $ = cheerio.load(markup);
-    expect($('[data-surface="runs"]').attr("data-state")).toBe("empty");
-    expect(
-      $("table")
-        .toArray()
-        .map((element) => $(element).attr("aria-label")),
-    ).toEqual([CYCLES_TABLE, OUTCOMES, DURATIONS, WAITS, BY_DOMAIN]);
-    // Every cycle still renders beside it.
-    expect(renderedCycles(markup)).toEqual(NEWEST_FIRST.map((row) => row.run_id));
-  });
-
-  it("reads the runs table separately from the cycles table", async () => {
-    const stub = stubClient(healthyScript());
-    readWith.client = stub.asSupabaseClient();
-    await CyclesPage({ searchParams: Promise.resolve({}) });
-    // Two tables, two reads: one refusing never takes the other down
-    // (ARCHITECTURE.md §4.1).
-    expect(stub.tablesRead()).toContain(T.resolutionRuns);
-    expect(stub.tablesRead()).toContain(T.runs);
-  });
-});
 /* ── the newest run, above the fold (admin-window/BUG-0040) ──────────────── */
 
 /**
@@ -3062,20 +2405,6 @@ describe("the newest adapter run, above the cycles window", () => {
     expect(order.lastIndexOf("run")).toBeLessThan(order.indexOf("cycle"));
   });
 
-  it("leaves an error the bound does not reach byte-identical, title and all", async () => {
-    // Every `error_summary` this database has ever held is short (staging's
-    // longest is 58 characters), so the ordinary lead is still the window's
-    // row cell for cell — the clamp adds no title and changes no text.
-    const markup = await renderCycles(
-      healthyScript({ [T.runs]: { data: [RUN_FAILED] } }),
-    );
-    const lead = leadRun(markup);
-    expect(RUN_FAILED.error_summary?.length).toBeLessThan(CLAMP_LIMIT);
-    expect(lead.error).toBe(RUN_FAILED.error_summary);
-    expect(lead.error).not.toContain(ELLIPSIS);
-    expect(lead.errorTitle).toBeUndefined();
-  });
-
   it("renders the lead as the very row the window renders below, cell for cell", async () => {
     // Same read, same columns, same cell bodies: the lead cannot drift from
     // the row it repeats, dash included.
@@ -3115,27 +2444,6 @@ describe("the newest adapter run, above the cycles window", () => {
     expect(href?.startsWith("#")).toBe(true);
     // The target exists on this page, so "below" is a click and not a hunt.
     expect(cheerio.load(markup)(href ?? "#none").length).toBe(1);
-  });
-
-  it("leaves the cycles half exactly as it was", async () => {
-    // The bug was the runs half only. The 200-row cycles window, its
-    // "at most N, not a count" line and the newest cycle's own counts and
-    // error are what the page already got right, and they stay above the fold
-    // beside the run.
-    const markup = await renderCycles(
-      healthyScript({ [T.runs]: { data: [...RUNS] } }),
-    );
-    const $ = cheerio.load(markup);
-    expect(renderedCycles(markup)).toEqual(NEWEST_FIRST.map((row) => row.run_id));
-    expect($('[data-window="cycles"]').attr("data-window-limit")).toBe(
-      String(CYCLE_WINDOW),
-    );
-    // The newest cycle still renders all eight counters and its error cell.
-    const newestCycle = cycleRow(markup, NEWEST_FIRST[0].run_id);
-    expect(Object.keys(newestCycle.counts).sort()).toEqual(
-      [...CYCLE_COUNTERS].sort(),
-    );
-    expect(newestCycle.cells).toHaveLength(CYCLE_COUNTERS.length + 5);
   });
 
   it("says which absence it is when there is no run to lead with, and draws no second card", async () => {

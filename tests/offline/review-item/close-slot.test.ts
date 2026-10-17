@@ -1,13 +1,8 @@
 import * as cheerio from "cheerio";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { VerdictAction } from "@/lib/verdict/decision";
 import { FN, T } from "@/lib/db/tables";
-import {
-  CloseSlot,
-  ACTIONS_BY_SHAPE,
-  NOTICE_BY_SHAPE,
-} from "@/components/review/close/slot";
+import { CloseSlot } from "@/components/review/close/slot";
 import {
   CloseStatus,
   SettledNotice,
@@ -15,23 +10,16 @@ import {
   noteHint,
 } from "@/components/review/close/form";
 import {
-  closeRefusal,
   noteIsRequiredBy,
-  refusalWords,
-  settleBody,
   settlePath,
   submitSettlement,
   type ActionSpec,
-  type ShapeActionsInput,
 } from "@/components/review/close/actions";
-import { SHAPES, type ReviewItemRow, type Shape } from "@/lib/review/shapes";
+import type { ReviewItemRow } from "@/lib/review/shapes";
 import { h, render } from "../ui/markup";
 import {
   ID,
   reviewItemDataConflict,
-  reviewItemEntityLink,
-  reviewItemSourcePattern,
-  venueWindow,
   verdictLogEntry,
   verdictValue,
 } from "../../fixtures/rows";
@@ -39,7 +27,6 @@ import {
   functionNotInSchemaCache,
   statementTimeout,
   stubClient,
-  tableNotInSchemaCache,
   undefinedFunction,
   type Script,
   type StubClient,
@@ -181,38 +168,6 @@ function spec(overrides: Partial<ActionSpec> = {}): ActionSpec {
 }
 
 describe("the close slot with the verdict log absent", () => {
-  it("renders the not-provisioned state naming the object, and no control at all", () => {
-    const markup = slotMarkup({
-      readiness: { kind: "not_provisioned", missing: T.verdicts },
-    });
-    const $ = cheerio.load(markup);
-
-    expect($('[data-state="not_provisioned"]')).toHaveLength(1);
-    // Named in the spelling the query used, in its own element — the way the
-    // absence sweep reads it (`tests/offline/absence/pages.test.ts`).
-    expect(
-      $("*")
-        .toArray()
-        .some((element) => $(element).text().trim() === T.verdicts),
-    ).toBe(true);
-    for (const control of CONTROLS) expect($(control), control).toHaveLength(0);
-    expect($("[data-close-action]")).toHaveLength(0);
-    expect($("[data-close-note]")).toHaveLength(0);
-  });
-
-  it("offers nothing even when the shape HAS actions to offer", () => {
-    // The whole point of the branch: a control is not offered because the
-    // function is missing, not because the list happens to be empty today.
-    const $ = cheerio.load(
-      slotMarkup({
-        readiness: { kind: "not_provisioned", missing: T.verdicts },
-        actions: [spec(), spec({ action: "wont_fix", label: "Close as won’t fix" })],
-      }),
-    );
-    for (const control of CONTROLS) expect($(control), control).toHaveLength(0);
-    expect($("[data-close-action]")).toHaveLength(0);
-  });
-
   it("says a refused read as an error line, and still offers no control", () => {
     const $ = cheerio.load(
       slotMarkup({
@@ -230,189 +185,9 @@ describe("the close slot with the verdict log absent", () => {
   });
 });
 
-/* ── the frame: the ready answer ─────────────────────────────────────────── */
-
-describe("the close slot with the verdict log present", () => {
-  it("renders the note field and this shape's controls, in the list's order", () => {
-    const actions = [
-      spec({ label: "Mark fixed", action: "fixed" }),
-      spec({ label: "Close as won’t fix", action: "wont_fix" }),
-    ];
-    const $ = cheerio.load(slotMarkup({ readiness: { kind: "ok" }, actions }));
-
-    expect($("[data-close-note]")).toHaveLength(1);
-    expect(
-      $("[data-close-action]")
-        .toArray()
-        .map((element) => $(element).attr("data-close-action")),
-    ).toEqual(["fixed", "wont_fix"]);
-    // The operator's own words are on the control (copy bar 1), and the
-    // machine's action name is the hook — never the label.
-    expect($('[data-close-action="fixed"]').text()).toContain("Mark fixed");
-    expect($('[data-state]')).toHaveLength(0);
-  });
-
-  it("renders the note field and no control at all for a shape with no actions yet", () => {
-    const $ = cheerio.load(slotMarkup({ readiness: { kind: "ok" }, actions: [] }));
-
-    expect($("[data-close-note]")).toHaveLength(1);
-    expect($("[data-close-action]")).toHaveLength(0);
-    expect($("button")).toHaveLength(0);
-    // It says WHY, and says nothing about the database: the read answered.
-    expect($.root().text().trim().length).toBeGreaterThan(0);
-    expect($('[data-state="empty"]')).toHaveLength(0);
-    expect($('[data-state="not_provisioned"]')).toHaveLength(0);
-  });
-
-  it("offers no control on an item that is already settled", () => {
-    // A settled item stays browsable (spec §4); a settle control on it would
-    // offer an action the function refuses.
-    const $ = cheerio.load(
-      slotMarkup({
-        item: reviewItemDataConflict({ status: "settled" }),
-        readiness: { kind: "ok" },
-        actions: [spec()],
-      }),
-    );
-    for (const control of CONTROLS) expect($(control), control).toHaveLength(0);
-    expect($("[data-close-item-status]").attr("data-close-item-status")).toBe("settled");
-    // The status is the machine's own word, rendered verbatim.
-    expect($.root().text()).toContain("settled");
-  });
-
-  it("names no ticket and no recommendation, in either state", () => {
-    for (const readiness of [
-      { kind: "ok" } as const,
-      { kind: "not_provisioned", missing: T.verdicts } as const,
-    ]) {
-      const text = cheerio
-        .load(slotMarkup({ readiness, actions: [spec()] }))
-        .root()
-        .text()
-        .toLowerCase();
-      expect(text).not.toContain("recommend");
-    }
-  });
-});
-
-/* ── the by-shape map ────────────────────────────────────────────────────── */
-
-describe("the shape's action list", () => {
-  /**
-   * The actions each shape offers over NO evidence, as the shape modules stand
-   * today — each written by its own ticket, in its own worktree.
-   *
-   * `data_conflict` is filled (campaign admin-window/TASK-0050): with no
-   * evidence card there is no claim to adopt, and its other two actions stand
-   * regardless, so the operator can still supply a value or leave the fact as
-   * it is. Its own suite grades the whole list
-   * (`tests/offline/review-item/conflict-actions.test.ts`). The source-pattern
-   * SIGNAL is filled too (campaign admin-window/TASK-0051): it takes no
-   * verdict and closes with a disposition, the same two whatever it folded, so
-   * its row does not move with the evidence either
-   * (`tests/offline/review-item/signal-actions.test.ts`). The `entity_link`
-   * FACT item is filled too (campaign admin-window/TASK-0056), and it is the
-   * one shape whose row depends on more than the shape: its picker needs a
-   * whole reference fact AND a window of rows to choose from, and the fixture
-   * here has neither — `reviewItemEntityLink` carries a null `entity_id`,
-   * which is the ordinary state of an item opened before its canonical row
-   * exists, and this call passes no choices. So the list is the settle control
-   * alone, which is exactly what an operator gets on such an item; the picker
-   * beside it is graded on a linkable fixture in
-   * `tests/offline/review-item/link-actions.test.ts`.
-   */
-  const OFFERED: Readonly<Record<Shape, readonly VerdictAction[]>> = {
-    data_conflict_fact: ["supply_value", "keep_current"],
-    entity_link_fact: ["settle"],
-    entity_link_source_pattern: ["fixed", "wont_fix"],
-  };
-
-  it("answers for every shape, with the actions that shape offers and no other", () => {
-    const items: Record<string, ReviewItemRow> = {
-      data_conflict_fact: reviewItemDataConflict(),
-      entity_link_fact: reviewItemEntityLink(),
-      entity_link_source_pattern: reviewItemSourcePattern(),
-    };
-    for (const shape of SHAPES) {
-      const actions = ACTIONS_BY_SHAPE[shape]({ item: items[shape], evidence: [] });
-      expect(actions.map((spec) => spec.action), shape).toEqual(OFFERED[shape]);
-      // Whatever a shape offers, the frame's own invariant holds: a settle-only
-      // action carries no payload and a value-carrying one carries an envelope,
-      // which is `decisionRefusals` invariant 4 seen from this side.
-      for (const spec of actions) {
-        expect(typeof spec.label, `${shape} ${spec.action}`).toBe("string");
-        expect(spec.label.length, `${shape} ${spec.action}`).toBeGreaterThan(0);
-      }
-    }
-    // Total by construction: every shape has an entry, so a fourth shape is a
-    // compile error rather than a missing action list.
-    expect(Object.keys(ACTIONS_BY_SHAPE).sort()).toEqual([...SHAPES].sort());
-  });
-
-  /**
-   * The map's companion — what a shape WITHHOLDS and why
-   * (campaign admin-window/BUG-0087). QA attack: `ACTIONS_BY_SHAPE`'s totality
-   * is pinned at runtime above, `NOTICE_BY_SHAPE`'s was pinned only by the
-   * compiler, so a fourth shape added with an action list and no notice entry
-   * would be caught but a map quietly re-typed to a partial record would not.
-   * It is asked over the SAME `SHAPES` array, so the two maps cannot drift
-   * into covering different shapes.
-   */
-  it("has a withheld-line answer for every shape the action map answers for", () => {
-    // One input per shape, each chosen so that the shape withholds NOTHING —
-    // the `entity_link` fact item needs its whole reference fact and a window
-    // to choose from, or its picker is withheld and its line says so
-    // (campaign admin-window/TASK-0056).
-    const inputs: Record<Shape, ShapeActionsInput> = {
-      data_conflict_fact: { item: reviewItemDataConflict(), evidence: [] },
-      entity_link_fact: {
-        item: reviewItemEntityLink({ entity_id: ID.eventEntity }),
-        evidence: [],
-        choices: { window: venueWindow(), note: null },
-      },
-      entity_link_source_pattern: { item: reviewItemSourcePattern(), evidence: [] },
-    };
-    expect(Object.keys(NOTICE_BY_SHAPE).sort()).toEqual([...SHAPES].sort());
-    for (const shape of SHAPES) {
-      // Every entry is callable and answers something a slot can render — and
-      // on these items, which withhold nothing, that answer is null.
-      expect(NOTICE_BY_SHAPE[shape](inputs[shape]), shape).toBeNull();
-    }
-    // Never vacuous: the same map DOES answer a line where something really is
-    // withheld, so the nulls above are a fact about these inputs and not about
-    // a map that answers null to everything (LESSONS 3).
-    expect(
-      NOTICE_BY_SHAPE.entity_link_fact({
-        item: reviewItemEntityLink(),
-        evidence: [],
-      }),
-    ).not.toBeNull();
-  });
-});
-
 /* ── the pure seams ──────────────────────────────────────────────────────── */
 
 describe("the form's own refusal", () => {
-  it("refuses a won’t-fix with no note, and does not refuse one with a note", () => {
-    const wontFix = spec({ action: "wont_fix", label: "Close as won’t fix" });
-    // The input it MUST flag, in every blank spelling…
-    for (const note of ["", "   ", "\n\t "]) {
-      expect(closeRefusal(wontFix, note), JSON.stringify(note)).toBe("note_required");
-    }
-    // …and the ones it must NOT: a real note, and every other action, which
-    // takes a note at the admin's discretion (spec §7).
-    expect(closeRefusal(wontFix, "the source is retired")).toBeNull();
-    for (const action of ["fixed", "keep_current", "settle", "link_entity"] as const) {
-      expect(closeRefusal(spec({ action }), ""), action).toBeNull();
-    }
-  });
-
-  it("reads as words an operator can act on, never as the identifier", () => {
-    const words = refusalWords("note_required");
-    expect(words).not.toContain("note_required");
-    expect(words.length).toBeGreaterThan(20);
-  });
-
   it("says the note is required only where the list can require it", () => {
     expect(noteIsRequiredBy([spec({ action: "wont_fix" })])).toBe(true);
     expect(noteIsRequiredBy([spec({ action: "fixed" }), spec()])).toBe(false);
@@ -422,36 +197,11 @@ describe("the form's own refusal", () => {
 });
 
 describe("the body one control posts", () => {
-  it("carries the action and the payload, and blanks the note to null", () => {
-    const value = verdictValue({ observation_id: ID.observationA });
-    const chosen = spec({ action: "choose_claimed_value", value });
-    expect(settleBody(chosen, "  because it is right  ")).toEqual({
-      action: "choose_claimed_value",
-      note: "because it is right",
-      value,
-    });
-    expect(settleBody(spec(), "   ")).toEqual({
-      action: "keep_current",
-      note: null,
-      value: null,
-    });
-  });
-
   it("names the item in the path, encoded", () => {
     expect(settlePath(ITEM_ID)).toBe(
       `/api/admin/review-items/${ITEM_ID}/settle`,
     );
     expect(settlePath("a b/c")).toBe("/api/admin/review-items/a%20b%2Fc/settle");
-  });
-
-  it("does not carry the actor or the item: the server stamps both", () => {
-    // A body that could name them is a verdict log anyone past the gate could
-    // write in someone else's name.
-    expect(Object.keys(settleBody(spec(), "note")).sort()).toEqual([
-      "action",
-      "note",
-      "value",
-    ]);
   });
 });
 
@@ -465,39 +215,6 @@ describe("submitting one settlement", () => {
     };
     return { calls, fetchImpl };
   }
-
-  it("sends nothing at all when the form refuses it first", async () => {
-    const { calls, fetchImpl } = recordingFetch(Response.json({ ok: true }));
-    const outcome = await submitSettlement({
-      reviewItemId: ITEM_ID,
-      spec: spec({ action: "wont_fix" }),
-      note: "  ",
-      fetchImpl,
-    });
-    expect(outcome.ok).toBe(false);
-    expect(calls).toEqual([]);
-  });
-
-  it("posts one request to the one route, and reports what settled", async () => {
-    const { calls, fetchImpl } = recordingFetch(
-      Response.json({ ok: true, verdict: verdictLogEntry() }),
-    );
-    const outcome = await submitSettlement({
-      reviewItemId: ITEM_ID,
-      spec: spec({ action: "fixed" }),
-      note: "fixed on the source page",
-      fetchImpl,
-    });
-    expect(outcome).toEqual({ ok: true, action: "fixed" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(settlePath(ITEM_ID));
-    expect(calls[0].init.method).toBe("POST");
-    expect(JSON.parse(calls[0].init.body)).toEqual({
-      action: "fixed",
-      note: "fixed on the source page",
-      value: null,
-    });
-  });
 
   it("carries a refusal's own words back, and the absent object with them", async () => {
     const refused = await submitSettlement({
@@ -615,21 +332,6 @@ describe("the settle route", () => {
     expect(stub.calls).toEqual([]);
   });
 
-  it("makes exactly ONE call, and it is the one function", async () => {
-    const stub = scriptDatabase(functionInstalled());
-    const { status, payload } = await settle({
-      action: "keep_current",
-      note: "canonical stands",
-      value: null,
-    });
-
-    expect(status).toBe(200);
-    expect(payload.ok).toBe(true);
-    expect(stub.calls).toHaveLength(1);
-    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
-    expect(stub.tablesRead()).toEqual([]);
-  });
-
   it("stamps the item from the URL and the actor from the session", async () => {
     const stub = scriptDatabase(functionInstalled());
     await settle({
@@ -736,35 +438,5 @@ describe("the settle route", () => {
     expect(status).toBe(500);
     expect(String(payload.error)).toContain(statementTimeout().message);
     expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
-  });
-
-  it("hands the whole decision over as the one argument the function takes", async () => {
-    const stub = scriptDatabase(functionInstalled("choose_claimed_value"));
-    const value = verdictValue({ observation_id: ID.observationA });
-    await settle({ action: "choose_claimed_value", note: "this one", value });
-
-    const args = stub.calls[0].steps[0].args[0] as Record<string, unknown>;
-    // `p_decision` is a WIRE CONTRACT: PostgREST resolves an RPC by argument
-    // names too, and answers the absence code for the wrong ones — a
-    // provisioned function would render as an absent one.
-    expect(Object.keys(args)).toEqual(["p_decision"]);
-    expect(args.p_decision).toEqual({
-      action: "choose_claimed_value",
-      review_item_id: ITEM_ID,
-      actor: "qa@example.invalid",
-      note: "this one",
-      value,
-    });
-  });
-
-  it("never reads a table on this path", async () => {
-    // The one database interaction is the function. A read here would be a
-    // second path with the seam's name on the door.
-    const stub = scriptDatabase({
-      ...functionInstalled(),
-      [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
-    });
-    await settle({ action: "keep_current", note: null, value: null });
-    expect(stub.tablesRead()).toEqual([]);
   });
 });

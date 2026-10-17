@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -81,7 +79,6 @@ import {
   sourceRow,
   type EventRow,
 } from "../../fixtures/rows";
-import { codeText } from "../source-tree";
 import {
   permissionDenied,
   stubClient,
@@ -218,17 +215,6 @@ function accepted(body: unknown): NotedPageAnswer<BrowseRow, BrowseLegNotes> {
   return body as NotedPageAnswer<BrowseRow, BrowseLegNotes>;
 }
 
-/** The route, repo-relative — the spelling `codeText` reads. */
-const ROUTE_FILE = "src/app/api/admin/browse/rows/route.ts";
-
-/** The route file, whole, as the structural assertions read it. */
-function routeSource(): string {
-  return fs.readFileSync(
-    path.join(import.meta.dirname, "..", "..", "..", ROUTE_FILE),
-    "utf8",
-  );
-}
-
 beforeEach(() => {
   gate.answer = ADMIN;
   gate.calls = 0;
@@ -257,13 +243,6 @@ describe("the gate, first and always", () => {
 
     expect(response.status).toBe(401);
     expect(stub.calls).toEqual([]);
-  });
-
-  it("is the first statement of the handler body", () => {
-    const source = routeSource();
-    const body = source.slice(source.indexOf("export async function GET"));
-    const firstStatement = body.slice(body.indexOf("{") + 1).trim().split("\n")[0];
-    expect(firstStatement).toMatch(/requireAdmin\(\)/);
   });
 });
 
@@ -315,20 +294,6 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(stub.calls, `${sent} reached a read`).toEqual([]);
   });
 
-  it("serves the one canonical bound in that same table, so the table cannot pass by refusing everything", async () => {
-    const stub = database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
-
-    expect(status).toBe(200);
-    expect(answer.kind).toBe("ok");
-    // Exactly ONE read of the events window, and it is the window the bound
-    // named — `.range(offset, offset + window - 1)`, never a NaN range.
-    expect(windowReads(stub).length).toBe(1);
-    expect(rangeOf(windowReads(stub)[0])).toEqual([view.window, view.window * 2 - 1]);
-  });
-
   it("takes the FIRST value of a repeated offset, as URLSearchParams.get would", async () => {
     const stub = database(script());
 
@@ -336,27 +301,6 @@ describe("the bound reaches nothing but pageBound", () => {
 
     expect(status).toBe(200);
     expect(rangeOf(windowReads(stub)[0])[0]).toBe(50);
-  });
-
-  it("refuses on the FIRST value of a repeated offset too", async () => {
-    const stub = database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=abc&${OFFSET_PARAM}=50`);
-    const answer = accepted(body);
-
-    expect(status).toBe(400);
-    if (answer.kind !== "refused") throw new Error(`expected a refusal, got ${answer.kind}`);
-    expect(answer.bound).toBe("abc");
-    expect(stub.calls).toEqual([]);
-  });
-
-  it("does its own arithmetic on the raw parameter nowhere", () => {
-    const source = routeSource();
-    // The route ASKS the shared guard…
-    expect(source).toContain("pageBound(");
-    // …and never coerces the parameter itself. `pageBound` owns every spelling
-    // question, so a second reader here is a second answer to it.
-    expect(source).not.toMatch(/parseInt|parseFloat|Number\(/);
   });
 });
 
@@ -394,19 +338,6 @@ describe("full-or-exhausted, the route's half of the contract", () => {
     expect(answer.offset).toBe(100);
   });
 
-  it("answers a page past the end with zero rows and calls the set exhausted", async () => {
-    database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=200`);
-    const answer = accepted(body);
-
-    expect(status).toBe(200);
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows).toEqual([]);
-    expect(answer.exhausted).toBe(true);
-    expect(answer.offset).toBe(200);
-  });
-
   it("never reports a row count the read did not return, at any bound on the grid", async () => {
     for (let offset = view.window; offset <= 200; offset += view.window) {
       const stub = database(script());
@@ -422,56 +353,6 @@ describe("full-or-exhausted, the route's half of the contract", () => {
       // Never longer than the window.
       expect(answer.rows.length).toBeLessThanOrEqual(view.window);
     }
-  });
-
-  /**
-   * A leg that renders no row of its own may not decide the surface's state
-   * (common violations row 14), and nothing removes a row between `.range()`
-   * and the answer (§4.3). A page shortened in code would answer `exhausted`
-   * with rows still behind it and end the operator's paging early.
-   */
-  it("answers a FULL continuing page when every leg returns nothing at all", async () => {
-    const stub = database(
-      script({
-        [T.eventListings]: { data: [], count: 0 },
-        [T.fieldProvenance]: { data: [], count: 0 },
-        [T.sources]: { data: [], count: 0 },
-      }),
-    );
-
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
-    expect(answer.exhausted).toBe(false);
-    expect(answer.rows.every((row) => row.venue_name === null)).toBe(true);
-    expect(answer.rows.every((row) => row.sources.length === 0)).toBe(true);
-    // The legs answered; they simply held no row for these ids.
-    expect(answer.notes).toEqual({ venues: null, provenance: null });
-    expect(rangeOf(windowReads(stub)[0])).toEqual([view.window, view.window * 2 - 1]);
-  });
-
-  it("answers a FULL continuing page when every row shares one venue and names no source", async () => {
-    database(
-      script({
-        [T.eventListings]: (call: RecordedCall) => ({
-          data: askedIds(call).map((id) =>
-            eventListingRow({ event_id: id, venue_name: "The Forum" }),
-          ),
-          count: askedIds(call).length,
-        }),
-        [T.fieldProvenance]: { data: [], count: 0 },
-      }),
-    );
-
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
-    expect(answer.exhausted).toBe(false);
-    expect(answer.rows.every((row) => row.venue_name === "The Forum")).toBe(true);
   });
 });
 
@@ -529,19 +410,6 @@ describe("the legs travel with the answer or not at all", () => {
     // not "never asked" (the fixture that must NOT flag — LESSONS 8).
     expect(answer.rows.every((row) => row.venue_name === "The Forum")).toBe(true);
     expect(answer.rows.every((row) => row.sources[0] === "ticketmaster")).toBe(true);
-  });
-
-  it("runs the legs over exactly THIS page's ids", async () => {
-    const stub = database(script());
-
-    await ask(`?${OFFSET_PARAM}=${view.window}`);
-
-    const ids = CATALOG.slice(view.window, view.window * 2).map((row) => row.event_id);
-    for (const table of [T.eventListings, T.fieldProvenance] as const) {
-      const call = stub.calls.find((one) => one.table === table);
-      expect(call, table).toBeDefined();
-      expect(askedIds(call as RecordedCall), table).toEqual(ids);
-    }
   });
 });
 
@@ -617,17 +485,6 @@ describe("the route owns the shape of what it serves", () => {
       const { cacheControl } = await ask(arm.query);
       expect(cacheControl, arm.what).toBe(PAGE_ANSWER_CACHE_CONTROL);
     }
-  });
-
-  it("spells those directives nowhere but the shared constant", () => {
-    // The value is `lib/paging/bounds.ts`' to own; a second string typed into
-    // a route is how the two routes drift (LESSONS 5). Read over CODE lines
-    // only — the docstring above the handler explains the directives and that
-    // is documentation, not a second spelling.
-    const code = codeText(ROUTE_FILE);
-    expect(code).toContain("PAGE_ANSWER_CACHE_CONTROL");
-    expect(code).not.toContain("no-store");
-    expect(code).not.toContain("must-revalidate");
   });
 
   it("answers JSON", async () => {

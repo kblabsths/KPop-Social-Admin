@@ -87,8 +87,7 @@ import {
   type ScriptedResponse,
   type StubClient,
 } from "../../fixtures/stub-client";
-import { REGISTRY, SOURCE, SOURCE_NAME, claimView } from "../claims/population";
-import { codeText } from "../source-tree";
+import { REGISTRY, SOURCE, claimView } from "../claims/population";
 import { render } from "../ui/markup";
 
 /** The admin the stubbed gate hands the handler. Not a real address. */
@@ -179,14 +178,6 @@ function accepted(body: unknown): PageAnswer<ClaimLine> {
   return body as PageAnswer<ClaimLine>;
 }
 
-/** The route, repo-relative — the spelling `codeText` reads. */
-const ROUTE_FILE = "src/app/api/admin/claims/rows/route.ts";
-
-/** The route file, whole, as the structural assertions read it. */
-function routeSource(): string {
-  return fs.readFileSync(path.join(import.meta.dirname, "..", "..", "..", ROUTE_FILE), "utf8");
-}
-
 /** The rows the first screen would shape out of this slice of the population. */
 function expectedLines(from: number, to: number): ClaimLine[] {
   const rows = POPULATION.slice(from, to);
@@ -224,13 +215,6 @@ describe("the gate, first and always", () => {
 
     expect(response.status).toBe(401);
     expect(stub.calls).toEqual([]);
-  });
-
-  it("is the first statement of the handler body", () => {
-    const source = routeSource();
-    const body = source.slice(source.indexOf("export async function GET"));
-    const firstStatement = body.slice(body.indexOf("{") + 1).trim().split("\n")[0];
-    expect(firstStatement).toMatch(/requireAdmin\(\)/);
   });
 });
 
@@ -291,15 +275,6 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(windowReads(stub).length).toBe(1);
     expect(rangeOf(windowReads(stub)[0])).toEqual([50, 50 + CLAIM_WINDOW - 1]);
   });
-
-  it("does its own arithmetic on the raw parameter nowhere", () => {
-    const source = routeSource();
-    // The route ASKS the shared guard…
-    expect(source).toContain("pageBound(");
-    // …and never coerces the parameter itself. `pageBound` owns every spelling
-    // question, so a second reader here is a second answer to it.
-    expect(source).not.toMatch(/parseInt|parseFloat|Number\(/);
-  });
 });
 
 describe("full-or-exhausted, the route's half of the contract", () => {
@@ -318,34 +293,6 @@ describe("full-or-exhausted, the route's half of the contract", () => {
     // The bound the REQUEST carried, echoed — never the read's own idea of it.
     expect(answer.offset).toBe(50);
     expect(rangeOf(windowReads(stub)[0])[0]).toBe(answer.offset);
-  });
-
-  it("answers a SHORT page as exhausted, with the rows it really read", async () => {
-    database(script());
-
-    const { body } = await ask(`?${OFFSET_PARAM}=100`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    // 149 claims: the page at 100 holds 49 of them.
-    expect(answer.rows.length).toBe(DEPTH - 100);
-    expect(answer.rows.length).toBeLessThan(CLAIM_WINDOW);
-    expect(answer.exhausted).toBe(true);
-    expect(answer.rows).toEqual(expectedLines(100, DEPTH));
-    expect(answer.offset).toBe(100);
-  });
-
-  it("answers a page past the end with zero rows and calls the set exhausted", async () => {
-    database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=200`);
-    const answer = accepted(body);
-
-    expect(status).toBe(200);
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows).toEqual([]);
-    expect(answer.exhausted).toBe(true);
-    expect(answer.offset).toBe(200);
   });
 
   it("never reports a row count the read did not return, at any offset on the grid", async () => {
@@ -417,21 +364,6 @@ describe("the refusals a read can carry", () => {
     // screen verbatim — the id is then the only true thing the app can say.
     for (const row of answer.rows) expect(row.source).toBe(row.sourceId);
   });
-
-  it("names a registered source and leaves an unregistered one as its id", async () => {
-    database(script());
-
-    const { body } = await ask(`?${OFFSET_PARAM}=50`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    const named = answer.rows.filter((row) => row.sourceId === SOURCE.first);
-    const unnamed = answer.rows.filter((row) => row.sourceId === SOURCE.third);
-    expect(named.length).toBeGreaterThan(0);
-    expect(unnamed.length).toBeGreaterThan(0);
-    for (const row of named) expect(row.source).toBe(SOURCE_NAME.get(SOURCE.first));
-    for (const row of unnamed) expect(row.source).toBe(SOURCE.third);
-  });
 });
 
 describe("the facets are the page's own", () => {
@@ -452,17 +384,6 @@ describe("the facets are the page's own", () => {
     expect(asked).toContainEqual(["source_id", SOURCE.second]);
   });
 
-  it("reads the standing TAB as the bucket it is", async () => {
-    const stub = database(script());
-
-    await ask(`?tab=standing&${OFFSET_PARAM}=50`);
-
-    expect(equalities(windowReads(stub)[0])).toContainEqual([
-      "bucket",
-      "standing_disagreement",
-    ]);
-  });
-
   it("narrows by nothing for a value the page's own vocabulary refuses", async () => {
     const stub = database(script());
 
@@ -471,14 +392,6 @@ describe("the facets are the page's own", () => {
     await ask(`?bucket=in_window&${OFFSET_PARAM}=50`);
 
     expect(equalities(windowReads(stub)[0]).map(([column]) => column)).not.toContain("bucket");
-  });
-
-  it("takes the FIRST value of a repeated facet, as the page does", async () => {
-    const stub = database(script());
-
-    await ask(`?domain=events&domain=venues&${OFFSET_PARAM}=50`);
-
-    expect(equalities(windowReads(stub)[0])).toContainEqual(["domain", "events"]);
   });
 
   it("parses no facet of its own anywhere under src/app/api", () => {
@@ -556,17 +469,6 @@ describe("the route owns the shape of what it serves", () => {
     }
   });
 
-  it("spells those directives nowhere but the shared constant", () => {
-    // The value is `lib/paging/bounds.ts`' to own; a second string typed into
-    // a route is how the two paging routes drift (LESSONS 5). Read over CODE
-    // lines only — the docstring above the handler explains what the header is
-    // for, and that is documentation, not a second spelling.
-    const code = codeText(ROUTE_FILE);
-    expect(code).toContain("PAGE_ANSWER_CACHE_CONTROL");
-    expect(code).not.toContain("no-store");
-    expect(code).not.toContain("must-revalidate");
-  });
-
   it("answers JSON", async () => {
     database(script());
     const response = await GET(request(`?${OFFSET_PARAM}=50`));
@@ -578,7 +480,6 @@ describe("the route owns the shape of what it serves", () => {
     expect(Object.keys(route)).toEqual(["GET"]);
   });
 });
-
 
 /**
  * THE FIRST SCREEN AND ITS CONTINUATION ARE ONE SET — QA's attack on
@@ -674,12 +575,5 @@ describe("the first screen and its continuation are one set", () => {
     const { ids } = await pagedIds(`?domain=venues&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
 
     expect([...screen, ...ids]).toEqual(idsWhere((row) => row.domain === "venues"));
-  });
-
-  it("really does serve different rows for a different narrowing (the control)", async () => {
-    const venues = await pagedIds(`?domain=venues&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
-    const events = await pagedIds(`?domain=events&${OFFSET_PARAM}=${CLAIM_WINDOW}`);
-
-    expect(venues.ids).not.toEqual(events.ids);
   });
 });

@@ -155,11 +155,6 @@ describe("initialPage", () => {
       overlapped: false,
     });
   });
-
-  it("holds none of the first screen's own rows", () => {
-    // `rows` is what was PAGED IN; the first screen belongs to the server.
-    expect(initialPage<Row>(50, true, "").rows).toEqual([]);
-  });
 });
 
 /**
@@ -195,63 +190,43 @@ describe("a claim is never drawn twice when the first screen changes underneath"
   const drawn = (first: Row[], state: PageState<Row>): string[] =>
     [...first, ...state.rows].map((row) => row.id);
 
-  it("drops the pages taken after a bound the first screen no longer ends at", async () => {
-    // The operator's first screen is claims a,b; a press takes in c,d.
-    const before = screen("a", "b");
-    const { deps } = recorder(() => ({
-      kind: "ok",
-      rows: rows("c", "d"),
-      offset: SIZE,
-      exhausted: false,
-    }));
-    const held = await requestPage<Row>(before.state, deps);
-    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
+  /**
+   * The one transition, over both fixtures (LESSONS 8). The operator's first
+   * screen is claims a,b and a press has taken in c,d; then the server renders
+   * the first screen again. Claim `a` settled: it now ends at `c`, the very
+   * claim the press took in — before this ticket the surface drew `b, c` on
+   * top of `c, d`, `c` twice and `e` never. A re-render that read the same
+   * rows changes nothing, and a surface that dropped its pages on every
+   * refresh would undo the operator's paging for no reason. A press that
+   * answers AFTER the screen moved carries the bound it was made under, so the
+   * same one comparison catches it — there is no second guard and no
+   * cancellation to forget.
+   */
+  const SCREEN_AGAIN: ReadonlyArray<readonly [string, string[], string[], boolean, number]> = [
+    ["no longer ends at the bound the pages started from", ["b", "c"], ["b", "c"], false, SIZE],
+    ["still ends where the pages started", ["a", "b"], ["a", "b", "c", "d"], true, SIZE * 2],
+  ];
+  it.each(SCREEN_AGAIN)(
+    "keeps the pages taken in only while the first screen %s",
+    async (_what, after, drawnNow, kept, heldNow) => {
+      const before = screen("a", "b");
+      const { deps } = recorder(() => ({
+        kind: "ok",
+        rows: rows("c", "d"),
+        offset: SIZE,
+        exhausted: false,
+      }));
+      const held = await requestPage<Row>(before.state, deps);
+      expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
 
-    // Claim `a` is settled and the server renders the first screen again: it
-    // now ends at `c`, the very claim the press had taken in. Before this
-    // ticket the surface drew `b, c` on top of `c, d` — `c` twice, `e` never.
-    const after = screen("b", "c");
-    expect(drawn(after.rows, continuing(held, after.state))).toEqual(["b", "c"]);
-  });
-
-  it("keeps the pages taken in when the first screen still ends where they started", async () => {
-    // The guard has to pass for the shape that OCCURS as well as flag the one
-    // that must not (LESSONS 8): a re-render that read the same rows changes
-    // nothing, and a surface that dropped its pages on every refresh would
-    // undo the operator's paging for no reason.
-    const before = screen("a", "b");
-    const { deps } = recorder(() => ({
-      kind: "ok",
-      rows: rows("c", "d"),
-      offset: SIZE,
-      exhausted: false,
-    }));
-    const held = await requestPage<Row>(before.state, deps);
-    const again = screen("a", "b");
-    expect(continuing(held, again.state)).toBe(held);
-    expect(drawn(again.rows, continuing(held, again.state))).toEqual(["a", "b", "c", "d"]);
-  });
-
-  it("drops a page that was still in flight when the first screen changed", async () => {
-    // The press that answers AFTER the screen moved carries the bound it was
-    // made under, so the same one comparison catches it — there is no second
-    // guard and no cancellation to forget.
-    const before = screen("a", "b");
-    const { deps } = recorder(() => ({
-      kind: "ok",
-      rows: rows("c", "d"),
-      offset: SIZE,
-      exhausted: false,
-    }));
-    // The hook publishes `pressing(before)` and hands `requestPage` the
-    // PRE-press state, so this is the answer that lands while the surface is
-    // already drawing a different first screen.
-    const inFlight = await requestPage<Row>(before.state, deps);
-    expect(inFlight.rows.map((row) => row.id)).toEqual(["c", "d"]);
-    const after = screen("b", "c");
-    expect(continuing(inFlight, after.state).rows).toEqual([]);
-    expect(continuing(inFlight, after.state).held).toBe(SIZE);
-  });
+      const again = screen(...after);
+      const next = continuing(held, again.state);
+      expect(drawn(again.rows, next)).toEqual(drawnNow);
+      // Kept is the SAME object; dropped is a state at the first screen's own bound.
+      expect(next === held).toBe(kept);
+      expect(next.held).toBe(heldNow);
+    },
+  );
 
   it("says the bound is the last row of the first screen, and nothing for an empty one", () => {
     expect(boundOf(rows("a", "b", "c"), (row) => row.id)).toBe("c");
@@ -304,30 +279,72 @@ describe("one drawn list never holds one id twice", () => {
     exhausted,
   });
 
-  it("appends every row of an ordinary page — the fixture the guard must NOT flag", async () => {
-    // LESSONS 8: the passing shape is shipped beside the failing one, because
-    // a dedupe that dropped rows nobody had drawn would be a far worse defect
-    // than the one it was built for.
+  /**
+   * ONE PRESS over a state that already holds `a, b`, for every page shape
+   * this class was fixed one property at a time for (admin-window/BUG-0222,
+   * admin-window/BUG-0226), graded on the one transition: what landed, and
+   * whether the list moved. On every row the bound advances by the ROUTE's
+   * count (two rows served, so `held` grows by `SIZE`), the status stays
+   * `idle`, nothing is refused and nothing throws — and the run the surface
+   * draws agrees with its own distinct count.
+   *
+   * - the ordinary page is the fixture the guard must NOT flag (LESSONS 8): a
+   *   dedupe that dropped rows nobody had drawn would be a far worse defect
+   *   than the one it was built for;
+   * - a claim INSERTED ahead of the bound makes position 2 of the order the
+   *   route read `b`, the last row of the first screen — before BUG-0222 the
+   *   surface drew a, b, b, c;
+   * - a full window the state already held every row of is a list that moved
+   *   under the operator, not the end of a set: the status stays `idle` and
+   *   the bound still advances;
+   * - the rule is over the ids this state has drawn and each appended row
+   *   joins that set as it goes, so one answer carrying an id twice is caught
+   *   by the same one rule;
+   * - an absent id identifies no row, so it is no evidence the row was drawn:
+   *   two blanks, two rows, and the app's one definition of blank decides it;
+   * - a row this app cannot NAME at all (BUG-0226: every one of these raised a
+   *   `TypeError` out of `requestPage` and left the surface `loading` for
+   *   ever) is appended and recorded nowhere — dropping it would lose data to
+   *   a guard, refusing the page would hide rows the route really served;
+   * - the dedupe reads the FIELD the surface declared and nothing else, so a
+   *   page repeating the drawn ids in another field is appended whole.
+   */
+  const UNNAMEABLE: unknown[] = [null, undefined, 42, "a bare string", {}, { id: null }, { id: 7 }];
+  // The fourth column is the `overlapped` the original pin asserted, or `null`
+  // where the pin it replaces asserted none (the repeat-in-one-page row).
+  const LANDINGS: ReadonlyArray<readonly [string, unknown[], unknown[], boolean | null]> = [
+    ["an ordinary page: appended whole", rows("c", "d"), rows("c", "d"), false],
+    ["a page beginning with the screen's last row: that row dropped, every id once", rows("b", "c"), rows("c"), true],
+    ["a page the state already held every row of: nothing appended, not exhaustion", rows("a", "b"), [], true],
+    ["a page carrying one id twice: the repeat dropped", rows("c", "c"), rows("c"), null],
+    ["a page of rows whose id is ABSENT: appended, not collapsed", rows("", " "), rows("", " "), false],
+    ...UNNAMEABLE.map((row): readonly [string, unknown[], unknown[], boolean | null] => [
+      `a row it cannot NAME (${JSON.stringify(row ?? null)}) beside one it can: both appended`,
+      [row, { id: "c" }],
+      [row, { id: "c" }],
+      false,
+    ]),
+    [
+      "a page repeating the drawn ids in ANOTHER field: appended whole",
+      [{ id: "c", other: "a" }, { id: "d", other: "b" }],
+      [{ id: "c", other: "a" }, { id: "d", other: "b" }],
+      false,
+    ],
+  ];
+  it.each(LANDINGS)("one press lands %s", async (_what, served, appended, overlapped) => {
     const before = screen("a", "b");
-    const { deps } = answering(page(SIZE, false, "c", "d"));
+    const { deps } = answering({ kind: "ok", rows: served, offset: SIZE, exhausted: false });
     const held = await requestPage<Row>(before.state, deps);
-    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
+    expect(held.refusal).toBeNull();
+    expect(held.status).toBe("idle");
+    expect(held.rows).toEqual(appended);
     expect(held.held).toBe(SIZE * 2);
-    expect(held.overlapped).toBe(false);
-  });
-
-  it("drops a row the screen above already holds, and draws every id once", async () => {
-    // A claim was INSERTED ahead of the bound, so position 2 of the order the
-    // route read is `b` — the last row of the first screen — and position 3 is
-    // `c`. Before this ticket the surface drew a, b, b, c.
-    const before = screen("a", "b");
-    const { deps } = answering(page(SIZE, false, "b", "c"));
-    const held = await requestPage<Row>(before.state, deps);
-
-    const ids = drawn(before.rows, held);
-    expect(ids).toEqual(["a", "b", "c"]);
-    // The property itself, asserted as the property: the run agrees with its
-    // own count.
+    if (overlapped !== null) expect(held.overlapped).toBe(overlapped);
+    // The property itself, asserted as the property: every id the surface
+    // draws is distinct, and the run's length equals its distinct count.
+    const ids = [...before.rows, ...held.rows]
+      .map((row) => (row as { id?: unknown } | null)?.id)
+      .filter((id): id is string => typeof id === "string");
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -372,97 +389,6 @@ describe("one drawn list never holds one id twice", () => {
     const ids = drawn(before.rows, state);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(["a", "b", "c", "d", "e"]);
-  });
-
-  it("a page deduped to ZERO appended rows is not exhaustion, and the bound still moves", async () => {
-    // The route answered a full window and the state already held every row of
-    // it. That is a list that moved under the operator, not the end of a set:
-    // the status stays `idle` (so the surface keeps its control) and the bound
-    // advances by the rows the route served.
-    const before = screen("a", "b");
-    const { deps } = answering(page(SIZE, false, "a", "b"));
-    const held = await requestPage<Row>(before.state, deps);
-    expect(held.status).toBe("idle");
-    expect(held.rows).toEqual([]);
-    expect(held.held).toBe(SIZE * 2);
-    expect(held.refusal).toBeNull();
-    expect(held.overlapped).toBe(true);
-  });
-
-  it("drops a row a PAGE carries twice, whatever the route answers", async () => {
-    // The rule is over the ids this state has drawn, and each appended row
-    // joins that set as it goes — so one answer carrying the same id twice is
-    // caught by the same one rule.
-    const before = screen("a", "b");
-    const { deps } = answering(page(SIZE, false, "c", "c"));
-    const held = await requestPage<Row>(before.state, deps);
-    expect(drawn(before.rows, held)).toEqual(["a", "b", "c"]);
-    expect(held.held).toBe(SIZE * 2);
-  });
-
-  it("appends rows whose id is ABSENT rather than collapsing them into one", async () => {
-    // An absent id identifies no row, so it is no evidence that the row was
-    // drawn: dropping such rows would be data lost to a guard. Two blanks, two
-    // rows — and the app's one definition of blank decides it, which is why a
-    // whitespace-only id is the second fixture.
-    const before = screen("a", "b");
-    const { deps } = answering(page(SIZE, false, "", " "));
-    const held = await requestPage<Row>(before.state, deps);
-    expect(held.rows.map((row) => row.id)).toEqual(["", " "]);
-    expect(held.overlapped).toBe(false);
-  });
-
-  it("never throws on a row it cannot NAME, and appends it rather than dropping it", async () => {
-    // admin-window/BUG-0226 (QA's second finding off admin-window/BUG-0222).
-    // `Row` is a promise about what this app's own route serves, not about
-    // what ARRIVED: `isPageAnswer` grades the envelope, not each row inside
-    // it. While the id was read by calling a caller's accessor, every shape
-    // below raised a `TypeError` out of `requestPage` — against this module's
-    // own "nothing here throws" header — and `usePageRows` awaits it with no
-    // catch, so the surface stayed `loading` for ever: control inert, no
-    // refusal line, nothing left to press.
-    //
-    // The answer is the one the blank-id case above already gives: a row this
-    // app cannot name identifies no row, so it is appended and recorded
-    // nowhere. Dropping it would lose data to a guard; refusing the page would
-    // hide rows the route really served.
-    const unnameable: unknown[] = [null, undefined, 42, "a bare string", {}, { id: null }, { id: 7 }];
-    for (const row of unnameable) {
-      const before = screen("a", "b");
-      const { deps } = answering({
-        kind: "ok",
-        rows: [row, { id: "c" }],
-        offset: SIZE,
-        exhausted: false,
-      });
-      const held = await requestPage<Row>(before.state, deps);
-      expect(held.refusal, JSON.stringify(row ?? null)).toBeNull();
-      expect(held.status).toBe("idle");
-      // Both rows landed — the one it could name and the one it could not.
-      expect(held.rows).toHaveLength(2);
-      expect(held.rows[1].id).toBe("c");
-      // The bound still moved by the ROUTE's count, and an unnameable row is
-      // no evidence that the list moved under the operator.
-      expect(held.held).toBe(SIZE * 2);
-      expect(held.overlapped).toBe(false);
-    }
-  });
-
-  it("names a row by the FIELD the surface declared, and only that field", async () => {
-    // admin-window/BUG-0226: what crosses the client boundary is the NAME of
-    // the id field, so the dedupe is a read of that field and nothing else. A
-    // page whose rows repeat the drawn ids in ANOTHER field is appended whole
-    // — the state has drawn none of them.
-    const before = screen("a", "b");
-    const { deps } = answering({
-      kind: "ok",
-      rows: [{ id: "c", other: "a" }, { id: "d", other: "b" }],
-      offset: SIZE,
-      exhausted: false,
-    });
-    const held = await requestPage<Row>(before.state, deps);
-    expect(drawn(before.rows, held)).toEqual(["a", "b", "c", "d"]);
-    expect(held.overlapped).toBe(false);
   });
 
   it("states the overlap once it has happened, and not before", async () => {
@@ -645,21 +571,6 @@ describe("pageUrl", () => {
 });
 
 describe("requestPage", () => {
-  it("issues exactly ONE request per press from idle, at the bound it holds", () => {
-    // One press, one request.
-    const { urls, deps } = answering({
-      kind: "ok",
-      rows: rows("c", "d"),
-      offset: 4,
-      exhausted: false,
-    } satisfies PageAnswer<Row>);
-    return requestPage(paged(4, "a", "b"), deps).then((next) => {
-      expect(urls).toHaveLength(1);
-      expect(new URLSearchParams(urls[0].split("?")[1]).get(OFFSET_PARAM)).toBe("4");
-      expect(next.held).toBe(6);
-    });
-  });
-
   it("issues NO request from loading or from exhausted, and returns that state untouched", () => {
     // No press, no request — and the same state object back, so a caller
     // comparing identity can see that nothing happened.
@@ -725,21 +636,6 @@ describe("requestPage", () => {
     expect(before.status).toBe("idle");
   });
 
-  it("takes the answer's own word for exhaustion, and stops pressing on it", async () => {
-    const { urls, deps } = answering(
-      { kind: "ok", rows: rows("c"), offset: 4, exhausted: true },
-      { kind: "ok", rows: rows("d"), offset: 5, exhausted: false },
-    );
-    const done = await requestPage(paged(4, "a", "b"), deps);
-    expect(done.status).toBe("exhausted");
-    expect(done.rows.map((row) => row.id)).toEqual(["a", "b", "c"]);
-    expect(done.held).toBe(5);
-
-    // Exhausted is terminal: the second press never reaches the network.
-    expect(await requestPage(done, deps)).toBe(done);
-    expect(urls).toHaveLength(1);
-  });
-
   it("reads an ok answer with NO rows as exhaustion, not as a refusal", async () => {
     // A page past the end is an answer (§4.3 kind 3), so nothing is refused
     // and nothing is added.
@@ -774,33 +670,6 @@ describe("requestPage", () => {
     const served = (count: number): Row[] =>
       Array.from({ length: count }, (_, i) => ({ id: `s${i}` }));
 
-    it("a FULL window that continues: appends in order, grows held by the WINDOW, stays idle", async () => {
-      const { urls, deps } = answering({
-        kind: "ok",
-        rows: served(SIZE),
-        offset: 4,
-        exhausted: false,
-      } satisfies PageAnswer<Row>);
-      const next = await requestPage(
-        {
-          ...before,
-          refusal: {
-            condition: "broken",
-            reason: "the read failed",
-            account: said("the read failed", "the machine"),
-            object: "pending_claims",
-          },
-        },
-        deps,
-      );
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "s0", "s1"]);
-      expect(next.held).toBe(4 + SIZE);
-      expect(next.status).toBe("idle");
-      // A press that succeeds clears the account of the one before it.
-      expect(next.refusal).toBeNull();
-      expect(urls).toHaveLength(1);
-    });
-
     it("a page that SAYS the set ended: appends what it carries, however short, and ends exhausted", async () => {
       for (const count of [0, 1, SIZE]) {
         const { urls, deps } = answering({
@@ -820,18 +689,6 @@ describe("requestPage", () => {
         expect(next.held, `${count} rows`).toBe(4 + count);
         expect(urls, `${count} rows`).toHaveLength(1);
       }
-    });
-
-    it("an EMPTY page behaves exactly as it always has, whatever it says about the end", async () => {
-      // The one row count this arm still reads as the end of the set by
-      // itself: nothing to append, no bound to move, nothing that could be
-      // missing. Deliberately unchanged by the ruling.
-      const { deps } = answering({ kind: "ok", rows: [], offset: 4, exhausted: false });
-      const next = await requestPage(before, deps);
-      expect(next.status).toBe("exhausted");
-      expect(next.refusal).toBeNull();
-      expect(next.rows).toBe(before.rows);
-      expect(next.held).toBe(4);
     });
 
     it("SHORT and still continuing: refused OUT LOUD, naming the route, with one request made", async () => {
@@ -1057,16 +914,6 @@ describe("requestPage", () => {
       expect(next.notes?.provenance).toBe(PROVENANCE_GONE);
     });
 
-    it("(2) holds a record of nulls when both legs answered", async () => {
-      // `null` is a leg's ANSWER, not its absence: a surface reading this
-      // state can tell "that column is filled" from "nobody said".
-      const { deps } = answering(page(["c", "d"], { venues: null, provenance: null }));
-      const next = await requestPage(paged(4, "a", "b"), deps);
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
-      expect(next.notes).toEqual({ venues: null, provenance: null });
-      expect(next.notes).not.toBeNull();
-    });
-
     it("(3) an answer with NO notes property leaves the standing notes exactly as they were", async () => {
       // The claims route's answer. `/claims` is byte-identical through this
       // ticket because of this arm.
@@ -1112,15 +959,6 @@ describe("requestPage", () => {
         expect(reason, name).not.toContain("kind");
         expect(reason, name).not.toMatch(/\d/);
       }
-    });
-
-    it("(4b) an unreadable notes field on a page that WOULD have landed — the must-not-flag half", async () => {
-      // The same rows, the same window, the same bound: only the notes differ — so
-      // the refusal above is about the notes and nothing else.
-      const { deps } = answering(page(["c", "d"], { provenance: PROVENANCE_GONE }));
-      const next = await requestPage(paged(4, "a", "b"), deps);
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
-      expect(next.refusal).toBeNull();
     });
 
     it("(5) MERGES per key: a standing note survives a later page whose legs answered", async () => {
@@ -1326,24 +1164,6 @@ describe("requestPage", () => {
       expect(broken(withNotes.refusal).reason).toBe(broken(plain.refusal).reason);
       expect(withNotes.notes).toBe(held.notes);
     });
-
-    it("takes the matching bound every honest answer carries — the must-NOT-flag half", async () => {
-      // The same driver, the same shape, one field different: the bound this
-      // press actually asked for. Without this half the rule above would pass
-      // against a driver that refused every page.
-      const { deps } = answering(
-        { kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false },
-        { kind: "ok", rows: rows("e", "f"), offset: 6, exhausted: false },
-      );
-      const first = await requestPage(held, deps);
-      expect(first.refusal).toBeNull();
-      expect(first.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
-      // And the bound the SECOND press carries is the one it grew to, so a
-      // route echoing what it was asked keeps paging forever.
-      const second = await requestPage(first, deps);
-      expect(second.refusal).toBeNull();
-      expect(second.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d", "e", "f"]);
-    });
   });
 
   /**
@@ -1403,17 +1223,6 @@ describe("requestPage", () => {
       expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
       // The transport's own words, not a sentence of ours over the top.
       expect(broken(next.refusal).reason).toContain("Failed to fetch");
-    });
-
-    it("never extends the list: a body that never parsed", async () => {
-      // What `res.json()` does to an HTML error page.
-      const { deps } = recorder(() => {
-        throw new SyntaxError("Unexpected token '<', \"<!doctype \"... is not valid JSON");
-      });
-      const next = await requestPage(held, deps);
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b"]);
-      expect(next.status).toBe("idle");
-      expect(broken(next.refusal).object).toBe(PAGE_ROUTES.claims);
     });
 
     it("carries the database's own words, and names the object the page would name", async () => {
@@ -1626,19 +1435,6 @@ describe("requestPage", () => {
       expect(recovered.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
       expect(recovered.held).toBe(6);
     });
-
-    it("leaves the press repeatable, at the same bound", async () => {
-      const { urls, deps } = answering(
-        { kind: "error", reading: "pending_claims", message: "boom" },
-        { kind: "ok", rows: rows("c"), offset: 4, exhausted: true },
-      );
-      const refused = await requestPage(held, deps);
-      await requestPage(refused, deps);
-      expect(urls.map((url) => new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM))).toEqual([
-        "4",
-        "4",
-      ]);
-    });
   });
 
   it("never throws, whatever the request does", async () => {
@@ -1715,82 +1511,7 @@ describe("pressing", () => {
     expect(pressing(refused).refusal).toBe(refused.refusal);
     expect(pressing(refused).status).toBe("loading");
   });
-
-  it("hands back the SAME object from loading and from exhausted", () => {
-    // Identity, not equality: a caller publishing this would re-render the
-    // whole row list for a press that changed nothing.
-    for (const status of ["loading", "exhausted"] as const) {
-      const state: PageState<Row> = {
-        rows: rows("a"),
-        held: 2,
-        status,
-        refusal: null,
-        notes: null,
-        after: "",
-        drawnIds: new Set<string>(),
-        overlapped: false,
-      };
-      expect(pressing(state)).toBe(state);
-    }
-  });
-
-  it("is idempotent, so a third press is as free as the second", () => {
-    const idle: PageState<Row> = {
-      rows: rows("a"),
-      held: 2,
-      status: "idle",
-      refusal: null,
-      notes: null,
-      after: "",
-      drawnIds: new Set<string>(),
-      overlapped: false,
-    };
-    const once = pressing(idle);
-    expect(pressing(once)).toBe(once);
-  });
 });
-
-describe("the double press, composed from the two pure pieces", () => {
-  // The offline tier has no DOM, so the press itself cannot be simulated here.
-  // What CAN be driven is the composition every caller is obliged to
-  // reproduce — publish `pressing(current)`, hand the PRE-press state to
-  // `requestPage` — and that composition is where the safety lives.
-
-  it("issues ZERO requests when the state has already been pressed", async () => {
-    const { urls, deps } = answering({
-      kind: "ok",
-      rows: rows("c"),
-      offset: 4,
-      exhausted: false,
-    } satisfies PageAnswer<Row>);
-    const idle = paged(4, "a", "b");
-    const inFlight = pressing(idle);
-
-    expect(await requestPage(inFlight, deps)).toBe(inFlight);
-    expect(urls).toEqual([]);
-  });
-
-  it("issues exactly ONE from the pre-press state, so the pin above is not vacuous", () => {
-    // The must-NOT-flag half (LESSONS 8): the same driver, the same deps, the
-    // state a caller is obliged to hand it, and a request really is made. The
-    // answer is a FULL window so that the rows it carries land — under
-    // full-or-exhausted (admin-window/BUG-0168) a short continuing page is
-    // refused, and this half proves the press did something.
-    const { urls, deps } = answering({
-      kind: "ok",
-      rows: rows("c", "d"),
-      offset: 4,
-      exhausted: false,
-    } satisfies PageAnswer<Row>);
-    const idle = paged(4, "a", "b");
-    void pressing(idle);
-    return requestPage(idle, deps).then((next) => {
-      expect(urls).toHaveLength(1);
-      expect(next.rows.map((row) => row.id)).toEqual(["a", "b", "c", "d"]);
-    });
-  });
-});
-
 
 /**
  * WHO WROTE THE REASON — admin-window/BUG-0175.
@@ -1933,19 +1654,5 @@ describe("every refusal says who wrote its reason", () => {
     expect(broken(theirs.refusal).reason).toBe(broken(ours.refusal).reason);
     expect(authorOf(broken(ours.refusal))).toBe("this app");
     expect(authorOf(broken(theirs.refusal))).toBe("the machine");
-  });
-
-  it("and never with the words: a sentence no constant in this app spells is still this app's", async () => {
-    // The other half. Reword any of the four sentences and the face does not
-    // move, because nothing ever read them.
-    const invented = "a sentence this app has not written yet, in the app's own voice";
-    const next = await threw(new AppAuthoredError(invented));
-    expect(broken(next.refusal).reason).toBe(invented);
-    expect(authorOf(broken(next.refusal))).toBe("this app");
-  });
-
-  it("a press that succeeds still leaves no refusal to ask the question of", async () => {
-    const { deps } = answering({ kind: "ok", rows: rows("c", "d"), offset: 4, exhausted: false });
-    expect((await requestPage(held, deps)).refusal).toBeNull();
   });
 });

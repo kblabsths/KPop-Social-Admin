@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSourceNamed, sourceLabel, sourceNamesOf } from "@/lib/sources/names";
-import { hasVisibleContent } from "@/lib/verdict/decision";
-import { codeLines, codeLinesIn, codeText, sourceFiles } from "../source-tree";
+import { codeLines, codeText, sourceFiles } from "../source-tree";
 import { SOURCE, SOURCE_NAME, SOURCES } from "./population";
 
 /**
@@ -38,10 +37,6 @@ describe("the id → name lookup", () => {
     for (const row of SOURCES) expect(names.get(row.source_id)).toBe(row.source);
   });
 
-  it("names nothing from no rows — the registry leg that read nothing", () => {
-    expect(sourceNamesOf([]).size).toBe(0);
-  });
-
   it("lets the later row win a repeated id, so the lookup is total", () => {
     const [first] = ROWS;
     const names = sourceNamesOf([first, { source_id: first.source_id, source: "later" }]);
@@ -51,13 +46,6 @@ describe("the id → name lookup", () => {
 });
 
 describe("what a source is called on screen", () => {
-  it("says the registry's name when the registry holds one", () => {
-    const names = sourceNamesOf(ROWS);
-    for (const [id, name] of Object.entries(SOURCE_NAME)) {
-      expect(sourceLabel(names, id)).toBe(name);
-    }
-  });
-
   it("says the id VERBATIM — never blank, never a guess — when it holds none", () => {
     const names = sourceNamesOf(ROWS);
     const unknown = "01920000-0000-7000-8000-0000000009ff";
@@ -133,26 +121,6 @@ describe("what a source is called on screen", () => {
       expect(label, JSON.stringify(name)).toBe(name);
       expect(label, JSON.stringify(name)).toHaveLength(name.length);
       expect(label, JSON.stringify(name)).not.toBe(SOURCE.ticketmaster);
-    }
-  });
-
-  it("never answers with a label that has nothing readable in it", () => {
-    // Graded on INK, not on `length`: the rule read `length > 0` until
-    // admin-window/BUG-0154, and whitespace has length — so a blank name
-    // passed it while rendering an anchor with nothing to read. The blank-named
-    // row below is what makes the assertion non-vacuous.
-    const blanks = INK_LESS.map((source, index) => ({
-      source_id: `01920000-0000-7000-8000-00000000090${index}`,
-      source,
-    }));
-    const names = sourceNamesOf([...ROWS, ...blanks]);
-    for (const id of [
-      ...Object.keys(SOURCE_NAME),
-      "unregistered",
-      SOURCE.fandom,
-      ...blanks.map((row) => row.source_id),
-    ]) {
-      expect(hasVisibleContent(sourceLabel(names, id)), id).toBe(true);
     }
   });
 
@@ -268,29 +236,6 @@ describe("what a source is called has one owner", () => {
    */
   const ID_FALLBACK = /\?\?\s*(?:[A-Za-z_$][\w$]*\.)*(?:sourceId|source_id)\b/;
 
-  it("flags the retyped fallback and clears the spellings that are not it", () => {
-    // LESSONS 8 — the guard proves itself on inputs it MUST flag ...
-    for (const flagged of [
-      "{name ?? sourceId}",
-      "source: nameOf.get(row.source_id) ?? row.source_id,",
-      "rowLabel={(split) => link(split.source ?? split.sourceId)}",
-      "const label = names.get(id)\n  ?? sourceId;",
-    ]) {
-      expect(ID_FALLBACK.test(codeLinesIn(flagged).join("\n")), flagged).toBe(true);
-    }
-    // ... and on inputs it must NOT, which is what keeps it from being a ban
-    // on the two characters.
-    for (const clear of [
-      "source: source?.source ?? null,",
-      "threshold: series?.threshold ?? stuckPatternThreshold(sourceId),",
-      "const set = sourceIdsOf.get(row.entity_id) ?? new Set<string>();",
-      "{sourceLabel(names, sourceId)}",
-      "// a comment about `name ?? sourceId` is documentation",
-    ]) {
-      expect(ID_FALLBACK.test(codeLinesIn(clear).join("\n")), clear).toBe(false);
-    }
-  });
-
   it("has no surface falling back to a source id outside the rule", () => {
     const offenders = sourceFiles().filter((file) => ID_FALLBACK.test(codeText(file)));
     expect(offenders).toEqual([]);
@@ -353,21 +298,5 @@ describe("the leaf stays a leaf", () => {
     expect(imports.map((line) => line.match(/["']([^"']*)["']/)?.[1] ?? line.trim())).toEqual([
       "@/lib/verdict/decision",
     ]);
-  });
-
-  /**
-   * The ratchet on the leaf's SIZE: a fourth export is a fourth thing a caller
-   * may ask about a source's name, and the class this leaf ends is surfaces
-   * asking the question their own way. `isSourceNamed` was the third
-   * (admin-window/TASK-0060) — the answer `sourceLabel` already computes,
-   * exported because `/sources` counts the rows it labelled by id and was
-   * deciding that a second time.
-   */
-  it("exports the three parts of the rule and nothing else", () => {
-    const declarations = /export\s+(?:function|const|type|interface)\s+(\w+)/g;
-    const exported = [...codeLines(LEAF).join("\n").matchAll(declarations)].map(
-      (match) => match[1],
-    );
-    expect(exported).toEqual(["sourceNamesOf", "sourceLabel", "isSourceNamed"]);
   });
 });

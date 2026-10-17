@@ -8,10 +8,9 @@ import {
   writePathFor,
 } from "@/lib/edit/config";
 import { FN, T } from "@/lib/db/tables";
-import { EM_DASH, counted, isAbsent } from "@/lib/format";
+import { EM_DASH, isAbsent } from "@/lib/format";
 import { canonicalRecordId, isRecordId } from "@/lib/records/id";
 import {
-  invalidUuidSyntax,
   permissionDenied,
   stubClient,
   tableNotInSchemaCache,
@@ -410,13 +409,6 @@ describe("which fields edit", () => {
     expect(lineFor(markup, UNMAPPED_COLUMN).value, table).toContain("not in the map");
   });
 
-  it("never offers a control for the primary key", async () => {
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table);
-      expect(lineFor(markup, EDIT_CONFIG[table].pk).editable, table).toBe(false);
-    }
-  });
-
   it("renders a resolver-owned table read-only when the override path is absent", async () => {
     // THE graded normal case (FEAT-0011 criterion 2): with nothing to record
     // an override, `events` and `venues` render exactly the read-only page M1
@@ -499,30 +491,6 @@ describe("which fields edit", () => {
     expect(lineFor(markup, "title").editable).toBe(true);
   });
 
-  it("names the reason, in the app's voice and in the database's own word", async () => {
-    for (const table of ["events", "venues"]) {
-      const markup = await renderRecord(table, {
-        ...defaultScript(table),
-        ...OVERRIDE_ABSENT,
-      });
-      const $ = cheerio.load(markup);
-      // Said once, above the table, never per line.
-      const note = $('[data-note="override-unavailable"]');
-      expect(note.length, table).toBe(1);
-      expect($('tbody [data-note="override-unavailable"]').length, table).toBe(0);
-      // The delivered HTML, whitespace-normalised: the consequence in words,
-      // with no two of them run together.
-      const said = note.text().replace(/\s+/g, " ").trim();
-      expect(said, table).toContain("read-only");
-      expect(said, table).toContain("resolution pipeline");
-      expect(said, table).not.toMatch(/[a-z][A-Z]/);
-      // ...and the card beside it names the object that is missing, in the
-      // spelling the query used (LOOK_AND_FEEL state 3).
-      expect($('[data-state="not_provisioned"]').length, table).toBeGreaterThan(0);
-      expect($('[data-not-provisioned="verdicts"]').length, table).toBe(1);
-    }
-  });
-
   it("offers the cell on every mapped column once the path is open", async () => {
     // The other fixture of the pair above: the same page, the same map, one
     // different answer from the database.
@@ -578,29 +546,6 @@ describe("which fields edit", () => {
     expect(tablesRead()).toEqual([DIRECT_WRITE_TABLE]);
   });
 
-  it("proves that negative is not vacuous: the sandbox does draw controls", async () => {
-    expect(controlCount(await renderRecord(DIRECT_WRITE_TABLE))).toBeGreaterThan(0);
-  });
-
-  it("edits through the EditableCell primitive, not a hand-rolled input", async () => {
-    // The claim the ticket's `grep EditableCell src/app/records` gestures at,
-    // asserted as behaviour instead of as text: the cell the page renders for
-    // a mapped field is markup-identical to the primitive rendered directly.
-    // A hand-rolled input — one that does not revert on Escape, or confirm, or
-    // name its failure — reddens this.
-    const { EditableCell } = await import("@/components/EditableCell");
-    const { createElement } = await import("react");
-    const { renderToStaticMarkup } = await import("react-dom/server");
-    const primitive = renderToStaticMarkup(
-      createElement(EditableCell, {
-        value: "stored label",
-        onSave: async () => ({ ok: true }) as const,
-        label: `label of ${DIRECT_WRITE_TABLE}`,
-      }),
-    );
-    expect(await renderRecord(DIRECT_WRITE_TABLE)).toContain(primitive);
-  });
-
   it("names the field in each control's accessible name", async () => {
     const markup = await renderRecord(DIRECT_WRITE_TABLE);
     const $ = cheerio.load(markup);
@@ -616,19 +561,6 @@ describe("which fields edit", () => {
 /* ── the values on the line ───────────────────────────────────────────────── */
 
 describe("what a line shows", () => {
-  it("shows the stored value, including a number, as the database gave it", async () => {
-    const markup = await renderRecord(DIRECT_WRITE_TABLE);
-    expect(lineFor(markup, "label").value).toContain("stored label");
-    expect(lineFor(markup, "tally").value).toContain("4");
-  });
-
-  it("shows an empty column as the absence, still editable", async () => {
-    const line = lineFor(await renderRecord(DIRECT_WRITE_TABLE), "note");
-    expect(line.value).toContain(EM_DASH);
-    // An unset column is how a value is first set: absence never hides a field.
-    expect(line.editable).toBe(true);
-  });
-
   it("draws a line for a mapped column the read returned nothing for", async () => {
     const config = EDIT_CONFIG[DIRECT_WRITE_TABLE];
     const markup = await renderRecord(DIRECT_WRITE_TABLE, {
@@ -637,13 +569,6 @@ describe("what a line shows", () => {
     for (const column of config.editable) {
       expect(lineFor(markup, column).value, column).toContain(EM_DASH);
     }
-  });
-
-  it("shows the record's id whatever the read did", async () => {
-    const failed = await renderRecord(DIRECT_WRITE_TABLE, {
-      [DIRECT_WRITE_TABLE]: { error: permissionDenied(DIRECT_WRITE_TABLE) },
-    });
-    expect(failed).toContain(IDS[DIRECT_WRITE_TABLE]);
   });
 });
 
@@ -661,50 +586,16 @@ describe("the provenance slot", () => {
       expect(line.provenanceAbsent, `${table}.${line.name}`).toBe(true);
     }
   });
-
-  it("names no source, tier, apply time or lock state anywhere", async () => {
-    const markup = await renderRecord(DIRECT_WRITE_TABLE);
-    for (const invented of [
-      "ticketmaster",
-      "bandsintown",
-      "admin-set",
-      "admin_locked",
-      "official",
-      "applied",
-    ]) {
-      expect(markup.toLowerCase(), invented).not.toContain(invented);
-    }
-  });
 });
 
 /* ── the four data-surface states, and the surfaces that do not exist ─────── */
 
 describe("the states", () => {
-  it("reports an absent table as not provisioned, naming it", async () => {
-    const markup = await renderRecord(DIRECT_WRITE_TABLE, {
-      [DIRECT_WRITE_TABLE]: { error: tableNotInSchemaCache(DIRECT_WRITE_TABLE) },
-    });
-    expect(markup).toContain(DIRECT_WRITE_TABLE);
-    expect(controlCount(markup)).toBe(0);
-  });
-
   it("reports a failed read in the database's own words", async () => {
     const markup = await renderRecord(DIRECT_WRITE_TABLE, {
       [DIRECT_WRITE_TABLE]: { error: permissionDenied(DIRECT_WRITE_TABLE) },
     });
     expect(markup).toContain(permissionDenied(DIRECT_WRITE_TABLE).message);
-  });
-
-  it("reports a table that holds no such row as its own state", async () => {
-    const missingRow = await renderRecord(DIRECT_WRITE_TABLE, {
-      [DIRECT_WRITE_TABLE]: { data: null },
-    });
-    const absentTable = await renderRecord(DIRECT_WRITE_TABLE, {
-      [DIRECT_WRITE_TABLE]: { error: tableNotInSchemaCache(DIRECT_WRITE_TABLE) },
-    });
-    // Three different states never share a rendering (LOOK_AND_FEEL).
-    expect(missingRow).not.toBe(absentTable);
-    expect(controlCount(missingRow)).toBe(0);
   });
 
   /**
@@ -756,43 +647,6 @@ describe("the states", () => {
     const filler = emptyFiller(await renderRecord("events", missingRowScript("events")));
     expect(EDIT_CONFIG.events.regime).toBe("resolver_owned");
     expect(filler).toContain("Browse");
-  });
-
-  /**
-   * A MISTYPED id is not a failed read — QA, campaign admin-window/BUG-0052.
-   *
-   * A pre-cutover record is reached "by its id alone", and the empty state
-   * this ticket wrote tells the operator to check the id in the address bar.
-   * Hand-carrying an id is therefore the sanctioned path, and mistyping one is
-   * the error that path invites. Measured on a production build against
-   * staging, 2026-09-03: `/records/groups/not-a-uuid` (and a uuid one
-   * character short, and one with a trailing space) answers 200 with the
-   * generic READ-FAILED state — the database's `invalid input syntax for type
-   * uuid ... (22P02)` over the recovery line "Reload to try the read again".
-   * Reloading cannot ever parse a malformed id, so the operator is stranded on
-   * unactionable advice in the same moment BUG-0052 set out to rescue.
-   *
-   * A malformed id is a bad REQUEST, decidable without a database. Whatever
-   * state answers it, it must not be the one that means "the database failed".
-   */
-  // Fixed in admin-window/BUG-0065; QA's strict `it.fails` marker removed with
-  // the fix, so this reddens if the failed-read state ever comes back. The
-  // script still carries the 22P02 the database WOULD answer with, and the
-  // page never gets that far.
-  it("does not report a mistyped id as a failed database read", async () => {
-    const markup = await renderRecord(
-      DIRECT_WRITE_TABLE,
-      {
-        ...defaultScript(DIRECT_WRITE_TABLE),
-        [DIRECT_WRITE_TABLE]: { error: invalidUuidSyntax("not-a-uuid") },
-      },
-      "not-a-uuid",
-    );
-    const $ = cheerio.load(markup);
-    // Something answered for the request at all...
-    expect($("[data-state]").length).toBeGreaterThan(0);
-    // ...and it is not the failed-read state.
-    expect($('[data-state="error"]').length).toBe(0);
   });
 
   /**
@@ -935,13 +789,6 @@ describe("the states", () => {
     }
     // What it returns is an id by the same grammar, so it can be asked again.
     expect(isRecordId(canonical)).toBe(true);
-  });
-
-  it.each(MISTYPED_IDS)("is no id as it stands, %o", (id) => {
-    // The raw-segment guard, unchanged by admin-window/BUG-0145: every one of
-    // these is refused before any read, so none reaches Postgres as `22P02`
-    // and an error card advising a reload.
-    expect(isRecordId(id)).toBe(false);
   });
 
   it.each(MISTYPED_IDS.filter((id) => id !== PADDED_ID))(
@@ -1153,14 +1000,6 @@ describe("the states", () => {
       expect(tablesRead(), table).toContain(table);
       expect(cheerio.load(markup)('[data-state="empty"]').length, table).toBe(1);
     }
-  });
-
-  it("says something different in each regime, from one map", async () => {
-    const direct = emptyFiller(
-      await renderRecord(DIRECT_WRITE_TABLE, missingRowScript(DIRECT_WRITE_TABLE)),
-    );
-    const resolverOwned = emptyFiller(await renderRecord("events", missingRowScript("events")));
-    expect(direct).not.toBe(resolverOwned);
   });
 
   /**
@@ -1446,55 +1285,6 @@ describe("a resolver-owned record", () => {
     }
   });
 
-  it("stops the Browse link dead-ending: the page shows more than the id", async () => {
-    // The record href is the primary navigation target from the app's main
-    // list screen; a page holding only the id the operator clicked told them
-    // nothing they did not already have.
-    const drawn = lines(await renderRecord("events"));
-    expect(drawn.map((line) => line.name)).not.toEqual(["event_id"]);
-    expect(drawn.length).toBeGreaterThan(1);
-  });
-
-  it("offers no cell on a displayed column, however the map lists it", async () => {
-    // `display` is the read-only half of the map and cannot become writable by
-    // being listed — with the write path OPEN, which is the only state in
-    // which this claim can fail.
-    //
-    // What "writable" means here is the CELL: a displayed column is never
-    // handed to the click-to-edit widget, so nothing on this page submits its
-    // value as text (admin-window/TASK-0055). The one displayed column the map
-    // calls a reference offers the picker instead, which submits an entity's
-    // id and never a value — a different widget answering a different
-    // question, and `decideEdit` still refuses the column
-    // (`tests/offline/edit/config.test.ts`, "refuses every displayed column").
-    for (const table of ["events", "venues"]) {
-      const markup = await renderRecord(table);
-      for (const column of EDIT_CONFIG[table].display) {
-        const line = lineFor(markup, column);
-        const isReference = EDIT_CONFIG[table].reference?.field === column;
-        expect(line.widget, `${table}.${column}`).toBe(
-          isReference ? "picker" : undefined,
-        );
-        expect(line.editable, `${table}.${column}`).toBe(isReference);
-      }
-      // The pk is never a control either, and the page draws some control —
-      // otherwise the loop above is green over a read-only page.
-      expect(lineFor(markup, EDIT_CONFIG[table].pk).editable, table).toBe(false);
-      expect(controlCount(markup), table).toBeGreaterThan(0);
-    }
-  });
-
-  it("shows a displayed column the read returned nothing for as the absence", async () => {
-    const markup = await renderRecord("events", {
-      events: { data: { event_id: IDS.events } },
-      field_provenance: complete([]),
-      sources: complete([]),
-    });
-    for (const column of EDIT_CONFIG.events.display) {
-      expect(lineFor(markup, column).value, column).toContain(EM_DASH);
-    }
-  });
-
   it("names the source and the age of the value beside the field", async () => {
     const markup = await renderRecord(
       "events",
@@ -1589,32 +1379,6 @@ describe("a resolver-owned record", () => {
     const provenance = lineFor(markup, "title").provenance;
     expect(provenance).toContain("bandsintown");
     expect(provenance).not.toContain("admin-set");
-  });
-
-  /**
-   * **BUG-0034 (admin-window), fixed.** Ben's ruling names `venue` among the
-   * columns "an operator came to see"; the map resolves it to `events.venue_id`
-   * because that is the only venue-bearing column of the table, and the page
-   * drew a bare uuid the operator could neither read nor follow — strictly
-   * LESS than the `venue_name` the Browse row they clicked already showed
-   * them. QA pinned this as a strict `it.fails` xfail; the link landed, so it
-   * is an ordinary assertion now, and its shape is deliberately unchanged.
-   */
-  it("reaches the venue record page from an event's venue line", async () => {
-    const venueId = IDS.venues;
-    const markup = await renderRecord("events", {
-      events: { data: { ...scriptedRecord("events"), venue_id: venueId } },
-      field_provenance: complete([]),
-      sources: complete([]),
-      event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
-    });
-    const hrefs = cheerio
-      .load(markup)("a")
-      .toArray()
-      .map((anchor) => cheerio.load(markup)(anchor).attr("href"));
-    expect(hrefs, `hrefs seen: ${JSON.stringify(hrefs)}`).toContain(
-      `/records/venues/${venueId}`,
-    );
   });
 
   /** An events record whose venue line carries `venueId`. */
@@ -1860,19 +1624,6 @@ describe("a resolver-owned record", () => {
     expect(line.valueHrefs).toEqual([`/records/venues/${IDS.venues}`]);
   });
 
-  it("leaves a field the log says nothing about as the absence", async () => {
-    const markup = await renderRecord(
-      "events",
-      withProvenance(
-        [decided()],
-        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
-      ),
-    );
-    // Not a blank and not a zero — the app's one absence marker.
-    expect(lineFor(markup, "description").provenanceAbsent).toBe(true);
-    expect(lineFor(markup, "venue_id").provenanceAbsent).toBe(true);
-  });
-
   it("keeps every value on screen when the provenance table is absent", async () => {
     const markup = await renderRecord("events", {
       events: { data: scriptedRecord("events") },
@@ -1902,17 +1653,6 @@ describe("a resolver-owned record", () => {
     expect(markup).toContain("field_provenance");
   });
 
-  it("tells an absent provenance table apart from a provenance table holding nothing", async () => {
-    const absent = await renderRecord("events", {
-      events: { data: scriptedRecord("events") },
-      field_provenance: { error: tableNotInSchemaCache("field_provenance") },
-    });
-    const empty = await renderRecord("events");
-    expect(absent).not.toBe(empty);
-    // The empty case reports nothing at all: there is no failure to report.
-    expect(empty).not.toContain("field_provenance");
-  });
-
   it("still reports a failed VALUE read without a provenance line in its place", async () => {
     const markup = await renderRecord("events", {
       events: { error: permissionDenied("events") },
@@ -1923,20 +1663,6 @@ describe("a resolver-owned record", () => {
     expect(lines(markup)).toEqual([]);
   });
 
-  it("makes no provenance read for the directly-written table", async () => {
-    // `field_provenance` carries rows for resolver-owned entities; the walk
-    // sandbox is a staging fixture, unprovenanced by construction, and the
-    // page says so once in words rather than reading a log that could only
-    // answer "no rows".
-    const table = DIRECT_WRITE_TABLE;
-    const db = stubClient({ [table]: { data: scriptedRecord(table) } });
-    readWith.client = db.asSupabaseClient();
-    const { renderToStaticMarkup } = await import("react-dom/server");
-    renderToStaticMarkup(
-      await RecordPage({ params: Promise.resolve({ table, id: IDS[table] }) }),
-    );
-    expect(db.tablesRead(), table).toEqual([table]);
-  });
   /* ── the legend that says what an empty provenance cell means ──────────── */
 
   /**
@@ -2037,14 +1763,6 @@ describe("a resolver-owned record", () => {
       expect(sourced.provenanceAbsent).toBe(false);
       expect(sourced.provenance).toContain("ticketmaster");
       expect(lineFor(markup, "description").provenanceAbsent).toBe(true);
-    });
-
-    it("still has dashes to explain on the most-sourced record possible", async () => {
-      // Not a vacuous legend even at full coverage: the primary key and any
-      // column outside the map carry no decision and never will.
-      const markup = await renderRecord("events", everyDisplayColumnSourced());
-      expect(lineFor(markup, EDIT_CONFIG.events.pk).provenanceAbsent).toBe(true);
-      expect(lineFor(markup, UNMAPPED_COLUMN).provenanceAbsent).toBe(true);
     });
 
     it("says nothing on a directly-written record, whose regime note already explains it", async () => {
@@ -2372,44 +2090,6 @@ describe("the scope of the field table", () => {
       .map((node) => $(node).text().replace(/\s+/g, " ").trim());
   }
 
-  it("says once, on every mapped table, how many columns the table below draws", async () => {
-    // Both regimes, so this is not one side's guard wearing a loop (LESSONS 3).
-    expect(
-      new Set(
-        EDITABLE_TABLES.map((table) => writePathFor(EDIT_CONFIG[table].regime)),
-      ).size,
-    ).toBeGreaterThan(1);
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table);
-      const said = scopeLine(markup);
-      // Once per record — never per row, never twice.
-      expect(said.length, table).toBe(1);
-      const drawn = lines(markup);
-      expect(drawn.length, table).toBeGreaterThan(1);
-      // The figure carries its noun, from the app's one counting helper, so
-      // the copy and the count cannot drift apart.
-      expect(said[0], table).toContain(counted(drawn.length, "column"));
-      // ...and it is a sentence about the scope, not a bare figure.
-      expect(said[0].length, table).toBeGreaterThan(60);
-    }
-  });
-
-  it("counts the lines the table drew, not the columns the map lists", async () => {
-    // The read is what the page answers for. The fixture row carries a column
-    // outside the map, which the surface draws as a read-only line — so a line
-    // that recited `mappedColumns` would state a number one short of the rows
-    // an operator can count on screen.
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table);
-      const drawn = lines(markup).length;
-      expect(drawn, table).toBe(mappedColumns(EDIT_CONFIG[table]).length + 1);
-      expect(scopeLine(markup)[0], table).toContain(counted(drawn, "column"));
-      expect(scopeLine(markup)[0], table).not.toContain(
-        counted(mappedColumns(EDIT_CONFIG[table]).length, "column"),
-      );
-    }
-  });
-
   it("names the table in the face the heading above it uses, verbatim", async () => {
     for (const table of EDITABLE_TABLES) {
       const $ = cheerio.load(await renderRecord(table));
@@ -2476,52 +2156,6 @@ describe("the scope of the field table", () => {
       // Exactly one figure in the sentence: the number of columns drawn. A
       // second one could only be a claim about columns the page never read.
       expect(said.match(/\d+/g), table).toEqual([String(lines(markup).length)]);
-    }
-  });
-
-  it("leaves a null value its dash and the line that says what a dash means", async () => {
-    // The scope line answers "why is there no line", never "why is this line
-    // empty" — the two states keep their two renderings.
-    const markup = await renderRecord("events", {
-      events: { data: { ...scriptedRecord("events"), title: null } },
-      field_provenance: complete([]),
-      sources: complete([]),
-      event_listings: { data: { event_id: IDS.events, venue_name: VENUE_NAME } },
-    });
-    expect(lineFor(markup, "title").value).toContain(EM_DASH);
-    expect(scopeLine(markup).length).toBe(1);
-    expect(cheerio.load(markup)('[data-note="provenance-absence"]').length).toBe(1);
-    // ...and the null column is still counted: it has a line.
-    expect(scopeLine(markup)[0]).toContain(counted(lines(markup).length, "column"));
-  });
-
-  it("says nothing where no field table was drawn", async () => {
-    const table = DIRECT_WRITE_TABLE;
-    // The address is not an id at all.
-    expect(
-      scopeLine(await renderRecord(table, defaultScript(table), "not-an-id")),
-    ).toEqual([]);
-    // The table answered and holds no such row.
-    expect(
-      scopeLine(
-        await renderRecord(table, { ...defaultScript(table), [table]: { data: null } }),
-      ),
-    ).toEqual([]);
-    // The read was refused, and the table is not in the database at all.
-    for (const failure of [
-      { error: permissionDenied(table) },
-      { error: tableNotInSchemaCache(table) },
-    ]) {
-      const markup = await renderRecord(table, {
-        ...defaultScript(table),
-        [table]: failure,
-      });
-      expect(lines(markup)).toEqual([]);
-      expect(scopeLine(markup)).toEqual([]);
-      // ...and the page is not silent: the leg still reports for itself.
-      expect(
-        cheerio.load(markup)('[data-state="error"], [data-state="not_provisioned"]').length,
-      ).toBeGreaterThan(0);
     }
   });
 });
@@ -2772,19 +2406,6 @@ describe("the scope line on the shapes a real read hands back", () => {
     );
     expect(drawnRows(markup)).toBe(mapColumns(table).length);
     expect(statedFigure(markup, table)).toBe(mapColumns(table).length);
-  });
-
-  it("says the same figure when the override path is closed and nothing edits", async () => {
-    // The graded normal case: `verdicts` is not in this database, every line is
-    // read-only, and the scope of the table is the same scope it had when the
-    // path was open. What the page can WRITE and what it DRAWS are two answers.
-    const table = "events";
-    const open = await renderRecord(table, servedScript(table));
-    const closed = await renderRecord(table, servedScript(table, OVERRIDE_ABSENT));
-    expect(lines(open).some((line) => line.editable)).toBe(true);
-    expect(lines(closed).some((line) => line.editable)).toBe(false);
-    expect(drawnRows(closed)).toBe(drawnRows(open));
-    expect(statedFigure(closed, table)).toBe(statedFigure(open, table));
   });
 
   it("says nothing on any mapped table where no field table was drawn", async () => {

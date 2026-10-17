@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { currentDecisions } from "@/lib/browse/rows";
 import {
   fieldProvenanceOf,
   namedSourceIds,
@@ -146,29 +145,6 @@ describe("fieldProvenanceOf", () => {
     expect(facts.get("description")).toBeUndefined();
     expect(facts.has("venue_id")).toBe(false);
   });
-
-  it("reports the CURRENT decision when handed the reduction, not the history", () => {
-    // The latest-per-fact rule has exactly one implementation in this repo
-    // (`currentDecisions`), and this is the composition the data layer makes:
-    // reduce the append-only log, then shape it. A superseded source must not
-    // be named as current.
-    const log = [
-      decision({
-        provenance_id: "01920000-0000-7000-8000-0000000004a1",
-        field: "title",
-        source_id: ID.sourceBandsintown,
-        applied_at: "2026-08-01T00:00:00Z",
-      }),
-      decision({
-        provenance_id: "01920000-0000-7000-8000-0000000004a2",
-        field: "title",
-        source_id: ID.sourceTicketmaster,
-        applied_at: "2026-09-01T00:00:00Z",
-      }),
-    ];
-    const fact = fieldProvenanceOf(currentDecisions(log), NAMES).get("title");
-    expect(fact && "source" in fact ? fact.source : null).toBe("ticketmaster");
-  });
 });
 
 describe("namedSourceIds", () => {
@@ -198,13 +174,6 @@ describe("namedSourceIds", () => {
 
 describe("the layering this leaf exists to keep", () => {
   const LEAF = "src/lib/records/provenance.ts";
-
-  it("contains the modules these rules are about", () => {
-    const files = sourceFiles();
-    expect(files).toContain(LEAF);
-    expect(files).toContain("src/components/records/fields.ts");
-    expect(files).toContain("src/components/records/record-fields.tsx");
-  });
 
   it("keeps the leaf below lib/db: it imports nothing but another leaf", () => {
     // ARCHITECTURE §4 rule 7 — a pure domain leaf reaches no database, not

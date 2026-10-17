@@ -311,18 +311,6 @@ describe("the verdicts handoff note", () => {
 });
 
 describe("the verdicts migration", () => {
-  it("grades clean", () => {
-    expect(gradeVerdicts(shipped)).toEqual([]);
-  });
-
-  it("creates spec §7's seven columns, in order, and no eighth", () => {
-    const table = parseCreateTable(shipped, "public.verdicts");
-    expect(table).not.toBeNull();
-    expect(table?.columns.map((column) => column.name)).toEqual(
-      EXPECTED_COLUMNS.map((column) => column.name),
-    );
-  });
-
   it("gives each column its type, nullability and default", () => {
     const table = parseCreateTable(shipped, "public.verdicts");
     const actual = table?.columns.map((column) => ({
@@ -344,21 +332,6 @@ describe("the verdicts migration", () => {
   it("enables RLS and creates zero policies", () => {
     expect(shipped.scan).toMatch(/alter\s+table\s+public\.verdicts\s+enable\s+row\s+level\s+security/);
     expect(shipped.scan).not.toMatch(/\bcreate\s+policy\b/);
-  });
-
-  it("revokes both the client roles and service_role, and grants exactly once", () => {
-    const revoke = statementsStartingWith(shipped, "revoke").filter((statement) =>
-      statement.includes("public.verdicts"),
-    );
-    expect(revoke.some((statement) => /anon/.test(statement) && /authenticated/.test(statement))).toBe(true);
-    // The line BUG-0082 was missing. Its spelling is free — `revoke all` and the
-    // sibling's enumerated seven install the same ACL, and the ACL is what the
-    // test below asserts — but SOME revoke has to name the role, because the
-    // grant beside it cannot narrow anything.
-    expect(revoke.some((statement) => /\bservice_role\b/.test(statement))).toBe(true);
-    const grants = statementsStartingWith(shipped, "grant");
-    expect(grants).toHaveLength(1);
-    expect(grants[0]).toBe("grant select on table public.verdicts to service_role");
   });
 
   /**

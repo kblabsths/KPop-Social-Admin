@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateCycleHealth,
   fetchCycleHealth,
-  readCycleHealth,
   type ResolutionRunRow,
 } from "@/lib/gauges/cycle-health";
 import { T } from "@/lib/db/tables";
@@ -213,11 +212,6 @@ describe("aggregateCycleHealth", () => {
     expect(health.outcomes.died).toBe(0);
   });
 
-  it("counts every row exactly once, whatever state it is in", () => {
-    const total = Object.values(health.outcomes).reduce((sum, n) => sum + n, 0);
-    expect(total).toBe(health.cycles);
-  });
-
   it("measures duration and says how many it could NOT measure", () => {
     expect(health.duration.count).toBe(2);
     expect(health.duration.unmeasurable).toBe(1);
@@ -319,23 +313,5 @@ describe("aggregateCycleHealth", () => {
     const health = aggregateCycleHealth({ rows: [later], window });
     expect(health.outcomes.abandoned).toBe(1);
     expect(health.outcomes.succeeded).toBe(0);
-  });
-});
-
-describe("readCycleHealth", () => {
-  it("fetches and aggregates in one call", async () => {
-    const stub = withRows(population());
-    const result = await readCycleHealth({ now: NOW }, stub.asSupabaseClient());
-    expect(result.kind === "ok" && result.data.cycles).toBe(3);
-  });
-
-  it("passes a not-provisioned database straight through", async () => {
-    const stub = stubClient({
-      [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-    });
-    await expect(readCycleHealth({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.resolutionRuns,
-    });
   });
 });

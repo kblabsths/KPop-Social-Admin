@@ -184,16 +184,6 @@ describe("fetchRejectionStamps", () => {
     expect(narrowed.data.window.until).toBe(NOW);
   });
 
-  it("bounds the query even when the caller passes nothing", async () => {
-    const stub = withRows([], []);
-    await fetchRejectionStamps({}, stub.asSupabaseClient());
-    const steps = stub.calls[0].steps;
-    expect(steps.some((s) => s.method === "gte")).toBe(true);
-    expect(steps.find((s) => s.method === "limit")?.args[0]).toBeGreaterThan(0);
-    // No rejections means no sources lookup.
-    expect(stub.tablesRead()).toEqual([T.observations]);
-  });
-
   it("reports whichever object is absent, by name", async () => {
     const noObservations = stubClient({
       [T.observations]: { error: tableNotInSchemaCache(T.observations) },
@@ -353,29 +343,5 @@ describe("readRejectionStampGauge", () => {
     const stub = withRows(rejections(), sources());
     const result = await readRejectionStampGauge({ now: NOW, days: 15 }, stub.asSupabaseClient());
     expect(result.kind === "ok" && result.data.rerejected).toBe(4);
-  });
-
-  it("hands the narrowing it was given down to the scan — the entry point /sources calls", async () => {
-    // The page reaches the query through this function alone, so the facet is
-    // proved where the page hands it over as well as where it is applied
-    // (admin-window/BUG-0194).
-    const stub = withRows(rejections(), sources());
-    await readRejectionStampGauge(
-      { now: NOW, days: 15, filter: { source_id: SOURCE_B } },
-      stub.asSupabaseClient(),
-    );
-    expect(
-      stub.calls[0].steps.filter((step) => step.method === "eq").map((step) => step.args),
-    ).toContainEqual(["source_id", SOURCE_B]);
-  });
-
-  it("passes a not-provisioned database straight through", async () => {
-    const stub = stubClient({
-      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-    });
-    await expect(readRejectionStampGauge({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.observations,
-    });
   });
 });

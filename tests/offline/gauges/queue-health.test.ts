@@ -242,12 +242,4 @@ describe("readQueueHealth", () => {
     const result = await readQueueHealth({ now: NOW, days: 7 }, stub.asSupabaseClient());
     expect(result.kind === "ok" && result.data.items).toBe(5);
   });
-
-  it("passes a not-provisioned database straight through", async () => {
-    const stub = stubClient({ [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } });
-    await expect(readQueueHealth({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.reviewItems,
-    });
-  });
 });

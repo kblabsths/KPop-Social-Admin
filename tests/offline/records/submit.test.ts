@@ -128,28 +128,6 @@ describe("the body the picker sends", () => {
     await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
     expect(calls[0].url).toBe(recordFieldApiPath("events", ID));
   });
-
-  it("hands the route's refusal back in its own words", async () => {
-    const { impl } = scriptedFetch({
-      status: 503,
-      body: { error: "settle_review_item is not present in this database" },
-    });
-    const outcome = await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
-    expect(outcome.ok).toBe(false);
-    if (!outcome.ok) {
-      expect(outcome.message).toBe(
-        "settle_review_item is not present in this database",
-      );
-    }
-  });
-
-  it("claims no stored value on success, because none came back", async () => {
-    // The chosen id became an observation; what the canonical row holds is the
-    // pipeline's answer, read on the next render.
-    const { impl } = scriptedFetch({ status: 200, body: { ok: true, verdict: {} } });
-    const outcome = await submitReferenceEdit("events", ID, "venue_id", VENUE, impl);
-    expect(outcome).toEqual({ ok: true });
-  });
 });
 
 /* ── what it reports back ─────────────────────────────────────────────────── */

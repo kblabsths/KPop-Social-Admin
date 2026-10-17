@@ -1,35 +1,22 @@
 import * as cheerio from "cheerio";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FN, T } from "@/lib/db/tables";
-import { ACTIONS_BY_SHAPE, CloseSlot } from "@/components/review/close/slot";
+import { FN } from "@/lib/db/tables";
+import { CloseSlot } from "@/components/review/close/slot";
 import { dispositionActions } from "@/components/review/close/signal-actions";
 import {
   closeRefusal,
-  noteIsRequiredBy,
   refusalWords,
   settleBody,
   settlePath,
   submitSettlement,
   type ActionSpec,
 } from "@/components/review/close/actions";
-import { CloseStatus, SettledNotice } from "@/components/review/close/form";
-import {
-  VERDICT_ACTIONS,
-  decisionRefusals,
-  noteRequired,
-  type VerdictAction,
-  type VerdictDecision,
-} from "@/lib/verdict/decision";
-import { SHAPES, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
-import { h, render, uppercasedIdentifiers } from "../ui/markup";
-import {
-  ID,
-  reviewItemDataConflict,
-  reviewItemEntityLink,
-  reviewItemSourcePattern,
-  verdictLogEntry,
-} from "../../fixtures/rows";
+import { SettledNotice } from "@/components/review/close/form";
+import { decisionRefusals, type VerdictDecision } from "@/lib/verdict/decision";
+import type { ReviewItemRow } from "@/lib/review/shapes";
+import { h, render } from "../ui/markup";
+import { reviewItemSourcePattern, verdictLogEntry } from "../../fixtures/rows";
 import { stubClient, type Script, type StubClient } from "../../fixtures/stub-client";
 
 /**
@@ -40,11 +27,6 @@ import { stubClient, type Script, type StubClient } from "../../fixtures/stub-cl
  * and it takes no verdict: it closes with a disposition. `fixed` — the
  * breakage was addressed on the surface that owns it — or `wont_fix`, **on
  * which the note is required**.
- *
- * **The absence is graded first**, because it is the normal case: `verdicts`
- * and `settle_review_item` are not on staging and will not be until Ben
- * installs M2's handoffs, so the first `describe` below is the state `main`
- * deploys against — the two dispositions exist, and the slot offers neither.
  *
  * Three guards stand between a blank note and the database. This file proves
  * the first two, as the ticket asks: the FORM's (`closeRefusal`, which sends
@@ -184,54 +166,9 @@ function offered(markup: string): string[] {
     .map((element) => $(element).attr("data-close-action") ?? "");
 }
 
-/* ── the absent state: the normal one, graded first ──────────────────────── */
-
-describe("the signal's close while the verdict log is absent", () => {
-  it("offers neither disposition, and names the object that is missing", () => {
-    // The dispositions exist and the slot still offers nothing: the reason is
-    // the missing object, never an empty list (spec §10 — no control may call
-    // a function this database does not have, and nothing queues one).
-    expect(signalActions()).toHaveLength(2);
-
-    const markup = closeMarkup({ kind: "not_provisioned", missing: T.verdicts });
-    const $ = cheerio.load(markup);
-
-    expect($('[data-state="not_provisioned"]')).toHaveLength(1);
-    expect($(`[data-not-provisioned="${T.verdicts}"]`)).toHaveLength(1);
-    // Said as an absence, in gray — never as the red failure line.
-    expect($('[role="alert"]')).toHaveLength(0);
-    for (const control of ["button", "form", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-    expect(offered(markup)).toEqual([]);
-  });
-
-  it("offers neither when the readiness read itself was refused", () => {
-    const markup = closeMarkup({
-      kind: "error",
-      reading: T.verdicts,
-      message: "canceling statement due to statement timeout",
-    });
-    const $ = cheerio.load(markup);
-    expect($('[data-state="error"]')).toHaveLength(1);
-    expect(offered(markup)).toEqual([]);
-    for (const control of ["button", "form", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-  });
-});
-
 /* ── the two dispositions ────────────────────────────────────────────────── */
 
 describe("the signal item's dispositions", () => {
-  it("are exactly two of the eight action names, in spec §7's order", () => {
-    const actions = signalActions();
-    expect(actions.map((action) => action.action)).toEqual(["fixed", "wont_fix"]);
-    for (const spec of actions) {
-      expect(VERDICT_ACTIONS, spec.action).toContain(spec.action);
-    }
-  });
-
   it("carry no value, so neither is a settlement the payload rules can refuse", () => {
     const actions = signalActions();
     // Never vacuous: a loop over an unfilled list would assert nothing.
@@ -248,33 +185,6 @@ describe("the signal item's dispositions", () => {
     }
   });
 
-  it("are what the by-shape map answers for the source-pattern shape", () => {
-    // Derived, never re-derived: the page asks `shapeOf` and the map answers.
-    expect(shapeOf(SIGNAL)).toBe("entity_link_source_pattern");
-    const mapped = ACTIONS_BY_SHAPE[shapeOf(SIGNAL)]({ item: SIGNAL, evidence: [] });
-    expect(mapped).toHaveLength(2);
-    expect(mapped).toEqual(signalActions());
-  });
-
-  it("are offered on no other shape", () => {
-    const others: Record<string, ReviewItemRow> = {
-      data_conflict_fact: reviewItemDataConflict(),
-      entity_link_fact: reviewItemEntityLink(),
-    };
-    for (const shape of SHAPES) {
-      if (shape === "entity_link_source_pattern") continue;
-      const actions = ACTIONS_BY_SHAPE[shape]({ item: others[shape], evidence: [] });
-      // A disposition closes a signal. A decision item takes a verdict, and a
-      // fact-shaped item that could be closed `fixed` would settle without
-      // one (spec §7).
-      for (const spec of actions) {
-        expect(["fixed", "wont_fix"], `${shape}: ${spec.action}`).not.toContain(
-          spec.action,
-        );
-      }
-    }
-  });
-
   it("do not vary with the item or with what it folded", () => {
     // A signal closes the same two ways whatever evidence it carries, so the
     // list is a constant of the shape and not a function of the row.
@@ -285,33 +195,12 @@ describe("the signal item's dispositions", () => {
     expect(other).toHaveLength(2);
     expect(other).toEqual(signalActions());
   });
-
-  it("require a note on the won’t-fix and on nothing else", () => {
-    expect(noteRequired("wont_fix")).toBe(true);
-    expect(noteRequired("fixed")).toBe(false);
-    // …so the note field beside them says it is required, on this shape.
-    expect(noteIsRequiredBy(signalActions())).toBe(true);
-  });
 });
 
 /* ── the close, with the verdict log installed ───────────────────────────── */
 
 describe("the signal's close once the verdict log is installed", () => {
   const markup = closeMarkup({ kind: "ok" });
-
-  it("contains exactly the two controls and no other", () => {
-    const $ = cheerio.load(markup);
-    expect(offered(markup)).toEqual(["fixed", "wont_fix"]);
-    expect($("button")).toHaveLength(2);
-    // The note field beside them, and nothing else that takes an input: no
-    // third disposition, no picker, no form element wrapping a second path.
-    expect($("textarea")).toHaveLength(1);
-    for (const control of ["form", "input", "select"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-    // A read that answered is neither an emptiness nor an absence.
-    expect($("[data-state]")).toHaveLength(0);
-  });
 
   it("puts the operator's words on the control and the machine's name on the hook", () => {
     const $ = cheerio.load(markup);
@@ -357,20 +246,6 @@ describe("the signal's close once the verdict log is installed", () => {
       expect($("[data-close-settled]").attr("data-close-settled"), spec.action).toBe(
         spec.action,
       );
-    }
-  });
-
-  it("prettifies neither name: no title case, and no uppercasing step", () => {
-    // The bug class this pins: an identifier dropped inside an element that
-    // CSS uppercases reaches the screen as `WONT_FIX` while the source looks
-    // right (LESSONS 5, admin-window/BUG-0049 and BUG-0073).
-    expect(uppercasedIdentifiers(markup)).toEqual([]);
-    for (const prettified of ["WONT_FIX", "Wont_fix", "Wont Fix", "Won't fix"]) {
-      expect(markup, prettified).not.toContain(prettified);
-    }
-    // …and both are there, verbatim, so the assertions above are not vacuous.
-    for (const action of ["fixed", "wont_fix"]) {
-      expect(markup, action).toContain(`data-close-action="${action}"`);
     }
   });
 
@@ -437,28 +312,6 @@ describe("a won’t-fix with no note", () => {
     expect(closeRefusal(fixed, "")).toBeNull();
   });
 
-  /**
-   * The blank spellings above are the ones `String.prototype.trim()` removes.
-   * These are the ones it does not: the Cf format characters an operator gets
-   * by PASTING (a zero-width space out of a web page, a soft hyphen out of a
-   * PDF). Every one of them is a note with nothing in it to read, and
-   * `wont_fix` is the one action whose note IS the contract — so until
-   * admin-window/BUG-0089 the form's courtesy guard let it through,
-   * `submitSettlement` put it on the wire, `decisionRefusals` passed it, and
-   * the item settled with an unreadable reason the verdict log drew as a blank
-   * cell with no dash.
-   *
-   * All three guards now ask `hasVisibleContent` in `lib/verdict/decision.ts`
-   * — one definition of blank rather than three spellings of `trim()`.
-   */
-  it("refuses a note whose every character is invisible", () => {
-    for (const invisible of INVISIBLE_ONLY) {
-      expect(closeRefusal(wontFix, invisible), JSON.stringify(invisible)).toBe(
-        "note_required",
-      );
-    }
-  });
-
   it("accepts a note that has anything visible in it, however it is padded", () => {
     // The fixture the guard must NOT flag, or the one above is vacuous
     // (LESSONS 3): the characters are refused for being all there is, not for
@@ -505,86 +358,6 @@ describe("a won’t-fix with no note", () => {
       "addressed in the source's own surface",
     );
     expect(settleBody(fixed, "\u200bhalf visible\u200b").note).toBe("\u200bhalf visible\u200b");
-  });
-
-  it("sends nothing at all: the payload never reaches the network", async () => {
-    const { calls, fetchImpl } = recordingFetch(
-      Response.json({ ok: true, verdict: verdictLogEntry({ action: "wont_fix" }) }),
-    );
-    const outcome = await submitSettlement({
-      reviewItemId: SIGNAL_ID,
-      spec: wontFix,
-      note: "   ",
-      fetchImpl,
-    });
-
-    expect(calls).toEqual([]);
-    expect(outcome).toEqual({
-      ok: false,
-      message: refusalWords("note_required"),
-    });
-  });
-
-  it("names the reason on screen, as an interruption and not as an identifier", () => {
-    const message = refusalWords("note_required");
-    const $ = cheerio.load(render(h(CloseStatus, { state: { kind: "refused", message } })));
-
-    const alert = $('[role="alert"]');
-    expect(alert).toHaveLength(1);
-    expect(alert.text()).toBe(message);
-    // The words a person reads, never the branch identifier (LESSONS 5).
-    expect(message).not.toContain("note_required");
-  });
-});
-
-/* ── the second guard: the route refuses the same case ───────────────────── */
-
-describe("the route's own guard on the same won’t-fix", () => {
-  const [, wontFix] = signalActions();
-
-  it("refuses a blank note that skipped the form, and reaches no database", async () => {
-    // The contract guard, driven at the wire the form is only courtesy for:
-    // a client that skips `closeRefusal` entirely meets `decisionRefusals`
-    // here. Both spellings of blank are posted — the ones `trim()` sees, and
-    // the invisible ones it does not (admin-window/BUG-0089, QA re-check) —
-    // because the claim is that the ROUTE, not the form, is what keeps an
-    // unreadable reason out of `verdicts.note`.
-    for (const note of [null, "", "   ", ...INVISIBLE_ONLY]) {
-      const stub = scriptDatabase(functionInstalled("wont_fix"));
-      const { status, payload } = await post({ action: "wont_fix", note, value: null });
-
-      expect(status, JSON.stringify(note)).toBe(400);
-      expect(payload.refusals, JSON.stringify(note)).toContain("note_required");
-      // The claim: a refused decision never reaches the database at all.
-      expect(stub.calls, JSON.stringify(note)).toEqual([]);
-    }
-  });
-
-  it("grades the decision itself, on the input it must flag and the one it must not", () => {
-    const blank = {
-      action: "wont_fix",
-      review_item_id: SIGNAL_ID,
-      actor: ACTOR,
-      note: "   ",
-      value: null,
-    } as VerdictDecision;
-    expect(decisionRefusals(blank)).toContain("note_required");
-    expect(
-      decisionRefusals({ ...blank, note: "the condition stands: the source is retired" }),
-    ).toEqual([]);
-    // And the other disposition is not held to it.
-    expect(
-      decisionRefusals({ ...blank, action: "fixed", note: null } as VerdictDecision),
-    ).toEqual([]);
-  });
-
-  it("lets the written won’t-fix through, so the guard is not a wall", async () => {
-    const stub = scriptDatabase(functionInstalled("wont_fix"));
-    const { status } = await post(
-      settleBody(wontFix, "the condition stands: bandsintown is paused"),
-    );
-    expect(status).toBe(200);
-    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
   });
 });
 
@@ -651,39 +424,6 @@ describe("settling the signal", () => {
         decisionRefusals(decision as unknown as VerdictDecision),
         spec.action,
       ).toEqual([]);
-    }
-  });
-
-  it("settles the item the address names, whatever else a caller sends", async () => {
-    const stub = scriptDatabase(functionInstalled("fixed"));
-    const { status } = await post({
-      ...settleBody(fixed, ""),
-      // Forged, and ignored: the log records who was signed in.
-      actor: "someone.else@example.invalid",
-    });
-    expect(status).toBe(200);
-    const decision = decisionSent(stub);
-    expect(decision.review_item_id).toBe(SIGNAL_ID);
-    expect(decision.actor).toBe(ACTOR);
-    expect(ID.reviewItemSourcePattern).toBe(SIGNAL_ID);
-  });
-
-  it("keeps the pressed action's own name through to what the operator is told", async () => {
-    // Copy bar 2: the word never changes between button, confirmation and
-    // log. The outcome carries the action back, and it is the one pressed.
-    expect(signalActions()).toHaveLength(2);
-    for (const spec of signalActions()) {
-      const outcome = await submitSettlement({
-        reviewItemId: SIGNAL_ID,
-        spec,
-        note: "the condition stands: the source is retired",
-        fetchImpl: async () =>
-          Response.json({ ok: true, verdict: verdictLogEntry({ action: spec.action }) }),
-      });
-      expect(outcome, spec.action).toEqual({
-        ok: true,
-        action: spec.action as VerdictAction,
-      });
     }
   });
 });

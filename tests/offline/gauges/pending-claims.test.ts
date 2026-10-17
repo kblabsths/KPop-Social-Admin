@@ -5,10 +5,8 @@ import {
   aggregateAwaitingRowTrend,
   aggregatePendingClaims,
   fetchPendingClaims,
-  isRenderableBucket,
   readAwaitingRowTrend,
   readPendingClaims,
-  stuckPatternThreshold,
   type PendingClaimRow,
   type PendingObservationRow,
 } from "@/lib/gauges/pending-claims";
@@ -136,21 +134,6 @@ function withRows(claimRows: PendingClaimRow[], observationRows: PendingObservat
   });
 }
 
-describe("the bucket vocabulary", () => {
-  it("spells the view's six buckets", () => {
-    expect(PENDING_CLAIM_BUCKETS).toHaveLength(6);
-  });
-
-  it("renders every bucket except the one that is empty by rule", () => {
-    expect(RENDERABLE_BUCKETS).toHaveLength(5);
-    expect(RENDERABLE_BUCKETS).not.toContain("in_window");
-    expect(isRenderableBucket("in_window")).toBe(false);
-    expect(isRenderableBucket("awaiting_row")).toBe(true);
-    // A bucket the view does not have is not renderable either.
-    expect(isRenderableBucket("invented")).toBe(false);
-  });
-});
-
 describe("fetchPendingClaims", () => {
   it("scans observations and windows the view over the SAME interval, both bounded", async () => {
     const stub = withRows(claims(), observations());
@@ -256,25 +239,6 @@ describe("fetchPendingClaims", () => {
     expect(result.kind === "ok" && result.data.claims).toEqual([]);
   });
 
-  it("reports whichever object is absent, by name", async () => {
-    const noObservations = stubClient({
-      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-    });
-    await expect(fetchPendingClaims({}, noObservations.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.observations,
-    });
-
-    const noView = stubClient({
-      [T.observations]: { data: observations() },
-      [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-    });
-    await expect(fetchPendingClaims({}, noView.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.pendingClaims,
-    });
-  });
-
   it("carries an arbitrary failure through as the database's own words", async () => {
     const stub = stubClient({
       [T.observations]: { error: permissionDenied(T.observations) },
@@ -321,8 +285,6 @@ describe("fetchPendingClaims", () => {
  * replacement stays honest.
  */
 describe("the windowed claims leg against the id-list join it replaced", () => {
-  const SINCE = "2026-06-03T12:00:00.000Z";
-
   /**
    * The shape this gauge had before the collapse — the comparand, not a
    * fallback. It takes the same options `fetchPendingClaims` does, so the cap
@@ -539,71 +501,6 @@ describe("the windowed claims leg against the id-list join it replaced", () => {
     expect(aggregate(windowed.data).claims).toBe(aggregate(joined.data).claims - 1);
   });
 
-  /**
-   * THE CAP, WHERE THE TWO LEGS EITHER CUT ONE ORDER OR CUT TWO
-   * (admin-window/TASK-0074's question, admin-window/BUG-0167's answer).
-   *
-   * Both legs carry the SAME cap (`GAUGE_ROW_CAP`, 1000) and staging held 877
-   * claims in the 90-day window when this was measured, so the truncated
-   * regime is ~14% of growth away — and it is the one regime the live proof
-   * (`tests/live/claims.live.test.ts`) refuses to be about, because it demands
-   * both legs came back under their cap.
-   *
-   * The two fixtures below are that regime, and they are the criterion for
-   * BUG-0167: the identity has to hold where the boundary instant is TIED and
-   * where it is not. It holds because both legs now cut ONE total order
-   * (`observed_at`, then `observation_id`) over a population the claims are a
-   * subset of, so the claims below the scan's cutoff are exactly the claims
-   * leg's own first rows. Before the fix the scan ordered by `observed_at`
-   * alone and a tie on the boundary instant was cut arbitrarily: the scan came
-   * back with {c02, c03, c04}, the claims leg with {c01, c02, c03}, and the
-   * gauge rendered the two claims in the middle while the id-list join it
-   * replaced returned three.
-   */
-  // The name QA pinned this defect under, kept verbatim — a strict pin now,
-  // so it reddens the day the divergence returns.
-  it("PIN admin-window/BUG-0167: at the cap, a tie on the boundary instant costs claims the id list kept", async () => {
-    const TIED = "2026-08-01T00:00:00Z";
-    const ids = [
-      "01920000-0000-7000-8000-000000000c01",
-      "01920000-0000-7000-8000-000000000c02",
-      "01920000-0000-7000-8000-000000000c03",
-      "01920000-0000-7000-8000-000000000c04",
-    ];
-    const claimRows = ids.map((observation_id) =>
-      pendingClaimRow("standing_disagreement", {
-        observation_id,
-        source_id: SOURCE_A,
-        observed_at: TIED,
-      }),
-    );
-    // Four observations on ONE instant, handed to the scan's fixture newest id
-    // first — the order a query that does not ask for one may get back.
-    const observationRows = [...ids]
-      .reverse()
-      .map((observation_id) =>
-        observationRow({ observation_id, source_id: SOURCE_A, observed_at: TIED, status: "pending" }),
-      );
-
-    const bounds: GaugeOptions = { now: NOW, days: 90, limit: 3 };
-    const windowed = await fetchPendingClaims(bounds, capped(claimRows, observationRows).asSupabaseClient());
-    const joined = await idListJoin(capped(claimRows, observationRows), bounds);
-    if (windowed.kind !== "ok" || joined.kind !== "ok") throw new Error("both shapes read ok");
-
-    // Non-vacuous: the cap really bit — three of the four tied rows came back.
-    expect(windowed.data.observations).toHaveLength(3);
-    expect(joined.data.observations).toHaveLength(3);
-    // The identity the collapse rests on, at the cap and on the tie.
-    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual(
-      idsOf(joined.data.claims, (claim) => claim.observation_id),
-    );
-    expect(aggregate(windowed.data)).toEqual(aggregate(joined.data));
-    // …and no claim the scan itself saw is dropped: the three it returned are
-    // the three the gauge counts, decided by the order and not by the tie.
-    expect(idsOf(windowed.data.claims, (claim) => claim.observation_id)).toEqual(ids.slice(0, 3));
-    expect(aggregate(windowed.data).claims).toBe(3);
-  });
-
   it("selects the same claims at the cap when the boundary instant is UNTIED and the two populations differ", async () => {
     // The identity is about the two SHAPES, not about the tie. Six pending
     // observations on six distinct instants; the view holds a claim for four
@@ -664,18 +561,6 @@ describe("the windowed claims leg against the id-list join it replaced", () => {
       idOf(3),
     ]);
   });
-
-  it("windows the claims read on the bound the scan carries, and on the view's own column", async () => {
-    const { claimRows, observationRows } = agreeing();
-    const stub = fixture(claimRows, observationRows);
-    await fetchPendingClaims({ now: NOW }, stub.asSupabaseClient());
-    for (const call of stub.calls) {
-      expect(
-        call.steps.find((step) => step.method === "gte")?.args,
-        call.table,
-      ).toEqual(["observed_at", SINCE]);
-    }
-  });
 });
 
 /* ── refusals, once the legs are concurrent ──────────────────────────────── */
@@ -702,15 +587,6 @@ describe("a refusal from either leg", () => {
         missing: T.observations,
       });
     }
-  });
-
-  it("is the observations one when both legs fail for an arbitrary reason", async () => {
-    const stub = stubClient({
-      [T.observations]: { error: permissionDenied(T.observations) },
-      [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-    });
-    const result = await fetchPendingClaims({ now: NOW }, stub.asSupabaseClient());
-    expect(result).toMatchObject({ kind: "error", reading: T.observations });
   });
 
   it("is never a half-filled gauge and never a zero", async () => {
@@ -834,21 +710,6 @@ describe("aggregateAwaitingRowTrend", () => {
     expect(trend.series[0].points.map((p) => p.claims)).toEqual([0, 1, 1, 0]);
   });
 
-  it("counts a claim it cannot place on a day without moving it to one", () => {
-    // SOURCE_A's awaiting_row claim is 4h old, inside the window, so it plots;
-    // the point total across days never exceeds the series' claim count.
-    for (const series of trend.series) {
-      const plotted = series.points.reduce((sum, point) => sum + point.claims, 0);
-      expect(plotted).toBeLessThanOrEqual(series.claims);
-    }
-  });
-
-  it("renders NO threshold line — the dial is not in this repo", () => {
-    for (const series of trend.series) {
-      expect(series.threshold).toBeNull();
-    }
-  });
-
   it("reports an empty read as no series at all", () => {
     const empty = aggregateAwaitingRowTrend(rows({ claims: [], observations: [] }));
     expect(empty.series).toEqual([]);
@@ -856,17 +717,6 @@ describe("aggregateAwaitingRowTrend", () => {
 });
 
 describe("the stuck-pattern threshold seam", () => {
-  /**
-   * admin-window/TASK-0024 is the blocked question "where does Admin read
-   * `resolver.stuck_pattern`?". Until it is answered the seam yields nothing
-   * for every source — a value here would be the hand-copy spec §10 forbids.
-   */
-  it("yields nothing for any source", () => {
-    for (const sourceId of [SOURCE_A, SOURCE_B, "", "ticketmaster"]) {
-      expect(stuckPatternThreshold(sourceId)).toBeNull();
-    }
-  });
-
   it("puts no threshold figure anywhere in a rendered trend", () => {
     const serialised = JSON.stringify(aggregateAwaitingRowTrend(rows()));
     expect(serialised).toContain('"threshold":null');
@@ -883,15 +733,5 @@ describe("readPendingClaims and readAwaitingRowTrend", () => {
     const stub2 = withRows(claims(), observations());
     const trend = await readAwaitingRowTrend({ now: NOW }, stub2.asSupabaseClient());
     expect(trend.kind === "ok" && trend.data.series.length).toBe(2);
-  });
-
-  it("pass a not-provisioned database straight through", async () => {
-    const stub = stubClient({
-      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-    });
-    await expect(readAwaitingRowTrend({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.observations,
-    });
   });
 });

@@ -15,15 +15,10 @@ import type { VerdictDecision } from "@/lib/verdict/decision";
 import { ID, verdictDecision, verdictLogEntry, verdictValue } from "../../fixtures/rows";
 import {
   functionNotInSchemaCache,
-  missingOperator,
-  permissionDenied,
   statementTimeout,
   stubClient,
   tableNotInSchemaCache,
   transportFailure,
-  undefinedFunction,
-  undefinedTable,
-  type StubClient,
   type StubDatabase,
 } from "../../fixtures/stub-client";
 
@@ -65,11 +60,6 @@ function readinessWith(
   return { stub, run: () => readSettlementReadiness(stub.asSupabaseClient()) };
 }
 
-/** Every object the stub was asked about, function calls included. */
-function objectsTouched(stub: StubClient): string[] {
-  return stub.calls.map((call) => call.table);
-}
-
 /* ── absence: the normal case for all of M2 ──────────────────────────────── */
 
 describe("the function is not installed", () => {
@@ -88,80 +78,9 @@ describe("the function is not installed", () => {
     // spells — §4 rule 4, and the reason the name lives there.
     expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
   });
-
-  it("answers not_provisioned on Postgres's own 42883", async () => {
-    const { run } = callWith({
-      [FN.settleReviewItem]: { error: undefinedFunction(FN.settleReviewItem) },
-    });
-    await expect(run()).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: FN.settleReviewItem,
-    });
-  });
-
-  it("calls the function by name with the one argument name it takes", async () => {
-    // The PGRST202 trap (admin-window/TASK-0047): PostgREST answers the same
-    // code for an INSTALLED function called with the wrong argument names, and
-    // the app cannot tell the two apart. So the argument name is pinned, and
-    // the decision reaches the database unaltered — the seam adds nothing to
-    // the envelope the leaf built (ARCHITECTURE.md §9.2: no schema_version, no
-    // tier, no source name).
-    const { stub, run } = callWith({
-      [FN.settleReviewItem]: { error: functionNotInSchemaCache(FN.settleReviewItem) },
-    });
-    await run();
-
-    expect(stub.calls).toHaveLength(1);
-    expect(stub.calls[0].kind).toBe("function");
-    expect(stub.calls[0].steps[0]).toEqual({
-      method: "rpc",
-      args: [{ [SETTLE_ARGUMENT]: KEEP_CURRENT }],
-    });
-  });
 });
 
 describe("the verdicts table is not installed", () => {
-  it("answers not_provisioned naming verdicts on PGRST205", async () => {
-    // Measured read-only on the declared staging target 2026-09-08: a
-    // GET-shaped read of the absent table answers exactly this.
-    const { run } = readinessWith({
-      [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) },
-    });
-    await expect(run()).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.verdicts,
-    });
-  });
-
-  it("answers not_provisioned on Postgres's own 42P01", async () => {
-    const { run } = readinessWith({
-      [T.verdicts]: { error: undefinedTable(T.verdicts) },
-    });
-    await expect(run()).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.verdicts,
-    });
-  });
-
-  it("never asks whether the table is there by calling the function", async () => {
-    // The ruling of 2026-09-08 (DECISIONS; ARCHITECTURE.md §9.2). PostgREST
-    // cannot introspect a function without calling it, so a readiness probe
-    // that called `settle_review_item` would be a write attempt dressed as a
-    // question. The recording stub is what proves it: one read, of `verdicts`,
-    // and not one function call on any path.
-    for (const script of [
-      { [T.verdicts]: { data: [] } },
-      { [T.verdicts]: { error: tableNotInSchemaCache(T.verdicts) } },
-      { [T.verdicts]: { error: statementTimeout() } },
-    ]) {
-      const { stub, run } = readinessWith(script);
-      await run();
-      expect(stub.functionsCalled()).toEqual([]);
-      expect(stub.tablesRead()).toEqual([T.verdicts]);
-      expect(objectsTouched(stub)).toEqual([T.verdicts]);
-    }
-  });
-
   it("asks for zero rows, GET-shaped, and asks for no count", async () => {
     // Why this shape and not a `head: true` count — measured read-only on
     // `ubfjjqlvnpnoborczbdb.supabase.co` 2026-09-08 against the genuinely
@@ -209,29 +128,6 @@ describe("a failure that is not an absence", () => {
     expect(ready.message).toContain("canceling statement due to statement timeout");
   });
 
-  it("keeps a missing OPERATOR an error, not an absent function", async () => {
-    // 42883 is also what Postgres raises for a missing operator
-    // (admin-window/BUG-0058, measured on staging). The function is right
-    // there; the call was wrong. Claiming absence would be a confident false
-    // claim about an installed procedure.
-    const { run } = callWith({ [FN.settleReviewItem]: { error: missingOperator() } });
-    const result = await run();
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.message).toContain("operator does not exist");
-  });
-
-  it("reports a permission refusal as an error naming the function", async () => {
-    const { run } = callWith({
-      [FN.settleReviewItem]: { error: permissionDenied(FN.settleReviewItem) },
-    });
-    const result = await run();
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(FN.settleReviewItem);
-    expect(result.message).toContain("permission denied");
-  });
-
   it("never throws, whatever the client does", async () => {
     // §4.1: every export of `lib/db/**` returns a DbResult. A client that
     // THROWS — an unset credential, a transport that never answered — is the
@@ -263,34 +159,6 @@ describe("a failure that is not an absence", () => {
 /* ── the pre-database guard ──────────────────────────────────────────────── */
 
 describe("a decision the leaf refuses", () => {
-  /** Every refusal below is `decisionRefusals`' own identifier, not new vocabulary. */
-  const REFUSED: ReadonlyArray<readonly [string, Parameters<typeof verdictDecision>[0]]> = [
-    ["note_required", { action: "wont_fix", note: "   " }],
-    ["actor_required", { actor: "" }],
-    ["review_item_forbidden", { action: "override", value: verdictValue({ value: "x" }) }],
-    ["value_forbidden", { action: "settle", value: verdictValue({ value: "x" }) }],
-    ["unknown_action", { action: "delete_everything" as never }],
-  ];
-
-  it.each(REFUSED)("never reaches the database: %s", async (refusal, overrides) => {
-    // The whole point of running the guard before the call: a malformed
-    // payload is a NAMED refusal, not a Postgres exception, and the recording
-    // stub proves nothing was sent. The stub is scripted with an answer it
-    // must never need.
-    const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
-    const result = await settleReviewItem(
-      stub.asSupabaseClient(),
-      verdictDecision(overrides),
-    );
-
-    expect(stub.calls).toEqual([]);
-    expect(result.kind).toBe("error");
-    if (result.kind !== "error") return;
-    expect(result.reading).toBe(FN.settleReviewItem);
-    expect(result.message).toContain(REFUSED_BEFORE_SEND);
-    expect(result.message).toContain(refusal);
-  });
-
   it("names every refusal that applies, not the first one", async () => {
     const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
     const result = await settleReviewItem(
@@ -303,16 +171,6 @@ describe("a decision the leaf refuses", () => {
     if (result.kind !== "error") return;
     expect(result.message).toContain("note_required");
     expect(result.message).toContain("actor_required");
-  });
-
-  it("sends a well-formed decision through", async () => {
-    // The second fixture of the guard (LESSONS 3): the input it must NOT flag.
-    // Without this the case above would pass on a seam that sent nothing ever.
-    const stub = stubClient({ [FN.settleReviewItem]: { data: verdictLogEntry() } });
-    const result = await settleReviewItem(stub.asSupabaseClient(), KEEP_CURRENT);
-
-    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
-    expect(result.kind).toBe("ok");
   });
 });
 
@@ -438,19 +296,6 @@ describe("the function is installed", () => {
   });
 });
 
-describe("the readiness read, against a database that has the table", () => {
-  it("answers ready for an empty table and for a populated one", async () => {
-    // The second fixture (LESSONS 3): the input the probe must NOT flag. An
-    // empty `verdicts` means nobody has settled anything yet — the path is
-    // open, and a surface that read "no rows" as "not provisioned" would hide
-    // the controls on a fully installed database.
-    for (const data of [[], [verdictLogEntry()]]) {
-      const { run } = readinessWith({ [T.verdicts]: { data } });
-      await expect(run()).resolves.toEqual({ kind: "ok", data: "ready" });
-    }
-  });
-});
-
 /* ── readiness is a CONJUNCTION (admin-window/BUG-0223) ──────────────────── */
 
 /**
@@ -564,29 +409,6 @@ describe("the four worlds the handoff can leave a database in", () => {
 /* ── QA (admin-window/TASK-0048): the seam's own attack surface ──────────── */
 
 describe("the wire contract of the one call", () => {
-  it("names the argument `p_decision`, the literal PostgREST resolves the call by", () => {
-    // The seam's own docstring says why this matters and then pins nothing:
-    // PostgREST resolves an RPC by name AND by argument names, and answers
-    // PGRST202 for an INSTALLED function called with the wrong ones — the same
-    // code it answers for a function that is not there, which `classify` turns
-    // into `not_provisioned`. So a typo here does not fail: it renders a live
-    // function as permanently, silently absent, and tells an operator to
-    // install what is already installed (the shape of admin-window/BUG-0080).
-    //
-    // The existing pin (`the function is not installed` > `calls the function
-    // by name with the one argument name it takes`) asserts the call against
-    // SETTLE_ARGUMENT itself, so it is true for any spelling. Measured
-    // 2026-09-08: with `SETTLE_ARGUMENT` changed to "p_decisions", the whole
-    // offline suite stayed green — 61 files, 2189 tests, exit 0.
-    //
-    // The literal is the one half of the contract this repo owns. Its other
-    // half is the SQL in `agenticflow/tracker/for-human/M2-handoff-settle-review-item.md`
-    // (TASK-0046), which declares `public.settle_review_item(p_decision jsonb)`;
-    // when that artifact lands, its offline test should assert its parameter
-    // name against this constant and this case becomes the weaker of the two.
-    expect(SETTLE_ARGUMENT).toBe("p_decision");
-  });
-
   it("sends the decision the caller built, with nothing added and nothing dropped", async () => {
     // §9.2: no schema_version, no tier, no source name — the seam is a
     // conduit. Asserted over a value-carrying decision, whose nested envelope

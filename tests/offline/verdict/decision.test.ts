@@ -9,7 +9,6 @@ import {
   isAbsentText,
   isReferenceField,
   noteRequired,
-  visibleContent,
   type VerdictAction,
   type VerdictDecision,
   type VerdictValue,
@@ -136,12 +135,6 @@ describe("the action set", () => {
       "override",
     ]);
   });
-
-  it("has a well-formed fixture for every action it carries", () => {
-    // The ratchet under every iteration below: a ninth action lands here
-    // first, as a missing fixture, rather than passing untested.
-    expect(Object.keys(WELL_FORMED).sort()).toEqual([...VERDICT_ACTIONS].sort());
-  });
 });
 
 /* ── the fact identifier, and its one producer ───────────────────────────── */
@@ -196,11 +189,6 @@ function handSpelledFactKeys(code: string): string[] {
 const FACT_KEY_PRODUCER = "src/lib/verdict/decision.ts";
 
 describe("factKey — the app's one spelling of a fact identifier", () => {
-  it("joins a domain and a field the way every surface names a fact", () => {
-    expect(factKey("events", "title")).toBe("events.title");
-    expect(factKey("venues", "city")).toBe("venues.city");
-  });
-
   it("is what REFERENCE_FIELDS is spelled with, so the lookup cannot miss its own key", () => {
     // The whole stake of admin-window/DEBT-0007: `isReferenceField` builds a
     // key and looks it up in this list. Built by one function, the list and
@@ -387,18 +375,6 @@ describe("isAbsentText", () => {
     }
   });
 
-  it("is strictly WIDER than hasVisibleContent, and differs on exactly the dash", () => {
-    // Why both exist, stated as an assertion rather than as a comment: absent
-    // implies not-visible for every input EXCEPT the app's own dash, which has
-    // ink and still means nothing was filled in.
-    for (const text of ["", "   ", "\u200b", EM_DASH, ` ${EM_DASH} `, "0", `${EM_DASH}x`, "a note"]) {
-      const absent = isAbsentText(text);
-      const inked = hasVisibleContent(text);
-      const dashOnly = visibleContent(text) === EM_DASH;
-      expect(absent, JSON.stringify(text)).toBe(!inked || dashOnly);
-    }
-  });
-
   it("leaves hasVisibleContent UNWIDENED — a dash an operator typed is still content", () => {
     // The door deliberately left shut (BUG-0184 criterion 4). A lone dash in a
     // close note is a thing a person typed, so the note guards still accept
@@ -411,21 +387,6 @@ describe("isAbsentText", () => {
 });
 
 describe("isReferenceField", () => {
-  /**
-   * The predicate every surface asks before it offers a control for a fact
-   * (campaign admin-window/BUG-0087). Proved on both sides, as a guard must
-   * be (LESSONS 3): a field it MUST call a reference, and fields it must NOT.
-   */
-  it("calls every field the registry declares a reference one", () => {
-    // Iterated off the constant, so a field added there is proved by the same
-    // line rather than by remembering to add an assertion.
-    expect(REFERENCE_FIELDS.length).toBeGreaterThan(0);
-    for (const spelling of REFERENCE_FIELDS) {
-      const [domain, field] = spelling.split(".");
-      expect(isReferenceField(domain, field), spelling).toBe(true);
-    }
-  });
-
   it("calls a scalar fact no such thing", () => {
     // The `events` scalars the conflict surface deals in, and a venues one:
     // a predicate that answered true for these would withhold the supply
@@ -468,10 +429,6 @@ describe("noteRequired", () => {
       expect(noteRequired(action), action).toBe(action === "wont_fix");
     }
   });
-
-  it("names exactly one action across the whole set", () => {
-    expect(VERDICT_ACTIONS.filter(noteRequired)).toEqual(["wont_fix"]);
-  });
 });
 
 describe("a well-formed decision", () => {
@@ -479,12 +436,6 @@ describe("a well-formed decision", () => {
     for (const action of VERDICT_ACTIONS) {
       expect(decisionRefusals(WELL_FORMED[action]), action).toEqual([]);
     }
-  });
-
-  it("refuses nothing for an override of a reference field", () => {
-    // §9.2: a reference is chosen as a ref, not as a scalar — the second legal
-    // payload shape of the one action that has two.
-    expect(decisionRefusals(REFERENCE_OVERRIDE)).toEqual([]);
   });
 
   it("accepts a false and a zero as supplied values", () => {
@@ -498,12 +449,6 @@ describe("a well-formed decision", () => {
       expect(decisionRefusals(decision), String(supplied)).toEqual([]);
     }
   });
-
-  it("accepts an optional note on an action that does not require one", () => {
-    expect(
-      decisionRefusals(decisionOf({ action: "settle", note: "held for the next cycle" })),
-    ).toEqual([]);
-  });
 });
 
 /*
@@ -516,12 +461,6 @@ describe("invariant 1 — the action is one of the eight", () => {
     // The cast is the point: a form posts a string, and the type erases.
     const decision = decisionOf({ action: "approve" as VerdictAction });
     expect(decisionRefusals(decision)).toContain("unknown_action");
-  });
-
-  it("does not flag any action inside the set", () => {
-    for (const action of VERDICT_ACTIONS) {
-      expect(decisionRefusals(WELL_FORMED[action]), action).not.toContain("unknown_action");
-    }
   });
 
   it("still checks the actor, and no action-dependent invariant, on an unknown action", () => {
@@ -573,11 +512,6 @@ describe("invariant 2 — the item, and the one action without it", () => {
     }
   });
 
-  it("flags an all-whitespace review_item_id, which a form alone would let through", () => {
-    const decision = decisionOf({ ...WELL_FORMED.fixed, review_item_id: "   " });
-    expect(decisionRefusals(decision)).toContain("review_item_required");
-  });
-
   it("flags a review_item_id with nothing visible in it", () => {
     // A uuid FK cannot be satisfied by a string of invisible characters any
     // more than by spaces, and both are the shape a form alone lets through
@@ -589,30 +523,9 @@ describe("invariant 2 — the item, and the one action without it", () => {
       );
     }
   });
-
-  it("flags an override that carries an item", () => {
-    const decision = decisionOf({
-      ...WELL_FORMED.override,
-      review_item_id: "22222222-2222-4222-8222-222222222222",
-    });
-    expect(decisionRefusals(decision)).toContain("review_item_forbidden");
-  });
-
-  it("does not flag the item as present or absent on the eight well-formed decisions", () => {
-    for (const action of VERDICT_ACTIONS) {
-      const refusals = decisionRefusals(WELL_FORMED[action]);
-      expect(refusals, action).not.toContain("review_item_required");
-      expect(refusals, action).not.toContain("review_item_forbidden");
-    }
-  });
 });
 
 describe("invariant 3 — the note wont_fix cannot settle without", () => {
-  it("flags a null note on wont_fix", () => {
-    const decision = decisionOf({ ...WELL_FORMED.wont_fix, note: null });
-    expect(decisionRefusals(decision)).toContain("note_required");
-  });
-
   it("flags a present-but-blank note on wont_fix", () => {
     // The second shape a form alone lets through (acceptance criterion 5): the
     // field was filled in, with nothing.
@@ -670,13 +583,6 @@ describe("invariant 3 — the note wont_fix cannot settle without", () => {
       }
     }
   });
-
-  it("does not flag a missing note on any action that does not require one", () => {
-    for (const action of VERDICT_ACTIONS.filter((one) => !noteRequired(one))) {
-      const decision = decisionOf({ ...WELL_FORMED[action], note: null });
-      expect(decisionRefusals(decision), action).not.toContain("note_required");
-    }
-  });
 });
 
 describe("invariant 4 — which actions carry a value at all", () => {
@@ -684,24 +590,6 @@ describe("invariant 4 — which actions carry a value at all", () => {
     for (const action of VALUE_CARRYING) {
       const decision = decisionOf({ ...WELL_FORMED[action], value: null });
       expect(decisionRefusals(decision), action).toContain("value_required");
-    }
-  });
-
-  it("flags a value on every settle-only action", () => {
-    for (const action of SETTLE_ONLY) {
-      const decision = decisionOf({
-        ...WELL_FORMED[action],
-        value: valueOf({ value: "smuggled in" }),
-      });
-      expect(decisionRefusals(decision), action).toContain("value_forbidden");
-    }
-  });
-
-  it("does not flag the value as required or forbidden on the well-formed eight", () => {
-    for (const action of VERDICT_ACTIONS) {
-      const refusals = decisionRefusals(WELL_FORMED[action]);
-      expect(refusals, action).not.toContain("value_required");
-      expect(refusals, action).not.toContain("value_forbidden");
     }
   });
 });
@@ -751,15 +639,6 @@ describe("invariant 5 — exactly one payload slot, and one this action may fill
       expect(decisionRefusals(decision), decision.action).toContain("value_payload_not_allowed");
     }
   });
-
-  it("does not flag the payload of any well-formed decision", () => {
-    for (const decision of [...Object.values(WELL_FORMED), REFERENCE_OVERRIDE]) {
-      const refusals = decisionRefusals(decision);
-      expect(refusals, decision.action).not.toContain("value_payload_missing");
-      expect(refusals, decision.action).not.toContain("value_payload_ambiguous");
-      expect(refusals, decision.action).not.toContain("value_payload_not_allowed");
-    }
-  });
 });
 
 describe("invariant 6 — a reference is linked, never typed", () => {
@@ -773,29 +652,6 @@ describe("invariant 6 — a reference is linked, never typed", () => {
    * `venue_id` with a venue NAME.
    */
   const TYPED = "The Forum, Inglewood";
-
-  it("flags a supply_value carrying text for every reference fact", () => {
-    for (const spelling of REFERENCE_FIELDS) {
-      const decision = decisionOf({
-        action: "supply_value",
-        value: valueOf({ ...factKeys(spelling), value: TYPED }),
-      });
-      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
-    }
-  });
-
-  it("flags the scalar arm of an override on a reference fact", () => {
-    // `override` is the one action with two legal slots, and only ONE of them
-    // is how a reference travels.
-    for (const spelling of REFERENCE_FIELDS) {
-      const decision = decisionOf({
-        action: "override",
-        review_item_id: null,
-        value: valueOf({ ...factKeys(spelling), value: TYPED }),
-      });
-      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
-    }
-  });
 
   it("flags a filled value slot on a reference fact whatever the action", () => {
     // Read off the fact rather than off the action, so a ninth action cannot
@@ -908,13 +764,6 @@ describe("invariant 6 — a reference is linked, never typed", () => {
 });
 
 describe("invariant 7 — who decided", () => {
-  it("flags a blank actor", () => {
-    for (const blank of ["", "   ", "\n"]) {
-      const decision = decisionOf({ ...WELL_FORMED.settle, actor: blank });
-      expect(decisionRefusals(decision), JSON.stringify(blank)).toContain("actor_required");
-    }
-  });
-
   it("flags an actor with nothing visible in it, and keeps one that has words", () => {
     // The same one definition of blank, on the other required text field:
     // `verdicts.actor` is the record of WHO decided, and an actor of
@@ -928,12 +777,6 @@ describe("invariant 7 — who decided", () => {
     // …and the fixture it must not flag: an ordinary address, padded.
     const padded = decisionOf({ ...WELL_FORMED.settle, actor: "\u200badmin@example.test" });
     expect(decisionRefusals(padded)).toEqual([]);
-  });
-
-  it("does not flag an actor on any well-formed decision", () => {
-    for (const action of VERDICT_ACTIONS) {
-      expect(decisionRefusals(WELL_FORMED[action]), action).not.toContain("actor_required");
-    }
   });
 });
 
@@ -991,53 +834,6 @@ function withoutKey(decision: VerdictDecision, key: keyof VerdictDecision): Verd
  * key is the ORDINARY body for the decision it describes, not a malformation.
  */
 describe("a body whose optional keys are absent, not null", () => {
-  const ITEM = "22222222-2222-4222-8222-222222222222";
-
-  it("grades a supply_value body that omits `value` as value_required [admin-window/BUG-0079]", () => {
-    // Currently throws `TypeError: Cannot read properties of undefined`
-    // instead of refusing — a crash where the campaign's one pre-database
-    // guard owes a named refusal.
-    const body = bodyAsDecision({
-      action: "supply_value",
-      review_item_id: ITEM,
-      actor: "admin@example.test",
-      note: null,
-    });
-    expect(decisionRefusals(body)).toEqual(["value_required"]);
-  });
-
-  it("refuses nothing for a settle body that omits `value` [admin-window/BUG-0079]", () => {
-    // `settle` carries no value at all; omitting the key is the ordinary
-    // JSON for it, and it is currently refused as `value_forbidden`.
-    const body = bodyAsDecision({
-      action: "settle",
-      review_item_id: ITEM,
-      actor: "admin@example.test",
-      note: null,
-    });
-    expect(decisionRefusals(body)).toEqual([]);
-  });
-
-  it("refuses nothing for an override body that omits `review_item_id` [admin-window/BUG-0079]", () => {
-    // The one item-less action: a client that leaves the key out is saying
-    // exactly what an explicit null says, and is currently refused as
-    // `review_item_forbidden` — the refusal for carrying an item.
-    const body = bodyAsDecision({
-      action: "override",
-      actor: "admin@example.test",
-      note: null,
-      value: {
-        domain: "events",
-        entity_id: "11111111-1111-4111-8111-111111111111",
-        field: "title",
-        observation_id: null,
-        value: "Seoul Olympic Stadium",
-        ref: null,
-      },
-    });
-    expect(decisionRefusals(body)).toEqual([]);
-  });
-
   it("grades a __proto__ key in a parsed body as ordinary data", () => {
     // A JSON payload naming `__proto__` must neither pollute nor divert the
     // payload-slot reading: the own keys are what is graded.

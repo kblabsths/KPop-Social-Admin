@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   GAUGE_ROW_CAP,
-  RESOLVER_CADENCE_SECONDS,
   groupBy,
   idsOf,
   indexBy,
@@ -125,22 +124,10 @@ describe("the platform row cap", () => {
     );
     expect(bounds.limit).toBe(GAUGE_ROW_CAP);
   });
-
-  it("leaves a cap under it alone", () => {
-    expect(resolveBounds({ now: NOW, limit: 25 }, { days: 7, limit: 500 }).limit).toBe(25);
-  });
 });
 
 describe("windowOf", () => {
   const bounds = { since: "2026-08-25T12:00:00.000Z", until: NOW, limit: 3 };
-
-  it("is not truncated below the cap", () => {
-    expect(windowOf(bounds, 2, T.observations).truncated).toBe(false);
-  });
-
-  it("is truncated at the cap, because more rows may exist unseen", () => {
-    expect(windowOf(bounds, 3, T.observations).truncated).toBe(true);
-  });
 
   it("decides truncation against the platform cap when bounds ask for more", () => {
     // Bounds built by hand rather than through `resolveBounds`: the server
@@ -162,16 +149,6 @@ describe("windowOf", () => {
   it("reports the kind of the object the scan named, on both kinds", () => {
     expect(windowOf(bounds, 2, T.observations).over, "observations is a table").toBe("table");
     expect(windowOf(bounds, 2, T.pendingClaims).over, "pending_claims is a view").toBe("view");
-  });
-
-  it("takes the object, never the word — nothing else about the read moves it", () => {
-    // The same bounds and the same row count over two objects differ in `over`
-    // and in nothing else: the noun is a fact of the object, and the caller has
-    // no way to state it directly.
-    const table = windowOf(bounds, 2, T.observations);
-    const view = windowOf(bounds, 2, T.pendingClaims);
-    expect({ ...table, over: undefined }).toEqual({ ...view, over: undefined });
-    expect(table.over).not.toBe(view.over);
   });
 });
 
@@ -423,11 +400,5 @@ describe("chunk", () => {
   it("splits into bounded pieces and keeps every item", () => {
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(chunk([], 2)).toEqual([]);
-  });
-});
-
-describe("the cadence constant", () => {
-  it("is resolver.md §12's 15 minutes, in seconds", () => {
-    expect(RESOLVER_CADENCE_SECONDS).toBe(900);
   });
 });

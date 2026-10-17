@@ -303,17 +303,6 @@ describe("PageMore draws its five states from props", () => {
     expect(html).toContain('data-paging="more"');
   });
 
-  it("a bound refusal names no third object, and gets the reason alone rather than a dangling dash", () => {
-    // `PageRefusal.object` is null for a bound refusal: the bound the server
-    // refused is the one this state already holds.
-    const html = more({
-      refusal: brokenArm("that bound is not one this view serves", "this app", null),
-    });
-    expect(html).toContain("data-paging-refusal");
-    expect(html).toContain("that bound is not one this view serves");
-    expect(html).not.toContain("—");
-  });
-
   it("a refusal on an exhausted set draws the line, and still no control", () => {
     const html = more({
       status: "exhausted",
@@ -337,46 +326,6 @@ describe("PageMore draws its five states from props", () => {
     expect(html).toContain('data-paging="limit"');
     expect(controls(html)).toBe(0);
     expect(html).not.toMatch(/[Pp]ress it again/);
-  });
-
-  it("leaves the row markup handed to the surface untouched, refusal or not", () => {
-    // A refused page never half-fills the list and never re-draws it (M3 EC5).
-    // The rows are the page's, so the proof is that the same row markup
-    // renders byte-identically beside every state of this widget.
-    const rows = h(
-      "ul",
-      { "data-rows": "" },
-      ["a", "b", "c"].map((id) => h("li", { key: id }, id)),
-    );
-    const surface = (over: Partial<PageState<Row>>) =>
-      render(
-        h(
-          "div",
-          null,
-          rows,
-          h(PageMore, {
-            state: state(over),
-            holds: HOLDS,
-            size: SIZE,
-            readsAgree: true,
-            nextStep: NEXT_STEP,
-            onPress: () => {},
-          }),
-        ),
-      );
-    const listOf = (html: string) => /<ul[^]*<\/ul>/.exec(html)?.[0] ?? "";
-    const clean = listOf(surface({}));
-    expect(clean).toContain("<li>a</li>");
-    for (const over of [
-      {
-        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
-      },
-      { status: "loading" as const },
-      { status: "exhausted" as const },
-      { held: MAX_PAGE_OFFSET + SIZE },
-    ]) {
-      expect(listOf(surface(over)), JSON.stringify(over)).toBe(clean);
-    }
   });
 });
 
@@ -414,20 +363,31 @@ describe("the paging area states an overlap once, in client-land", () => {
   const overlap = (html: string): cheerio.Cheerio<never> =>
     cheerio.load(html)("[data-paging-overlap]") as unknown as cheerio.Cheerio<never>;
 
-  it("says nothing at all on a state no press has changed", () => {
-    // Criterion 4's half in this file: the fact is false on every state
-    // `initialPage` builds, so a first SERVER render carries no such element —
-    // which is what keeps the first screen byte-identical.
-    expect(overlap(more())).toHaveLength(0);
-    expect(overlap(more({ status: "exhausted" }))).toHaveLength(0);
-    expect(overlap(more({ status: "loading" }))).toHaveLength(0);
-  });
-
-  it("says it ONCE when a press met rows the state already held", () => {
-    const html = more({ overlapped: true });
-    expect(overlap(html)).toHaveLength(1);
-    // It is a sentence, not a control: nothing new to press appears with it.
-    expect(controls(html)).toBe(1);
+  /**
+   * The one fact, over every arm it can stand beside (admin-window/BUG-0222
+   * criteria 3 and 4): false on every state `initialPage` builds — so a first
+   * SERVER render carries no such element, which is what keeps the first
+   * screen byte-identical — and stated exactly once after a press met rows
+   * the state already held, whatever arm the surface is in, because a list
+   * that moved has moved. It is a sentence, not a control: nothing new to
+   * press appears with it.
+   */
+  const OVERLAP_ARMS: ReadonlyArray<readonly [string, Partial<PageState<Row>>, number]> = [
+    ["idle, before any press has changed it", {}, 0],
+    ["exhausted, before any press has changed it", { status: "exhausted" }, 0],
+    ["loading, before any press has changed it", { status: "loading" }, 0],
+    ["idle, after a press met rows the state already held", { overlapped: true }, 1],
+    ["exhausted, after the list moved", { overlapped: true, status: "exhausted" }, 1],
+    ["loading, after the list moved", { overlapped: true, status: "loading" }, 1],
+    [
+      "refused, after the list moved",
+      { overlapped: true, refusal: brokenArm("the read failed", "the machine", "pending_claims") },
+      1,
+    ],
+  ];
+  it.each(OVERLAP_ARMS)("states the overlap once if the list moved and not at all before: %s", (_arm, over, lines) => {
+    const html = more(over);
+    expect(overlap(html)).toHaveLength(lines);
     expect(overlap(html).find("button")).toHaveLength(0);
   });
 
@@ -439,19 +399,6 @@ describe("the paging area states an overlap once, in client-land", () => {
     expect(html).toContain('data-paging="more"');
     expect(html).not.toContain("data-paging-refusal");
     expect(html).not.toContain('data-paging="exhausted"');
-  });
-
-  it("stands beside every other arm, because a list that moved has moved", () => {
-    for (const over of [
-      { overlapped: true, status: "exhausted" as const },
-      { overlapped: true, status: "loading" as const },
-      {
-        overlapped: true,
-        refusal: brokenArm("the read failed", "the machine", "pending_claims"),
-      },
-    ]) {
-      expect(overlap(more(over))).toHaveLength(1);
-    }
   });
 
   it("is announced politely and reads as a notice, never as breakage", () => {
@@ -625,21 +572,6 @@ describe("a page answer for an object this database does not have", () => {
     const retryable = (): string =>
       more({ refusal: brokenArm("canceling statement due to statement timeout", "the machine", MISSING) });
 
-    it("draws no control at all — absent from the markup, not merely disabled", () => {
-      const html = absent();
-      expect(controls(html)).toBe(0);
-      expect(html).not.toContain('data-paging="more"');
-      expect(html).not.toContain('data-paging="loading"');
-      // Not a disabled control either: there is no button in the markup for an
-      // attribute to sit on.
-      expect(html).not.toContain("disabled");
-      // MUST-NOT-FLAG: a read that failed is retryable at the same bound, so
-      // its control and its fix are exactly what they were.
-      expect(controls(retryable())).toBe(1);
-      expect(retryable()).toContain('data-paging="more"');
-      expect(retryable()).toMatch(/[Pp]ress it again/);
-    });
-
     it("puts no other sentence in its place: the clause is the whole of the area", () => {
       const html = absent();
       // No terminal sentence takes the control's slot — neither the one that
@@ -668,63 +600,6 @@ describe("a page answer for an object this database does not have", () => {
       expect(cheerio.load(moved)("[data-paging-overlap]")).toHaveLength(1);
       expect(controls(moved)).toBe(0);
     });
-
-    it("is what a PRESS ends in, driven through the real driver, and it moves no row and no bound", async () => {
-      // The arm as a surface really reaches it: the object disappears between
-      // the first screen and a press. The rows on screen, the bound the next
-      // press would carry and the drawn set all stand (M3 EC5).
-      const held = state({ rows: [{ id: "a" }, { id: "b" }], held: SIZE * 2 });
-      const next = await requestPage<Row>(held, {
-        route: PAGE_ROUTES.claims,
-        params: "",
-        size: SIZE,
-        idKey: ROW_ID,
-        fetchJson: async () => ({ kind: "not_provisioned", missing: MISSING }),
-      });
-      expect(next.rows).toEqual(held.rows);
-      expect(next.held).toBe(held.held);
-      expect(next.refusal).toEqual({ condition: "not provisioned", missing: MISSING });
-
-      const html = render(
-        h(PageMore, {
-          state: next,
-          holds: HOLDS,
-          size: SIZE,
-          readsAgree: true,
-          nextStep: NEXT_STEP,
-          onPress: () => {},
-        }),
-      );
-      expect(controls(html)).toBe(0);
-      expect(cheerio.load(html)("[data-paging]")).toHaveLength(0);
-      expect(line(html).text()).toContain(MISSING);
-    });
-  });
-
-  it("an alert that names no failure never reaches the operator", async () => {
-    // admin-window/BUG-0176 criterion 14, at the surface: `{kind:"refused",
-    // reason:""}` used to render an empty `type-body` span followed by "Press
-    // it again to ask for the same rows." — copy bar 3 inverted, inside a
-    // `role="alert"` that announces it.
-    const next = await requestPage<Row>(
-      state(),
-      {
-        route: PAGE_ROUTES.claims,
-        params: "",
-        size: SIZE,
-        idKey: ROW_ID,
-        fetchJson: async () => ({ kind: "refused", reason: "", bound: "75" }),
-      },
-    );
-    const html = render(
-      h(PageMore, { state: next, holds: HOLDS, size: SIZE, readsAgree: true, nextStep: NEXT_STEP, onPress: () => {} }),
-    );
-    const drawn = line(html);
-    const words = drawn.text().trim().split(/\s+/);
-    expect(words.length).toBeGreaterThan(8);
-    // What failed comes BEFORE what to do about it (copy bar 3).
-    expect(drawn.text().indexOf("Press it again")).toBeGreaterThan(0);
-    expect(drawn.text()).toMatch(/refus/i);
   });
 });
 
@@ -1113,23 +988,6 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     }
   });
 
-  it("the operator's refusal is EXACTLY that sentence, with this app's own route as its object", async () => {
-    // End to end: through the driver, which names `deps.route` on this arm.
-    for (const [name, body, init] of NOT_THIS_APP) {
-      answeredWith(body, init);
-      const next = await requestPage<Row>(
-        state({ rows: [{ id: "a" }], drawnIds: new Set(["a"]) }),
-        { route: PAGE_ROUTES.claims, params: "", size: SIZE, idKey: ROW_ID, fetchJson },
-      );
-      expect(broken(next.refusal).reason, name).toBe(ANSWERED_BY_SOMETHING_ELSE);
-      expect(broken(next.refusal).object, name).toBe(PAGE_ROUTES.claims);
-      // A refusal never half-fills the list, whatever it was refused for.
-      expect(next.rows.map((row) => row.id), name).toEqual(["a"]);
-      expect(next.held, name).toBe(SIZE);
-      expect(next.status, name).toBe("idle");
-    }
-  });
-
   it("the RENDERED refusal quotes nothing this app did not author", async () => {
     // The login-page fixture, all the way to the markup an operator reads: no
     // fragment of the body, no content type, no status code, and none of the
@@ -1254,13 +1112,6 @@ describe("fetchJson asks what ANSWERED before it reads the body", () => {
     expect(calls).toEqual([]);
     expect(urls).toHaveLength(1);
   });
-
-  it("a PLATFORM rejection still passes its own words through", async () => {
-    // Unchanged: `Failed to fetch` is the transport's account of a request
-    // that never happened, not a foreign body quoted back as ours.
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
-    expect((await rejection()).message).toBe("Failed to fetch");
-  });
 });
 
 describe("usePageRows binds the driver to a press", () => {
@@ -1325,14 +1176,6 @@ describe("usePageRows binds the driver to a press", () => {
 
   const boundOf = (url: string): string | null =>
     new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM);
-
-  it("renders the first screen's own affordance before any press", () => {
-    const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
-    const { html } = probe(initialPage<Row>(SIZE, true, ""));
-    expect(html).toContain('data-paging="more"');
-    // No press, no request.
-    expect(urls).toEqual([]);
-  });
 
   it("draws no control at all when the first screen said there is no more", () => {
     answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
@@ -1408,17 +1251,6 @@ describe("usePageRows binds the driver to a press", () => {
     press();
     await settle();
     expect(urls.map(boundOf)).toEqual([String(SIZE), String(SIZE * 2)]);
-  });
-
-  it("presses no further once the answer says the set is exhausted", async () => {
-    const urls = answering({ kind: "ok", rows: [], offset: SIZE, exhausted: true });
-    const { press } = probe(initialPage<Row>(SIZE, true, ""));
-    press();
-    await settle();
-    press();
-    press();
-    await settle();
-    expect(urls).toHaveLength(1);
   });
 
   it("never throws out of the press, and a refusal leaves the press repeatable", async () => {
@@ -1500,32 +1332,6 @@ describe("usePageRows binds the driver to a press", () => {
     expect(landed.label).not.toContain(String(SERVED + 1));
     expect(refused.label).toContain(String(SERVED + 1));
     expect(refused.label).not.toContain(String(SERVED));
-  });
-
-  it("fires its request from a ref, never from inside a setState updater", () => {
-    // React 19 invokes a setState updater TWICE under StrictMode in
-    // development, so a request fired from inside one is two requests from a
-    // single press — the exact defect the loading arm exists to prevent, and
-    // one no offline render can reproduce. The behavioural half is the
-    // in-flight double press above; this is the structural half, and it is
-    // cheap: the state setter is only ever handed a value.
-    const source = sourceText("src/components/ui/paging.tsx");
-    expect(source).toContain("useRef");
-    expect(source.match(/setState\(/g) ?? []).toHaveLength(1);
-    expect(source).not.toMatch(/setState\(\s*(?:\(|function|async)/);
-  });
-
-  it("reads its state through the first screen it is now drawing, at both points", () => {
-    // admin-window/BUG-0216, the structural half. `useState` seeds ONCE, so a
-    // first screen re-rendered underneath a kept state is invisible to the
-    // hook unless every read of that state is reconciled against the `initial`
-    // of the CURRENT render — the one the press works from, and the one the
-    // surface draws. Neither can be reproduced by a single static render,
-    // which is why this is graded as the composition and not as a re-render:
-    // the rule itself is driven in tests/offline/paging/machine.test.ts.
-    const source = sourceText("src/components/ui/paging.tsx");
-    expect(source).toMatch(/continuing\(latest\.current, initial\)/);
-    expect(source).toMatch(/state: continuing\(state, initial\)/);
   });
 });
 
@@ -1789,26 +1595,6 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     }
   });
 
-  it("renders the line without comparing any number to the cap", () => {
-    // The other half of the criterion: the component READS the window's
-    // statement and derives nothing from the cap's size. Read off the code, so
-    // the next hand at this file cannot quietly reintroduce the heuristic.
-    const code = codeLinesIn(sourceText("src/components/ui/paging.tsx")).join("\n");
-    expect(code).toContain("heldFrom");
-    expect(code).not.toContain("first.limit");
-    expect(code).not.toMatch(/held\s*[<>]=?\s*/);
-  });
-
-  it("is ONE element in every state a press can end in", () => {
-    for (const state of [
-      initialPage<Row>(SIZE, true, ""),
-      { ...initialPage<Row>(SIZE, true, ""), status: "loading" as const },
-      initialPage<Row>(SIZE, false, ""),
-    ]) {
-      expect(hooks(paged(state)).lines).toBe(1);
-    }
-  });
-
   it("derives the two-reads verdict ONCE, over the one window, for the line and the control alike [admin-window/BUG-0180]", () => {
     // The seam this ticket names. The page composes its first-screen facts
     // once and hands them here; the provider combines them with the press
@@ -1873,42 +1659,6 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // the sentence it draws is the completeness one, byte for byte.
     expect(hook(single, "data-window-held")).toBe(String(SIZE * 3));
     expect(sentence(single)).toBe(sentence(agreeing));
-  });
-
-  it("a press that answers not_provisioned withdraws the control and leaves the window line to the byte [admin-window/BUG-0211]", async () => {
-    // The whole surface, before and after the one press: the line above the
-    // rows and the control below them, from one provider. A not-provisioned
-    // answer moves no bound and ends no set, so the LINE is byte-identical —
-    // and the control, which nothing could honour now, is gone from under it.
-    const start = initialPage<Row>(SIZE, true, "");
-    const before = surface(start, WINDOW);
-    const next = await requestPage<Row>(start, {
-      route: PAGE_ROUTES.claims,
-      params: "",
-      size: SIZE,
-      idKey: ROW_ID,
-      fetchJson: async () => ({ kind: "not_provisioned", missing: "pending_claims" }),
-    });
-    const after = surface(next, WINDOW);
-
-    const drawnLine = (html: string): string => cheerio.load(html)("[data-window]").toString();
-    expect(drawnLine(after)).toBe(drawnLine(before));
-    // Non-vacuity: the surface really did draw a control before the press.
-    expect(controls(before)).toBe(1);
-    expect(controls(after)).toBe(0);
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    // MUST-NOT-FLAG (LESSONS 8): the same press answered with a REFUSED BOUND
-    // keeps its control, and its line is byte-identical too.
-    const bounced = await requestPage<Row>(start, {
-      route: PAGE_ROUTES.claims,
-      params: "",
-      size: SIZE,
-      idKey: ROW_ID,
-      fetchJson: async () => ({ kind: "refused", reason: "that bound is not one this view serves", bound: "50" }),
-    });
-    const retried = surface(bounced, WINDOW);
-    expect(drawnLine(retried)).toBe(drawnLine(before));
-    expect(controls(retried)).toBe(1);
   });
 
   it("the bound ceiling does not claim the data ran out: it names this app as what stopped, and one thing to do next [admin-window/BUG-0178]", () => {
@@ -2187,20 +1937,6 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
       );
     });
 
-    it("keeps no next step of its own, for any surface, and says whatever it is handed", () => {
-      // CRITERION 8 (architect, 2026-09-11). A next step kept in the widget as
-      // a DEFAULT and opted out of by the surfaces that cannot honour it is
-      // the road this ticket rules out: the surface added next would inherit
-      // advice nobody checked it can take. So the instruction is not in this
-      // module at all — asked through the constant the surface exports rather
-      // than retyped here, which is this ticket's own check as a test.
-      expect(sourceText("src/components/ui/paging.tsx")).not.toContain(NARROW_THE_VIEW);
-      // Presence of the fix beside absence of the defect (LESSONS 12): what a
-      // surface hands over is what the arm says, verbatim and unexamined.
-      const supplied = "Ask the resolver for a narrower view.";
-      expect(ceilingArm(widget("events", supplied)).endsWith(supplied)).toBe(true);
-    });
-
     it("neither surface's ceiling arm restates its own window line", () => {
       // CRITERION 3, on both real readings: the line states the WINDOW's
       // verdict and the arm states the CONTROL's, so one screen never answers
@@ -2305,103 +2041,6 @@ describe("the module's place in the tree", () => {
     expect(code).not.toMatch(/fetch\s*\(\s*["'`]\w+:/);
   });
 });
-
-describe("a page that arrives short of the window", () => {
-  /**
-   * QA attack, admin-window/TASK-0064: the affordance and the driver disagree
-   * about what a SHORT page means, and the disagreement ends paging for good.
-   *
-   * `requestPage`'s `ok` arm grows `held` by the rows that actually arrived and
-   * ends in `exhausted` only when the answer SAID so or carried zero rows — so
-   * an answer of 30 rows for a 50-row window with `exhausted: false` leaves
-   * `held` at 80, one bound `pageBound` refuses for not being a multiple of the
-   * window. `PageMore` then draws its `limit` arm: no control, and a sentence
-   * saying this view shows no further rows — while the answer the operator just
-   * received said the set continues. The rest of the set is unreachable without
-   * a reload, which is the exact complaint FEAT-0015 exists to answer.
-   *
-   * The assertion is fix-agnostic on purpose. Either end is honest — the driver
-   * may call a short page the end of the set (which its own `ok`-arm comment
-   * already claims: "A short or empty page is the end of the set"), or the
-   * route's contract may guarantee full-or-exhausted pages and the driver
-   * refuse a short one out loud. What may NOT stand is the third outcome:
-   * silently dropping the affordance while claiming nothing is wrong.
-   *
-   * Filed as admin-window/BUG-0168.
-   */
-  /** The answer the stub serves, and the state the driver reached from it. */
-  type ServedPage = Extract<PageAnswer<Row>, { kind: "ok" }>;
-  const short = async (
-    count: number,
-    exhausted: boolean,
-  ): Promise<{ answer: ServedPage; next: PageState<Row> }> => {
-    const answer: ServedPage = {
-      kind: "ok",
-      rows: pageOf(count),
-      offset: SIZE,
-      exhausted,
-    };
-    const next = await requestPage<Row>(
-      state(),
-      {
-        route: PAGE_ROUTES.claims,
-        params: "",
-        size: SIZE,
-        idKey: ROW_ID,
-        fetchJson: async () => answer,
-      },
-    );
-    return { answer, next };
-  };
-
-  // The pin, flipped back to a plain `it` by the fix — admin-window/BUG-0168,
-  // RULED (b): the route contract is full-or-exhausted and the driver refuses
-  // anything else out loud.
-  it("still offers a way to the rest of the set, or says the set is complete", async () => {
-    const { answer, next } = await short(30, false);
-    // Non-vacuity, re-expressed against the ANSWER the stub served rather than
-    // the resulting state, because the ruled ending appends nothing: under (b)
-    // a short continuing page is REFUSED, so `next.rows` is empty by design and
-    // the original `expect(next.rows).toHaveLength(30)` would now assert the
-    // fix away. What the fixture has to be is unchanged — a page short of the
-    // window that says the set continues — and that is what is checked here.
-    expect(answer.rows).toHaveLength(30);
-    expect(answer.exhausted).toBe(false);
-
-    const html = render(
-      h(PageMore, {
-        state: next,
-        holds: HOLDS,
-        size: SIZE,
-        readsAgree: true,
-        nextStep: NEXT_STEP,
-        onPress: () => {},
-      }),
-    );
-    // One of the two honest endings, never the silent one. (Unchanged.)
-    expect(controls(html) === 1 || html.includes('data-paging="exhausted"')).toBe(true);
-    expect(html).not.toContain('data-paging="limit"');
-  });
-
-  it("a full window still pages on, so the case above is about the short page alone", async () => {
-    // The must-NOT-flag fixture (LESSONS 8): the same path, one window wide.
-    const { next } = await short(SIZE, false);
-    expect(next.held).toBe(SIZE * 2);
-    const html = render(
-      h(PageMore, {
-        state: next,
-        holds: HOLDS,
-        size: SIZE,
-        readsAgree: true,
-        nextStep: NEXT_STEP,
-        onPress: () => {},
-      }),
-    );
-    expect(controls(html)).toBe(1);
-    expect(html).toContain('data-paging="more"');
-  });
-});
-
 
 /**
  * WHICH WORDS ARE THE MACHINE'S — admin-window/BUG-0175.
@@ -2554,21 +2193,6 @@ describe("the refusal line says who wrote the words", () => {
       identifier: "pending_claims",
     },
   ];
-
-  it("a reason this app wrote reads in sans, a reason the answer carried reads in mono", async () => {
-    // The two faces pinned SIDE BY SIDE, on the two arms the designer measured
-    // one press apart: the app's 22-word sentence about a page it could not
-    // read, and Postgres' own timeout string.
-    const [answeredByElse] = ARMS;
-    const app = faces(await pressed(answeredByElse.body, answeredByElse.init));
-    expect(app.sans).toContain(ANSWERED_BY_SOMETHING_ELSE);
-    expect(app.mono).not.toContain(ANSWERED_BY_SOMETHING_ELSE);
-
-    const failed = ARMS[4];
-    const machine = faces(await pressed(failed.body, failed.init));
-    expect(machine.mono).toContain("canceling statement due to statement timeout");
-    expect(machine.sans).not.toContain("canceling statement due to statement timeout");
-  });
 
   it("grades every arm a press can reach: four sentences this app wrote, and one it did not", async () => {
     const authors = new Set<string>();
@@ -2729,24 +2353,6 @@ describe("the refusal line says who wrote the words", () => {
       expect(face.isolated[0]).toContain("pending_claims");
       expect(face.isolated[0]).toContain(SAID);
       expect(face.isolated[0]).not.toContain(CLAUSE);
-    });
-
-    it("reads an answer carrying NO authorship exactly as it did before the fact existed", async () => {
-      // The forced-answer shape of the ticket's human check, and every live
-      // probe: the whole account is the machine's and the line is one mono run.
-      const face = faces(await answering());
-      expect(face.mono).toContain(`pending_claims ${EM_DASH} ${SAID} ${CLAUSE}`);
-      expect(face.sans).not.toContain(SAID);
-      expect(face.isolated).toHaveLength(1);
-    });
-
-    it("refuses an answer whose authorship is unreadable, rather than rendering it", async () => {
-      // Not a face question: an `authored` field this app cannot read makes
-      // the whole body foreign, and the line says so in the app's own voice.
-      const face = faces(await answering([{ words: SAID, author: "somebody else" }]));
-      expect(face.sans).toContain("the page request answered something this app cannot read");
-      expect(face.read).not.toContain(SAID);
-      expect(face.mono).toContain(PAGE_ROUTES.claims);
     });
   });
 

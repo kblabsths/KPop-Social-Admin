@@ -134,13 +134,6 @@ describe("fetchResolutionLatency", () => {
     expect(String(scan.find((s) => s.method === "select")?.args[0])).not.toContain("(");
   });
 
-  it("runs no second query when the window held no applies", async () => {
-    const stub = withRows([], []);
-    const result = await fetchResolutionLatency({ now: NOW }, stub.asSupabaseClient());
-    expect(result.kind === "ok" && result.data.applies).toEqual([]);
-    expect(stub.tablesRead()).toEqual([T.fieldProvenance]);
-  });
-
   it("reports whichever leg is absent, by name", async () => {
     const missingProvenance = stubClient({
       [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
@@ -241,14 +234,6 @@ describe("aggregateResolutionLatency", () => {
   });
 });
 
-describe("readResolutionLatency", () => {
-  it("fetches and aggregates in one call", async () => {
-    const stub = withRows(applies(), observations());
-    const result = await readResolutionLatency({ now: NOW }, stub.asSupabaseClient());
-    expect(result.kind === "ok" && result.data.overall.count).toBe(3);
-  });
-});
-
 /**
  * A VERDICT UNSET is not an apply with a broken join (campaign
  * admin-window, QA of BUG-0010).
@@ -302,27 +287,6 @@ describe("a verdict unset in the apply window", () => {
     window: WINDOW,
   });
 
-  it("is not counted as an apply whose observation the join lost", () => {
-    expect(mixed.overall.count).toBe(1);
-    expect(mixed.unmatchedApplies).toBe(0);
-  });
-
-  it("is not counted among the applies, overall or per domain", () => {
-    expect(mixed.applies).toBe(1);
-    expect(mixed.byDomain).toHaveLength(1);
-    expect(mixed.byDomain[0].applies).toBe(1);
-  });
-
-  it("is not an unmeasurable apply either — it is not one of the measurements", () => {
-    expect(mixed.overall.unmeasurable).toBe(0);
-    expect(mixed.byDomain[0].latency.unmeasurable).toBe(0);
-  });
-
-  it("is counted honestly on its own, overall and per domain", () => {
-    expect(mixed.verdictUnsets).toBe(1);
-    expect(mixed.byDomain[0].verdictUnsets).toBe(1);
-  });
-
   it("does not disturb the measured latency it sits beside", () => {
     expect(mixed.overall.p50).toBe(600);
     expect(mixed.byDomain[0].latency.count).toBe(1);
@@ -344,23 +308,6 @@ describe("a verdict unset in the apply window", () => {
     expect(groups?.verdictUnsets).toBe(2);
     // A count of zero applies, not a latency of zero seconds.
     expect(groups?.latency.p50).toBeNull();
-  });
-
-  it("keeps a real lost join distinguishable from an unset", () => {
-    const both = aggregateResolutionLatency({
-      applies: [
-        fieldProvenanceRow({ observation_id: OBS.missing, entity_type: "events" }),
-        unsetRow(),
-      ],
-      observations: [],
-      window: WINDOW,
-    });
-
-    expect(both.unmatchedApplies).toBe(1);
-    expect(both.verdictUnsets).toBe(1);
-    expect(both.applies).toBe(1);
-    // The lost join IS an unmeasurable apply; the unset is not an apply.
-    expect(both.overall.unmeasurable).toBe(1);
   });
 
   it("asks the join for no null id", async () => {

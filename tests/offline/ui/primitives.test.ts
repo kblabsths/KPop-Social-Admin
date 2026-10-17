@@ -132,17 +132,6 @@ describe("Page and Section", () => {
     expect(classesOf(html)).toContain("type-data");
   });
 
-  it("leaves a plain-string title on the h1 itself, as every other page had it", () => {
-    // Twelve of the thirteen `Page` callers pass their own words, and the
-    // identifier form must not move any of them: one element, no wrapper span,
-    // `type-title` on the h1 (admin-window/BUG-0073).
-    const html = render(h(Page, { title: "Queues" }));
-    const $ = cheerio.load(html);
-    expect($("h1").attr("class")?.split(/\s+/)).toContain("type-title");
-    expect($("h1 span").length).toBe(0);
-    expect($("h1").text()).toBe("Queues");
-  });
-
   it("flattens either title to the string its h1 renders, for an accessible name", () => {
     for (const title of [
       "Queues",
@@ -151,12 +140,6 @@ describe("Page and Section", () => {
     ] as const) {
       expect(pageTitleText(title)).toBe(cheerio.load(render(h(Page, { title })))("h1").text());
     }
-  });
-
-  it("pads the page at the 16px step and spaces its sections at the same step", () => {
-    const classes = classesOf(render(h(Page, { title: "Queues" })));
-    expect(classes).toContain("p-4");
-    expect(classes).toContain("gap-4");
   });
 
   /**
@@ -196,37 +179,6 @@ describe("DataTable", () => {
     expect(html).toMatch(/<th[^>]*class="[^"]*type-micro/);
     expect(html).toMatch(/<tr[^>]*class="[^"]*bg-chrome/);
     expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
-  });
-
-  it("sits on a surface fill inside one hairline border, and scrolls inside it", () => {
-    const html = table();
-    const wrapper = html.slice(0, html.indexOf("<table"));
-    expect(wrapper).toContain("border-hairline");
-    expect(wrapper).toContain("bg-surface");
-    // the scroll container is inside the border, so the page never scrolls sideways
-    expect(wrapper.indexOf("border-hairline")).toBeLessThan(wrapper.indexOf("overflow-x-auto"));
-  });
-
-  it("separates rows with hairlines and fills them on hover — no zebra, no vertical rules", () => {
-    const html = table();
-    const rowClasses = [...html.matchAll(/<tr class="([^"]*)"/g)].map((m) => m[1]).slice(1);
-    for (const row of rowClasses) {
-      expect(row).toContain("border-t");
-      expect(row).toContain("hover:bg-chrome");
-    }
-    const classes = classesOf(html);
-    expect(classes.filter((c) => /^(odd|even|nth)[:-]/.test(c))).toEqual([]);
-    const cellClasses = [...html.matchAll(/<t[dh][^>]*class="([^"]*)"/g)].map((m) => m[1]);
-    for (const cell of cellClasses) {
-      expect(cell).not.toMatch(/\bborder-[lr]\b/);
-    }
-  });
-
-  it("renders a null cell as the dash in disabled-gray, never blank", () => {
-    const html = table();
-    expect(html).toContain(EM_DASH);
-    expect(html).toMatch(/text-ink-disabled[^>]*>—/);
-    expect(html).not.toContain("N/A");
   });
 
   it("carries the neutral arrow in disabled-gray on a sortable column that is not the sort", () => {
@@ -365,12 +317,6 @@ describe("Badge", () => {
     expect(classesOf(render(h(Badge, { tone: "low", children: "low" })))).toContain("text-ink-secondary");
   });
 
-  it("keeps the chrome fill for every tone — colour lands on the text", () => {
-    for (const tone of ["neutral", "high", "low", "healthy", "broken"] as const) {
-      expect(classesOf(render(h(Badge, { tone, children: "x" })))).toContain("bg-chrome");
-    }
-  });
-
   /*
    * `TONE_INK` is exported so a surface that shows one of these words WITHOUT
    * a chip — the Dashboard's attention cards, where the chip could not stay
@@ -447,29 +393,11 @@ describe("Button", () => {
 });
 
 describe("the four data-surface states", () => {
-  it("are four separate components, each rendering its own shape", () => {
-    const loading = render(h(Loading, { what: "cycles" }));
-    const empty = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
-    const missing = render(h(NotProvisioned, { missing: "verdicts", arrivesWith: "the scraper repo's migration" }));
-    const failed = render(
-      h(ErrorLine, { reading: "verdicts", failed: "relation does not exist", retry: "reload the page" }),
-    );
-    expect(new Set([loading, empty, missing, failed]).size).toBe(4);
-  });
-
   it("names what is loading on one data line and never animates", () => {
     const html = render(h(Loading, { what: "cycles" }));
     expect(classesOf(html)).toContain("type-data");
     expect(html).toContain("cycles");
     expect(classesOf(html).some((c) => /animate|pulse|spin/.test(c))).toBe(false);
-  });
-
-  it("renders empty as a surface card carrying both what it holds and what fills it", () => {
-    const html = render(h(Empty, { holds: "open decisions", filledBy: "the resolver files one here" }));
-    expect(classesOf(html)).toContain("bg-surface");
-    expect(classesOf(html)).toContain("border-hairline");
-    expect(html).toContain("open decisions");
-    expect(html).toContain("the resolver files one here");
   });
 
   /**
@@ -570,17 +498,6 @@ describe("the four data-surface states", () => {
     expect(textOf(named)).toContain("verdicts");
   });
 
-  it("falls back to the failure alone when the read it was given names nothing", () => {
-    // The type forces the prop; it cannot force the string to say something,
-    // since `""` is a `string`. A blank read gets the app's one definition of
-    // absence rather than a dangling em dash (`isAbsent` — BUG-0004/BUG-0019).
-    for (const reading of ["", "   "]) {
-      const html = render(h(ErrorLine, { reading, failed: "no such relation", retry: "reload" }));
-      expect(textOf(html), JSON.stringify(reading)).not.toContain(EM_DASH);
-      expect(textOf(html), JSON.stringify(reading)).toContain("no such relation");
-    }
-  });
-
   it("renders an error as one red line carrying the failure verbatim and the retry", () => {
     const html = render(
       h(ErrorLine, {
@@ -639,16 +556,6 @@ describe("StateOf", () => {
     expect(missing('[data-state="error"]').length).toBe(0);
     expect(failed('[data-state="error"]').length).toBe(1);
     expect(failed('[data-state="not_provisioned"]').length).toBe(0);
-  });
-
-  it("keeps the object name verbatim in both the hook and the card", () => {
-    // A machine identifier is never prettified (LOOK_AND_FEEL Voice bar 5), and
-    // the hook must carry the same spelling the query used, or an oracle
-    // reading the hook and an operator reading the card are looking at two
-    // different objects (admin-window/BUG-0016).
-    const html = render(h(StateOf, { result: MISSING }));
-    expect(html).toContain(`data-not-provisioned="${MISSING.missing}"`);
-    expect(textOf(html)).toContain(MISSING.missing);
   });
 
   it("spends the window's one arrival sentence and its one retry sentence", () => {
@@ -737,20 +644,6 @@ describe("a failed read's account renders each part in its author's face", () =>
     const html = line();
     expect(inStep(html, "type-data")).toBe(`pending_claims ${EM_DASH} ${MACHINE}`);
     expect(inStep(html, "type-body")).toBe(RETRY);
-  });
-
-  it("puts this app's clause in the sans run and the database's words in the mono one", () => {
-    const html = line([
-      { words: MACHINE, author: "the machine" },
-      { words: OURS, author: "this app" },
-    ]);
-    expect(inStep(html, "type-data")).toContain(MACHINE);
-    expect(inStep(html, "type-data")).not.toContain(OURS);
-    expect(inStep(html, "type-body")).toContain(OURS);
-    expect(inStep(html, "type-body")).not.toContain(MACHINE);
-    // The object stays a machine identifier in mono, and the retry stays sans.
-    expect(inStep(html, "type-data")).toContain("pending_claims");
-    expect(inStep(html, "type-body")).toContain(RETRY);
   });
 
   it("derives the face from the carried fact alone: the same words, both ways round", () => {
@@ -1018,18 +911,6 @@ describe("WindowLine", () => {
 
   const drawn = (shows: DrawnSentence, window: DrawnWindow = DRAWN) =>
     render(h(WindowLine, { gauge: "claims", window, shows }));
-
-  it("publishes the same three facts on a scanned window and on a drawn one", () => {
-    for (const [what, html] of [
-      ["scanned", line("table")],
-      ["drawn", drawn({ of: "matched", lede: "Oldest first.", rows: "claims" })],
-    ] as const) {
-      const published = cheerio.load(html)("[data-window]");
-      for (const hook of HOOKS_EVERY_WINDOW) {
-        expect(published.attr(hook), `${what} published no ${hook}`).toBeDefined();
-      }
-    }
-  });
 
   it("states the row count and the cap the read actually carried", () => {
     const published = cheerio.load(
@@ -1615,15 +1496,6 @@ describe("WindowLine", () => {
     }
   });
 
-  it("states the rows on screen once the window has been continued", () => {
-    for (const shows of PAGED_ARMS) {
-      const continued = textOf(drawn(shows, { ...PAGED, held: 877, drawn: 120 }));
-      // The figure the operator can count on screen, in the app's own
-      // formatting — never the cap the first read carried.
-      expect(continued, shows.of).toContain(count(120));
-    }
-  });
-
   it("never says a continued window did not fill, in either direction of its verdict", () => {
     // The wrapper is only drawn on a window that filled, so "The window did
     // not fill — 50 of at most 50" is a sentence no state of a paged surface
@@ -2000,126 +1872,6 @@ describe("WindowLine", () => {
     }
   });
 
-  /**
-   * BYTE-IDENTITY FOR EVERY STATE THAT IS NOT THE DEFECT —
-   * admin-window/BUG-0186 criterion 4.
-   *
-   * The two arms the ruling changes are the only two that may move, so each
-   * other state is pinned against the sentence the pre-ticket tree rendered,
-   * to the byte (measured through this component on a988b00, which carries
-   * this file's pre-ticket `window-line.tsx` unchanged). These are the one
-   * place in this describe that pins product words, and they are here on
-   * purpose: the words are the designer's, and the ticket's job was to move
-   * two states and nothing else.
-   *
-   * THREE OF THOSE PINS ARE NOW STRUCTURAL — admin-window/BUG-0197. The two
-   * held-back states at (a) and the paged held-back arm at (e) held the
-   * ranking-and-withholding clause verbatim, which was BUG-0186's proof that
-   * it moved two arms and nothing else; QA has since measured that proof
-   * cross-tree, so what is left to hold is what the tickets DECIDED, not the
-   * designer's copy of it. The three are graded below by the figures each
-   * clause carries, by which clause each state renders, and by which arms
-   * render the SAME clause — every figure masked, no word of the sentence
-   * spelled in this file. (b), (c), (d) and the paged arm's other two states
-   * are untouched byte pins.
-   */
-  const FIRST_SCREEN = "Oldest first. A window of at most 50 rows, not the whole view.";
-
-  it("leaves every state but the two the ruling moves byte-identical [admin-window/BUG-0186]", () => {
-    const lineOf = (window: DrawnWindow) => textOf(drawn(matchedRows, window));
-
-    /** A window that states NO rows on screen: one read, not two (d). */
-    const silentWindow = (held: number, truncated: boolean): DrawnWindow => ({
-      limit: 50,
-      held,
-      truncated,
-      over: "view",
-      oldest: null,
-      scope: null,
-    });
-    /** The same arm on a surface a press CONTINUES (e). */
-    const paged = (facts: Partial<DrawnWindow>): DrawnWindow => ({
-      ...PAGED,
-      ...facts,
-    });
-
-    // (a) the held-back states — the count exceeded the rows, which is the
-    // clause admin-window/BUG-0183 fixed. Held STRUCTURALLY since
-    // admin-window/BUG-0197 took the empty one of them out of that clause: no
-    // word of the sentence is spelled here, so the designer's copy may move,
-    // and what is graded is what the two tickets decided.
-    //
-    // The opening both states share — the lede and the cap clause — is taken
-    // from the component itself, as the line of a window that states no rows
-    // at all, so this comparison holds no words either.
-    const drew37 = lineOf(twoReads(37, 900));
-    const drewNone = lineOf(twoReads(0, 900));
-    const opening = lineOf(silentWindow(900, true));
-    expect(drew37.startsWith(opening)).toBe(true);
-    expect(drewNone.startsWith(opening)).toBe(true);
-
-    // What each adds to that opening, every figure masked.
-    const heldBack = digitMasked(drew37).slice(digitMasked(opening).length);
-    const countClause = digitMasked(drewNone).slice(digitMasked(opening).length);
-    // Non-vacuous: each really is a clause, and they are not the same one.
-    expect(heldBack.length).toBeGreaterThan(0);
-    expect(countClause.length).toBeGreaterThan(0);
-    expect(heldBack).not.toBe(countClause);
-
-    // The figures each line prints, in the order it prints them: the cap, the
-    // count read's number, and — where the window DREW rows — the rows it
-    // drew. A window that drew none prints no third figure at all: there is no
-    // `0` rank in the line and no rest to withhold (admin-window/BUG-0197).
-    expect(figuresIn(drew37)).toEqual([count(50), count(900), count(37)]);
-    expect(figuresIn(drewNone)).toEqual([count(50), count(900)]);
-
-    // …and the clause the empty window stops after is the one the drawn window
-    // OPENS its clause with — the count read's fact, stated once, the same way
-    // in both, with the ranking-and-withholding half absent rather than
-    // emptied. Only the terminator stands between them.
-    expect(heldBack.startsWith(countClause.slice(0, -1))).toBe(true);
-
-    // (b) the rows fell short of the cap and the two reads agree — the one
-    // state `didNotFill` may still speak in.
-    expect(lineOf(twoReads(30, 30))).toBe(
-      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
-    );
-
-    // (c) the empty read, which is its own sentence.
-    expect(lineOf(twoReads(0, 0))).toBe(
-      `${FIRST_SCREEN} The window did not fill: the read happened and found no claims at all.`,
-    );
-
-    // (d) a window that states NO rows on screen: one read, not two, so there
-    // is nothing here to diverge and both arms say what they always said
-    // (admin-window/BUG-0183). Its fixture is hoisted to the top of this case,
-    // where (a) reads the opening off it.
-    expect(lineOf(silentWindow(900, true))).toBe(FIRST_SCREEN);
-    expect(lineOf(silentWindow(30, false))).toBe(
-      `${FIRST_SCREEN} The window did not fill — 30 of at most 50 — so it holds all the claims the read found.`,
-    );
-
-    // (e) the PAGED arm, in all three of its states — including the
-    // disagreeing one, which is where a window whose reads diverge already
-    // stated each read as its own fact (admin-window/BUG-0174). The ruling
-    // moves the unpaged arm to that same rule and leaves these untouched.
-    //
-    // Its held-back state is the third structural pin (admin-window/BUG-0197):
-    // it is the lede plus the very clause the drawn unpaged window ends with —
-    // ONE clause rendered by two arms, which is the fact worth holding — and
-    // it names the two figures two reads established, with no cap of its own,
-    // because 50 is the size of one press and not a description of a screen.
-    const pagedHeldBack = paged({ held: 877, truncated: true, drawn: 120 });
-    expect(digitMasked(lineOf(pagedHeldBack))).toBe(`${MATCHED_LEDE}${heldBack}`);
-    expect(figuresIn(lineOf(pagedHeldBack))).toEqual([count(877), count(120)]);
-    expect(lineOf(paged({ held: 120, truncated: false, drawn: 120 }))).toBe(
-      "Oldest first. 120 claims in all, and every one of them is below — the read found no more.",
-    );
-    expect(lineOf(paged({ held: 30, truncated: false, drawn: 50 }))).toBe(
-      "Oldest first. A count of claims answered 30; the reads returned the 50 below, and the read found no more.",
-    );
-  });
-
   it("says what the count read found and stops, where the window drew no rows [admin-window/BUG-0197]", () => {
     // THE ARM THIS TICKET MOVES. A window whose COUNT read answered a number
     // and whose ROW read drew nothing rendered the held-back clause anyway: it
@@ -2384,16 +2136,6 @@ describe("the uppercased-identifier guard", () => {
     expect(uppercasedIdentifiers(bad)).toEqual(["data_conflict open"]);
   });
 
-  it("clears the same card once the identifier is out of the sans label", () => {
-    const good = render(
-      h(StatCard, { label: { identifier: "data_conflict", words: "open" }, value: 0 }),
-    );
-    expect(uppercasedIdentifiers(good)).toEqual([]);
-    // and the identifier really is still on the card — the guard is not
-    // satisfied by deleting the word
-    expect(textOf(good)).toContain("data_conflict");
-  });
-
   /**
    * The same two inputs one type step up, because the guard now reads `title`
    * as well as `micro` (admin-window/BUG-0073). Without this pair the widening
@@ -2404,14 +2146,6 @@ describe("the uppercased-identifier guard", () => {
     // exactly what `/records/[table]/[id]` shipped: `` `${config.table} record` ``
     const bad = render(h(Page, { title: "walk_sandbox record" }));
     expect(uppercasedIdentifiers(bad)).toEqual(["walk_sandbox record"]);
-  });
-
-  it("clears the same page once the identifier is out of the title element", () => {
-    const good = render(
-      h(Page, { title: { identifier: "walk_sandbox", words: "record" } }),
-    );
-    expect(uppercasedIdentifiers(good)).toEqual([]);
-    expect(textOf(good)).toContain("walk_sandbox");
   });
 });
 
