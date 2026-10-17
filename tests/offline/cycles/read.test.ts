@@ -5,9 +5,7 @@ import {
   CYCLE_WINDOW,
   NEWEST_RUN_FIRST,
   readCycles,
-  type ResolutionRunRow,
 } from "@/lib/db/cycles";
-import { newestFirst } from "@/lib/order/newest-first";
 import { T } from "@/lib/db/tables";
 import { ROW_CAP } from "@/lib/db/result";
 import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
@@ -20,7 +18,6 @@ import {
   SKIPPED,
   SUCCEEDED,
   UNRECORDED,
-  minutesAgo,
 } from "./population";
 import {
   permissionDenied,
@@ -171,33 +168,6 @@ describe("the cycles window read", () => {
  * these grade what THIS module orders its window by.
  */
 describe("the display order", () => {
-  it("does not mutate what it was given", () => {
-    const given = [...CYCLES];
-    newestFirst(given, NEWEST_RUN_FIRST);
-    expect(given).toEqual(CYCLES);
-  });
-
-  it("breaks a tie on the primary key, descending", () => {
-    const instant = minutesAgo(4);
-    const tied: ResolutionRunRow[] = [
-      { ...SUCCEEDED, run_id: "aaa", started_at: instant },
-      { ...SUCCEEDED, run_id: "ccc", started_at: instant },
-      { ...SUCCEEDED, run_id: "bbb", started_at: instant },
-    ];
-    expect(newestFirst(tied, NEWEST_RUN_FIRST).map((row) => row.run_id)).toEqual([
-      "ccc",
-      "bbb",
-      "aaa",
-    ]);
-  });
-
-  it("sorts a timestamp it cannot read last, and keeps the row", () => {
-    const unreadable: ResolutionRunRow = { ...SUCCEEDED, run_id: "junk", started_at: "" };
-    const sorted = newestFirst([unreadable, ...CYCLES], NEWEST_RUN_FIRST);
-    expect(sorted).toHaveLength(CYCLES.length + 1);
-    expect(sorted[sorted.length - 1].run_id).toBe("junk");
-  });
-
   it("re-sorts by the same two columns the query itself asked for", async () => {
     const stub = stubClient({ [T.resolutionRuns]: { data: CYCLES } });
     await readCycles(undefined, stub.asSupabaseClient());
@@ -230,10 +200,6 @@ describe("the state one cycle row is in", () => {
     expect(cycleState(future, CLOCK)).toEqual({ kind: "outcome", outcome: "abandoned" });
   });
 
-  it("reads a fresh null ended_at as still running", () => {
-    expect(cycleState(RUNNING, CLOCK)).toEqual({ kind: "running" });
-  });
-
   it("reads a null ended_at older than one cadence as a cycle that died", () => {
     const state = cycleState(DIED, CLOCK);
     if (state.kind !== "died") throw new Error(`expected died, got ${state.kind}`);
@@ -251,10 +217,6 @@ describe("the state one cycle row is in", () => {
     };
     expect(cycleState(inside, CLOCK).kind).toBe("running");
     expect(cycleState(outside, CLOCK).kind).toBe("died");
-  });
-
-  it("says a cycle that ended with no outcome recorded none, and invents none", () => {
-    expect(cycleState(UNRECORDED, CLOCK)).toEqual({ kind: "unrecorded" });
   });
 
   it("makes no death claim about an age it cannot measure", () => {

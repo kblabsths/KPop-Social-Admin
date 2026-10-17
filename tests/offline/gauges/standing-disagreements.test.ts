@@ -4,7 +4,6 @@ import {
   aggregateStandingDisagreements,
   fetchStandingDisagreements,
   readStandingDisagreements,
-  selectStanding,
   type SourceStateRow,
 } from "@/lib/gauges/standing-disagreements";
 import type { PendingClaimRow, PendingObservationRow } from "@/lib/gauges/pending-claims";
@@ -146,14 +145,6 @@ function withRows(
     [T.sources]: { data: sourceRows },
   });
 }
-
-describe("selectStanding", () => {
-  it("is the claims view narrowed to one bucket, with the unrenderable one gone", () => {
-    const standing = selectStanding(rows().claims);
-    expect(standing).toHaveLength(4);
-    expect(standing.every((claim) => claim.bucket === STANDING_BUCKET)).toBe(true);
-  });
-});
 
 describe("fetchStandingDisagreements", () => {
   it("reuses the claims read and adds a bounded sources lookup", async () => {

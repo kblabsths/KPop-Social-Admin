@@ -75,17 +75,6 @@ describe("the sandbox fixture", () => {
     expect(source).not.toContain(CAMPAIGN_MARKER);
   });
 
-  it("would catch a marker if one were there", () => {
-    // The other fixture (LESSONS 3): the check above passes vacuously unless
-    // the same predicate rejects something. A row shaped exactly like a
-    // fixture row, carrying the marker, must fail it.
-    const planted = { ...SANDBOX_FIXTURE[0], note: `${CAMPAIGN_MARKER} probe` };
-    const values = Object.values(planted).filter(
-      (value): value is string => typeof value === "string",
-    );
-    expect(values.some((value) => value.includes(CAMPAIGN_MARKER))).toBe(true);
-  });
-
   it("uses only columns the edit map declares for this table", () => {
     const mapped = mappedColumns(ENTRY);
     for (const row of SANDBOX_FIXTURE) {

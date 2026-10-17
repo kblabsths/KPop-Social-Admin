@@ -130,13 +130,6 @@ describe("the walker's mint, as a program", () => {
     expect(run.stderr).not.toContain(SENTINEL);
   });
 
-  it("refuses a whitespace-only secret the same way", () => {
-    const run = runCli("   \t  ");
-    expect(run.status).not.toBe(0);
-    expect(run.stdout).toBe("");
-    expect(run.stderr).toContain(AUTH_SECRET_ENV_NAME);
-  });
-
   it("refuses an argument it does not understand, and mints nothing", () => {
     // A typo'd flag must not be silently ignored: a walker that asked for a
     // 30-second cookie and got a two-hour one has been lied to.

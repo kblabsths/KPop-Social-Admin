@@ -3,13 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc, counted } from "@/lib/format";
 import { disagreeingCounts, render, uppercasedIdentifiers } from "../ui/markup";
-import { readNumber, stateOf as surfaceStateOf } from "../../live/parity";
+import { readNumber, stateOf as surfaceStateOf } from "../../fixtures/surface-state";
 import {
   ID,
   reviewItemEdgePopulation,
   type ReviewItemRow,
 } from "../../fixtures/rows";
-import type { ReviewItemFilter } from "@/lib/review/shapes";
 import {
   permissionDenied,
   stubClient,
@@ -18,14 +17,8 @@ import {
   type Script,
   type ScriptedResponse,
 } from "../../fixtures/stub-client";
-import {
-  ANY_LABEL,
-  SOURCE_FACET,
-  isNarrowedBeyond,
-  queuesHref,
-  type QueuesTab,
-} from "@/lib/review/queue-filters";
-import { CLEAR_LABEL, CLEARED_BY, clearNarrowing } from "@/lib/url/narrowing";
+import { ANY_LABEL, SOURCE_FACET } from "@/lib/review/queue-filters";
+import { CLEAR_LABEL, CLEARED_BY } from "@/lib/url/narrowing";
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
@@ -427,15 +420,6 @@ function openSub(markup: string, kind: string): string {
 /* ── two queues of equal standing ────────────────────────────────────────── */
 
 describe("the two queues", () => {
-  it("renders exactly two, one per kind", async () => {
-    const markup = await renderQueues(healthyScript());
-    const { $, blocks } = blocksOf(markup);
-
-    expect(blocks.map((block) => $(block).attr("data-queue"))).toEqual([
-      ...KIND_NAMES,
-    ]);
-  });
-
   it("gives them equal standing — same parent, same element, same classes", async () => {
     const markup = await renderQueues(healthyScript());
     const { $, blocks } = blocksOf(markup);
@@ -465,29 +449,6 @@ describe("the two queues", () => {
     expect($(blocks[0]).attr("class")).toBe($(blocks[1]).attr("class"));
     expect(idsIn(markup, "decision")).toEqual([]);
     expect(idsIn(markup, "signal").length).toBeGreaterThan(0);
-  });
-
-  it("splits the population by kind, with nothing in both and nothing dropped", async () => {
-    const markup = await renderQueues(healthyScript());
-
-    for (const kind of KIND_NAMES) {
-      expect(new Set(idsIn(markup, kind)), kind).toEqual(
-        new Set(idsOf(matching({ kind }))),
-      );
-    }
-    expect(idsIn(markup).length).toBe(POPULATION.length);
-  });
-
-  it("counts the open items of the view it rendered", async () => {
-    // `?status=settled` renders a real zero: every item on screen is settled,
-    // and the figure counts what is shown rather than the whole table. (The
-    // line beside it names that scope, so the zero cannot be read as "nothing
-    // is open" — wording, and so not pinned here.)
-    const markup = await renderQueues(healthyScript(), { status: "settled" });
-    expect(matching({ kind: "decision", status: "settled" }).length).toBeGreaterThan(0);
-    expect(matching({ kind: "decision", status: "open" }).length).toBeGreaterThan(0);
-
-    expect(readNumber(markup, "Open decisions")).toBe(0);
   });
 
   it("states its sort on screen, in each queue", async () => {
@@ -531,38 +492,6 @@ describe("the order", () => {
       );
     }
   });
-
-  it("keeps settled items browsable, below the open ones", async () => {
-    const markup = await renderQueues(healthyScript());
-
-    for (const kind of KIND_NAMES) {
-      const rendered = idsIn(markup, kind);
-      const settled = idsOf(matching({ kind, status: "settled" }));
-      expect(settled.length, kind).toBeGreaterThan(0);
-      for (const id of settled) expect(rendered).toContain(id);
-      const firstSettled = rendered.findIndex((id) => settled.includes(id));
-      const lastOpen = rendered.reduce(
-        (last, id, index) => (settled.includes(id) ? last : index),
-        -1,
-      );
-      expect(firstSettled, kind).toBeGreaterThan(lastOpen);
-    }
-  });
-
-  it("breaks a tie on the id, whichever way the instant was spelled", async () => {
-    // The population holds two items on the same instant, one spelled `Z` and
-    // one `+00:00`; a lexical comparison of those two strings disagrees with
-    // the instants they name.
-    const markup = await renderQueues(healthyScript());
-    const tied = POPULATION.filter(
-      (item) => Date.parse(item.opened_at) === Date.parse("2026-08-11T00:00:00Z"),
-    );
-    expect(tied.length).toBeGreaterThan(1);
-
-    const rendered = idsIn(markup, "decision");
-    const positions = idsOf(inQueueOrder(tied)).map((id) => rendered.indexOf(id));
-    expect(positions).toEqual([...positions].sort((a, b) => a - b));
-  });
 });
 
 /* ── the filters: exactly the matching items ─────────────────────────────── */
@@ -592,33 +521,6 @@ describe("every filter returns exactly the matching items", () => {
     });
   }
 
-  it("combines two facets with AND", async () => {
-    const params = { queue: "entity_link", status: "open" };
-    const markup = await renderQueues(healthyScript(), params);
-
-    expect(new Set(idsIn(markup))).toEqual(new Set(idsOf(matching(params))));
-    expect(idsIn(markup).length).toBeGreaterThan(0);
-  });
-
-  it("renders no rows at all for a combination nothing matches", async () => {
-    // `data_conflict` items are decisions by construction, so this pair is
-    // empty for any population.
-    const params = { queue: "data_conflict", kind: "signal" };
-    expect(matching(params)).toHaveLength(0);
-
-    const markup = await renderQueues(healthyScript(), params);
-    expect(idsIn(markup)).toEqual([]);
-    expect(cheerio.load(markup)("[data-queue] table")).toHaveLength(0);
-    // Both queues still stand, and each says why it holds nothing.
-    expect(cheerio.load(markup)("[data-queue]")).toHaveLength(2);
-    expect(textOf(markup).length).toBeGreaterThan(0);
-  });
-
-  it("shows the whole table when the URL names a value that does not exist", async () => {
-    const markup = await renderQueues(healthyScript(), { shape: "not_a_shape" });
-    expect(new Set(idsIn(markup))).toEqual(new Set(idsOf(POPULATION)));
-  });
-
   it("marks the chip the URL is on, for every facet", async () => {
     const markup = await renderQueues(healthyScript(), {
       kind: "signal",
@@ -634,23 +536,6 @@ describe("every filter returns exactly the matching items", () => {
     expect(active("queue")).toHaveLength(1);
     expect(active("shape")).toHaveLength(1);
     expect(active("queue")[0]).toBe(chipsOf(markup, "queue")[0].label);
-  });
-
-  it("offers a chip for every value of every facet", async () => {
-    const markup = await renderQueues(healthyScript());
-
-    expect(chipsOf(markup, "shape").map((chip) => chip.label).slice(1)).toEqual([
-      ...SHAPE_NAMES,
-    ]);
-    expect(chipsOf(markup, "queue").map((chip) => chip.label).slice(1)).toEqual([
-      ...QUEUE_NAMES,
-    ]);
-    expect(chipsOf(markup, "kind").map((chip) => chip.label).slice(1)).toEqual([
-      ...KIND_NAMES,
-    ]);
-    expect(chipsOf(markup, "status").map((chip) => chip.label).slice(1)).toEqual([
-      ...STATUS_NAMES,
-    ]);
   });
 
   it("keeps the state in the URL, so every filtered view is a link", async () => {
@@ -725,21 +610,6 @@ describe("a row", () => {
       expect(["high", "low"]).toContain(text);
     }
     expect(textOf(markup)).not.toContain("%");
-  });
-});
-
-/* ── nothing settles anything in M1 ──────────────────────────────────────── */
-
-describe("no settle control", () => {
-  it("renders no control that could write anything", async () => {
-    const markup = await renderQueues(healthyScript());
-    const $ = cheerio.load(markup);
-
-    for (const control of ["form", "button", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-    // Every interactive element on the page is a link.
-    expect($("a").length).toBeGreaterThan(0);
   });
 });
 
@@ -920,27 +790,6 @@ describe("against a database without the review table", () => {
     [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
   };
 
-  it("renders, names the missing table on every surface, and throws nothing", async () => {
-    const markup = await renderQueues(absent);
-    const $ = cheerio.load(markup);
-
-    expect(markup.length).toBeGreaterThan(0);
-    // Both queues and the gauge each say which object is missing.
-    for (const block of $("[data-queue]").toArray()) {
-      expect($(block).text(), $(block).attr("data-queue")).toContain(T.reviewItems);
-    }
-    expect(textOf(markup)).toContain(T.reviewItems);
-  });
-
-  it("shows no count and no table — a missing table is never a zero", async () => {
-    const markup = await renderQueues(absent);
-    const $ = cheerio.load(markup);
-
-    expect($("table")).toHaveLength(0);
-    expect(textOf(markup)).not.toMatch(/(?<!\d)0(?!\d)/);
-    expect(() => readNumber(markup, "Open decisions")).toThrow();
-  });
-
   it("keeps the filters usable, so the state is still reachable", async () => {
     const markup = await renderQueues(absent, { kind: "signal" });
     expect(chipsOf(markup, "kind").filter((chip) => chip.active)).toHaveLength(1);
@@ -964,67 +813,11 @@ describe("when a read fails", () => {
     expect($('[data-queue] table')).toHaveLength(2);
     expect(idsIn(markup)).toEqual([]);
   });
-
-  it("carries the CAUSE of a transport failure, and says how many frames it dropped", async () => {
-    // The same rewrite as `/`'s case, for the same reason
-    // (admin-window/BUG-0173, reversing one line of admin-window/BUG-0016):
-    // the cause out of `details` still crosses whole — it sits AFTER the first
-    // frame line, so nothing may truncate there — while the runtime's own
-    // frame lines are dropped and counted rather than shown.
-    const markup = await renderQueues({
-      [T.reviewItems]: { error: transportFailure() },
-    });
-    const text = textOf(markup);
-
-    expect(text).toContain("Caused by");
-    expect(text).toContain("bad port");
-    expect(text).toMatch(/\b1\b[^)]{0,40}frame/);
-    expect(text).not.toContain("node:internal");
-    expect(text).not.toMatch(/:\d+:\d+\)/);
-  });
-
-  it("refuses rather than rendering a partial list when the read has no count", async () => {
-    // A complete read that came back without a count is a refusal, never a
-    // number of our own (ARCHITECTURE.md §4.3): the page shows no items and
-    // names the read.
-    const markup = await renderQueues({ [T.reviewItems]: { data: POPULATION } });
-
-    expect(idsIn(markup)).toEqual([]);
-    expect(textOf(markup)).toContain(T.reviewItems);
-    expect(() => readNumber(markup, "Open decisions")).toThrow();
-  });
-
-  it("refuses rather than rendering a truncated list", async () => {
-    // The database holds more rows than the read returned: an `ok` array must
-    // never be a partial answer on a page that promises exactness.
-    const markup = await renderQueues({
-      [T.reviewItems]: { data: POPULATION, count: POPULATION.length + 7 },
-    });
-
-    expect(idsIn(markup)).toEqual([]);
-    expect(textOf(markup)).toContain(T.reviewItems);
-    // No paging offer and no "showing N of M": the refusal is the answer.
-    expect(textOf(markup)).not.toMatch(/showing\s+\d+\s+of\s+\d+/i);
-  });
 });
 
 const EMPTY_TABLE: Script = { [T.reviewItems]: tableHolding([]) };
 
 describe("with the table present and empty", () => {
-  it("says what each queue holds and what fills it, and shows a real zero", async () => {
-    const markup = await renderQueues(EMPTY_TABLE);
-    const $ = cheerio.load(markup);
-
-    expect($("[data-queue]")).toHaveLength(2);
-    expect($("[data-queue] table")).toHaveLength(0);
-    expect(idsIn(markup)).toEqual([]);
-    for (const block of $("[data-queue]").toArray()) {
-      expect($(block).text().trim().length).toBeGreaterThan(0);
-    }
-    // The gauge read the same empty table and reports zeros it really counted.
-    expect(readNumber(markup, "data_conflict open")).toBe(0);
-  });
-
   it("renders each queue's open figure as a counted zero (admin-window/BUG-0027)", async () => {
     // A queue that holds nothing was COUNTED, so its figure is on the page and
     // reads 0 — quality bar 1 asks the Queues page for the open count of each
@@ -1035,20 +828,6 @@ describe("with the table present and empty", () => {
       expect(readNumber(markup, OPEN_LABEL[kind]), kind).toBe(0);
       expect(stateOf(markup, kind), kind).toBe("empty");
     }
-  });
-
-  it("keeps the figure where it sits when the queue has rows, and the card below it", async () => {
-    // "Counts sit in fixed positions": the same slot of the same block, so an
-    // operator scanning the same spot every morning can tell a quiet queue
-    // from a broken page.
-    const empty = regionsOf(await renderQueues(EMPTY_TABLE), "decision");
-    const populated = regionsOf(await renderQueues(healthyScript()), "decision");
-
-    expect(empty.figure).toBeGreaterThanOrEqual(0);
-    expect(empty.figure).toBe(populated.figure);
-    expect(empty.rows).toBe(populated.rows);
-    // The rows region is BELOW the figure, and it is where the card went.
-    expect(empty.rows).toBeGreaterThan(empty.figure);
   });
 
   it("puts the Empty card in the rows region, with no table", async () => {
@@ -1068,83 +847,9 @@ describe("with the table present and empty", () => {
       squash($('[data-queue="signal"] [data-rows]').text()),
     );
   });
-
-  it("keeps the two queues at equal standing while both are empty", async () => {
-    // TASK-0010's pins, re-run in this state: the fix must not buy the figure
-    // by making one queue a different kind of block from the other.
-    const markup = await renderQueues(EMPTY_TABLE);
-    const { $, blocks } = blocksOf(markup);
-
-    expect(blocks).toHaveLength(2);
-    expect($(blocks[0]).parent().get(0)).toBe($(blocks[1]).parent().get(0));
-    expect(blocks[0].tagName).toBe(blocks[1].tagName);
-    expect($(blocks[0]).attr("class")).toBe($(blocks[1]).attr("class"));
-    expect($(blocks[0]).find("h2")).toHaveLength(1);
-    expect($(blocks[1]).find("h2")).toHaveLength(1);
-    expect(regionsOf(markup, "decision")).toEqual(regionsOf(markup, "signal"));
-  });
 });
 
 describe("a zero that a filter produced", () => {
-  it("names its scope, so a filtered 0 never reads as a whole-queue 0", async () => {
-    // Arriving on the Dashboard's "open signals" link empties the decision
-    // queue on screen while the database holds plenty. The sub-line under that
-    // zero says more than the unfiltered zero's does — it names the scope —
-    // which is the behaviour, not the wording, and is what is pinned here.
-    const filtered = await renderQueues(healthyScript(), { kind: "signal" });
-    const whole = await renderQueues(EMPTY_TABLE);
-
-    expect(matching({ kind: "decision", status: "open" }).length).toBeGreaterThan(0);
-    expect(readNumber(filtered, OPEN_LABEL.decision)).toBe(0);
-    expect(stateOf(filtered, "decision")).toBe("empty");
-
-    const scoped = openSub(filtered, "decision");
-    const unscoped = openSub(whole, "decision");
-    expect(unscoped.length).toBeGreaterThan(0);
-    expect(scoped).toContain(unscoped);
-    expect(scoped.length).toBeGreaterThan(unscoped.length);
-  });
-
-  // The RULE, landed strict as `it.fails` by QA when it failed on this tree
-  // and turned into a passing pin by the fix (admin-window/BUG-0129).
-  it(
-    "does not scope a block by the one facet that cannot narrow it (BUG-0129)",
-    async () => {
-      // SEAM, and the URL the Dashboard's own zero attention card links to
-      // (`/queues?kind=decision`, `src/app/page.tsx` `queueHref`): each block
-      // is ALREADY narrowed to its own kind (`selectItems(result.data,
-      // { kind })`), so `?kind=decision` removes not one row from the decision
-      // block. Its rendered set is identical with and without the facet —
-      // asserted below, not assumed — and a scope claim about a filter that
-      // changed nothing is a claim the page's own read does not support:
-      // "empty" and "nothing matched your filters" are two different states
-      // and never share a rendering (LOOK_AND_FEEL, the four states).
-      //
-      // The sibling test above pins the TRUE half of the same rule —
-      // `?kind=signal` really does empty the decision block, and that zero
-      // must say so.
-      for (const kind of KIND_NAMES) {
-        const params = paramsOf(`kind=${kind}`);
-
-        // 1. the rows are the same rows, so nothing about this block was filtered
-        const populated = await renderQueues(healthyScript(), params);
-        const plain = await renderQueues(healthyScript());
-        expect(idsIn(populated, kind), kind).toEqual(idsIn(plain, kind));
-        expect(idsIn(populated, kind).length, kind).toBeGreaterThan(0);
-        expect(openSub(populated, kind), `${kind} sub-line`).toBe(openSub(plain, kind));
-
-        // 2. and with the table empty, the card still says what fills this
-        //    queue rather than blaming a filter that removed nothing
-        const empty = await renderQueues(EMPTY_TABLE, params);
-        const emptyPlain = await renderQueues(EMPTY_TABLE);
-        const rowsOf = (markup: string) =>
-          squash(cheerio.load(markup)(`[data-queue="${kind}"] [data-rows]`).text());
-        expect(stateOf(empty, kind), kind).toBe("empty");
-        expect(rowsOf(empty), `${kind} empty card`).toBe(rowsOf(emptyPlain));
-      }
-    },
-  );
-
   it("still reads as filtered when a facet BESIDE the block's own kind narrows it", async () => {
     // The other half of the rule above, on the URL where the two facets meet:
     // `?kind=decision&status=settled` discounts nothing but the kind. `status`
@@ -1170,31 +875,6 @@ describe("a zero that a filter produced", () => {
     expect(openSub(filtered, "decision").length).toBeGreaterThan(unscoped.length);
   });
 
-  it("blames NO filter on an empty table, whatever facet is beside the kind", async () => {
-    // Same seam, the other state — and the assertion INVERTED by
-    // admin-window/BUG-0133, which is the ticket that owns this state. It used
-    // to read "`status` is a reason the block is empty and the card may say
-    // so": it is not. With nothing in the table there was no row for `status`
-    // to remove, the block renders exactly what the bare `/queues` renders, so
-    // blaming the filter would send the operator to clear one that hides
-    // nothing. A table with no rows and a filter that matched nothing never
-    // share a rendering (LOOK_AND_FEEL, the four states).
-    //
-    // The true half of the rule — a facet that really DID remove rows still
-    // names its scope — is pinned on the POPULATED table by the two siblings
-    // above and below, so this pair still proves itself both ways.
-    const rowsOf = (markup: string) =>
-      squash(cheerio.load(markup)(`[data-queue="decision"] [data-rows]`).text());
-    const filtered = await renderQueues(EMPTY_TABLE, paramsOf("kind=decision&status=settled"));
-
-    expect(stateOf(filtered, "decision")).toBe("empty");
-    expect(rowsOf(filtered)).toBe(rowsOf(await renderQueues(EMPTY_TABLE)));
-    // and it is the SAME card the facet draws without the kind beside it
-    expect(rowsOf(filtered)).toBe(
-      rowsOf(await renderQueues(EMPTY_TABLE, paramsOf("status=settled"))),
-    );
-  });
-
   it("names its scope on EITHER block when the OTHER kind's facet empties it", async () => {
     // The true half of the rule, both ways round. The sibling above drives
     // only `?kind=signal` against the decision block, so a scope decision that
@@ -1217,23 +897,6 @@ describe("a zero that a filter produced", () => {
       const scoped = openSub(filtered, kind);
       expect(scoped, kind).toContain(unscoped);
       expect(scoped.length, kind).toBeGreaterThan(unscoped.length);
-    }
-  });
-
-  it("leaves a block's WHOLE rendering untouched under its own kind facet", async () => {
-    // Stronger than the ids-and-sub-line pin above, and the claim the fix
-    // actually makes: `/queues?kind=K` and `/queues` render the K block
-    // identically, so nothing anywhere inside it — figure, sub-line, card,
-    // rows — can come to disagree about whether that facet narrowed it.
-    for (const kind of KIND_NAMES) {
-      for (const [name, script] of [
-        ["populated", healthyScript()],
-        ["empty", EMPTY_TABLE],
-      ] as const) {
-        const own = await renderQueues(script, paramsOf(`kind=${kind}`));
-        const plain = await renderQueues(script);
-        expect(blockHtml(own, kind), `${kind}/${name}`).toBe(blockHtml(plain, kind));
-      }
     }
   });
 
@@ -1270,44 +933,6 @@ describe("a zero that a filter produced", () => {
       openSub(await renderQueues(EMPTY_TABLE), "signal").length,
     );
   });
-
-  // QA landed this STRICT as `it.fails`; the fix turned it red ("Expect test to
-  // fail"), which was the signal to drop `.fails` and keep it as the passing
-  // rule — the same way admin-window/BUG-0129's own pin above worked.
-  it(
-    "does not scope a block by a facet in ANOTHER NAME that cannot narrow it either (admin-window/BUG-0131)",
-    async () => {
-      // Same rule as the pin above, and the half the by-value exclusion does
-      // not reach: `within` is `{ kind }`, so only a `kind` facet can ever be
-      // discounted. But the signal queue is `shapesOfKind("signal")` — the
-      // single shape `entity_link_source_pattern` — and every row of that
-      // shape is `queue: "entity_link"` (`shapeOf`, src/lib/review/shapes.ts:
-      // 121), so BOTH of those facets select exactly the signal block's own
-      // set and remove not one row from it. Each is one click from this
-      // page's own chip row (`/queues?shape=entity_link_source_pattern`,
-      // `/queues?queue=entity_link`).
-      for (const query of ["shape=entity_link_source_pattern", "queue=entity_link"]) {
-        const params = paramsOf(query);
-
-        // 1. the facet removed nothing from this block
-        const populated = await renderQueues(healthyScript(), params);
-        const plain = await renderQueues(healthyScript());
-        expect(idsIn(populated, "signal"), query).toEqual(idsIn(plain, "signal"));
-        expect(idsIn(populated, "signal").length, query).toBeGreaterThan(0);
-
-        // 2. so it may not be given as the reason the figure is what it is
-        expect(openSub(populated, "signal"), `${query} sub-line`).toBe(
-          openSub(plain, "signal"),
-        );
-
-        // 3. nor as the reason the queue is empty when the table is
-        const empty = await renderQueues(EMPTY_TABLE, params);
-        expect(rowsRegion(empty, "signal"), `${query} empty card`).toBe(
-          rowsRegion(await renderQueues(EMPTY_TABLE), "signal"),
-        );
-      }
-    },
-  );
 
   /**
    * The facet values each KIND implies — every value a row of that kind must
@@ -1755,21 +1380,6 @@ describe("one queue quiet while the other is busy", () => {
   const SIGNALS = matching({ kind: "signal" });
   const SIGNALS_ONLY: Script = { [T.reviewItems]: tableHolding(SIGNALS) };
 
-  /** The figure the open card shows, as rendered text — a number or a dash. */
-  function openFigure(markup: string, kind: string): string {
-    const $ = cheerio.load(markup);
-    const card = $(`[data-queue="${kind}"] section`)
-      .children()
-      .filter((_, child) => squash($(child).text()).startsWith(OPEN_LABEL[kind]))
-      .first();
-    const parts = card
-      .children()
-      .toArray()
-      .map((child) => squash($(child).text()))
-      .filter((text) => text !== OPEN_LABEL[kind]);
-    return parts[0] ?? "";
-  }
-
   it("shows BOTH figures — the quiet queue's counted zero and the busy one's count", async () => {
     const markup = await renderQueues(SIGNALS_ONLY);
 
@@ -1781,17 +1391,6 @@ describe("one queue quiet while the other is busy", () => {
     );
     expect(stateOf(markup, "decision")).toBe("empty");
     expect(stateOf(markup, "signal")).toBe("ok");
-  });
-
-  it("renders that zero as a number, never as the absence dash", async () => {
-    // `orDash` colours an absence with an em dash, and `count(0)` must not
-    // reach it: "the read counted nothing" and "the read counted zero" are
-    // different facts and the live oracle distinguishes them.
-    const markup = await renderQueues(SIGNALS_ONLY);
-
-    expect(openFigure(markup, "decision")).toBe("0");
-    expect(openFigure(markup, "decision")).not.toContain(EM_DASH);
-    expect(openFigure(markup, "signal")).not.toContain(EM_DASH);
   });
 
   it("leaves that zero unscoped — no filter is what emptied it", async () => {
@@ -1821,19 +1420,6 @@ describe("one queue quiet while the other is busy", () => {
     expect($(blocks[0]).attr("class")).toBe($(blocks[1]).attr("class"));
     expect(regionsOf(markup, "decision")).toEqual(regionsOf(markup, "signal"));
     expect(regionsOf(markup, "decision")).toEqual(regionsOf(populated, "decision"));
-  });
-
-  it("gives the quiet queue the card and the busy queue the table, each in its rows region", async () => {
-    const markup = await renderQueues(SIGNALS_ONLY);
-    const $ = cheerio.load(markup);
-
-    const quiet = $('[data-queue="decision"] [data-rows]');
-    const busy = $('[data-queue="signal"] [data-rows]');
-    expect(quiet.find("table")).toHaveLength(0);
-    expect(squash(quiet.text()).length).toBeGreaterThan(0);
-    expect(busy.find("table")).toHaveLength(1);
-    expect(idsIn(markup, "decision")).toEqual([]);
-    expect(new Set(idsIn(markup, "signal"))).toEqual(new Set(idsOf(SIGNALS)));
   });
 
   it("states a real 0 when the Dashboard's decision link opens a quiet decision queue", async () => {
@@ -2016,22 +1602,6 @@ describe("a hand-edited URL", () => {
     expect(markup).not.toContain("x".repeat(200));
     for (const chip of chipsOf(markup, "shape")) {
       expect(chip.href.length).toBeLessThan(200);
-    }
-  });
-
-  it("lands filtered on the link the Dashboard sends, with the other queue intact", async () => {
-    // SEAM (admin-window/TASK-0009 → TASK-0010): the Dashboard's attention
-    // counts link to `/queues?kind=decision|signal`. Driven here as the query
-    // string it emits, so a parameter renamed on either side of the seam
-    // shows up as items in the wrong queue rather than as a link that
-    // silently opens the unfiltered page.
-    for (const kind of KIND_NAMES) {
-      const markup = await renderQueues(healthyScript(), paramsOf(`kind=${kind}`));
-
-      expect(new Set(idsIn(markup)), kind).toEqual(new Set(idsOf(matching({ kind }))));
-      expect(idsIn(markup, kind).length, kind).toBeGreaterThan(0);
-      // Equal standing survives the arrival: the other queue is still there.
-      expect(cheerio.load(markup)("[data-queue]"), kind).toHaveLength(2);
     }
   });
 });
@@ -2680,18 +2250,5 @@ describe("the way out of a narrowing", () => {
     // parameter of its own.
     expect(cheerio.load(markup)("[data-clear-narrowing] [data-facet]")).toHaveLength(0);
     expect(at(theExit(markup, "both facets set").href)).toEqual({});
-  });
-
-  it("keeps the tab it was taken from", async () => {
-    // A tab is a control the operator can see and cross back from, so it is
-    // the one narrowing the exit does not clear. The filter bar renders on the
-    // queues tab only, so this is graded on the href the leaf writes.
-    // Composed exactly as the page composes it.
-    const exitOn = (filter: ReviewItemFilter, tab: QueuesTab) =>
-      clearNarrowing(isNarrowedBeyond(filter, {}), queuesHref("/queues", {}, tab));
-    expect(exitOn({ source_id: NO_ROWS }, "verdict_log")?.href).toBe(
-      "/queues?tab=verdict_log",
-    );
-    expect(exitOn({}, "verdict_log")).toBeNull();
   });
 });

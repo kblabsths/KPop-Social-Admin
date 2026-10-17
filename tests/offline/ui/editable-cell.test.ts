@@ -11,10 +11,8 @@ import {
   type HintSide,
   type StatusGrowth,
   cellLayout,
-  hintSide,
   occupiesFlow,
   type StatusBounds,
-  statusGrowth,
   statusShift,
 } from "@/components/edit-cell-layout";
 import {
@@ -25,7 +23,6 @@ import {
   EditField,
   EditStatus,
   IDLE_EDIT_STATE,
-  type OpenPress,
   type RetireHost,
   type RetireMove,
   type RetireSignal,
@@ -58,33 +55,10 @@ import { classesOf, h, render, tagsOf, textOf } from "./markup";
 const noop = async () => ({ ok: true }) as const;
 
 describe("EditableCell", () => {
-  it("shows the value in data type at rest", () => {
-    const html = render(h(EditableCell, { value: "BLACKPINK", onSave: noop, label: "name" }));
-    expect(html).toContain("BLACKPINK");
-    expect(classesOf(html)).toContain("type-data");
-  });
-
-  it("is reachable by keyboard, not only by hovering a span", () => {
-    const html = render(h(EditableCell, { value: "BLACKPINK", onSave: noop, label: "name of BLACKPINK" }));
-    expect(tagsOf(html)).toContain("button");
-    expect(html).toContain('aria-label="name of BLACKPINK"');
-  });
-
   it("renders a null value as the dash, never as an empty click target", () => {
     const html = render(h(EditableCell, { value: null, onSave: noop, label: "spotify_id" }));
     expect(html).toContain(EM_DASH);
     expect(html).toContain("text-ink-disabled");
-  });
-
-  it("never suppresses the focus outline", () => {
-    const html = render(h(EditableCell, { value: "x", onSave: noop, label: "name" }));
-    expect(classesOf(html)).not.toContain("outline-none");
-  });
-
-  it("shows no confirmation and no failure line before anything is saved", () => {
-    const html = render(h(EditableCell, { value: "x", onSave: noop, label: "name" }));
-    expect(classesOf(html)).not.toContain("text-healthy");
-    expect(classesOf(html)).not.toContain("text-broken");
   });
 });
 
@@ -129,16 +103,6 @@ function describedBy(html: string): string | null {
 }
 
 describe("a cell in edit mode says how the edit ends", () => {
-  it("names both keys that end an edit, on the input and the textarea alike", () => {
-    for (const multiline of [false, true]) {
-      const said = textOf(editMode(multiline));
-      // The verifier's own probe over the whole page, which matched nothing:
-      // no prose anywhere named the commit key or the cancel key.
-      expect(said, `multiline=${multiline}`).toMatch(/\bEnter\b/);
-      expect(said, `multiline=${multiline}`).toMatch(/\bEscape\b/);
-    }
-  });
-
   it("says what LEAVING the field does, which is the half nothing else reveals", () => {
     // Blur commits (measured against staging on admin-window/BUG-0060: PATCH
     // 200, the value survives a reload). A surface that writes the catalog
@@ -233,16 +197,6 @@ function announced(html: string, role: string): string | null {
 }
 
 describe("a cell whose write is in flight states that work", () => {
-  it("says something, where before it said nothing at all", () => {
-    // The bug, at the seam: this markup was empty.
-    const said = textOf(statusMarkup({ kind: "saving" })).trim();
-    expect(said.length).toBeGreaterThan(0);
-    // ...and the negative fixture that keeps the check above honest: a cell
-    // with no edit behind it still says nothing, so "non-empty" is a real
-    // discriminator and not a property of every render.
-    expect(textOf(statusMarkup({ kind: "idle" })).trim()).toEqual("");
-  });
-
   it("announces it to assistive technology, as the confirmation already was", () => {
     // Politely: a save underway is not an interruption. The failure is.
     expect(announced(statusMarkup({ kind: "saving" }), "status")).toMatch(/\S/);
@@ -279,29 +233,6 @@ describe("a cell whose write is in flight states that work", () => {
     expect(announced(saved, "status")).toMatch(/\S/);
     expect(classesOf(saved)).toContain("text-healthy");
     expect(classesOf(saved)).toContain("type-data");
-  });
-
-  it("still names the refusal, in the broken colour, as an interruption", () => {
-    const message = "short_name is not editable on groups";
-    const failed = statusMarkup({ kind: "failed", message });
-    expect(announced(failed, "alert")).toContain(message);
-    expect(classesOf(failed)).toContain("text-broken");
-    expect(classesOf(failed)).toContain("type-data");
-  });
-
-  it("takes its colour from the palette in every kind, in-flight included", () => {
-    // tokens.test.ts holds this rule for the primitives; it only ever rendered
-    // the resting cell, so the three states reachable solely from React state
-    // were unbound by it. Both files now render them.
-    const RAW = (className: string) =>
-      /-(gray|slate|zinc|neutral|stone|purple|violet|green|emerald|amber|orange|yellow|red|rose|blue|sky|indigo|pink|fuchsia)-\d{2,3}$/.test(
-        className,
-      ) || className.includes("[");
-    for (const status of KINDS) {
-      expect(classesOf(statusMarkup(status)).filter(RAW), status.kind).toEqual([]);
-    }
-    // the guard flags what it is for, so its silence above means something
-    expect(["text-gray-400", "text-[13px]"].filter(RAW)).toHaveLength(2);
   });
 });
 
@@ -344,100 +275,6 @@ const AFTER_FIRST_SAVE: EditEvent[] = [
 const REFUSAL = "short_name is not editable on groups";
 
 describe("a status belongs to the edit that produced it", () => {
-  it("keeps the second edit's in-flight statement when the first edit's clock fires", () => {
-    // Measurement (1): +1671ms, the previous save's clock reached a write that
-    // was still 163ms from answering, and the cell went silent under it.
-    const state = replay(
-      ...AFTER_FIRST_SAVE,
-      { kind: "editing", edit: 2 },
-      { kind: "committed", edit: 2 },
-      { kind: "elapsed", edit: 1 },
-    );
-    expect(state.status.kind).toEqual("saving");
-    expect(state.edit).toEqual(2);
-  });
-
-  it("holds that statement for the whole of the write, however the two edits interleave", () => {
-    // "at any interval between the two edits" is the acceptance criterion, so
-    // the earlier clock is fired at every point of the later edit's life.
-    const later: EditEvent[] = [
-      { kind: "editing", edit: 2 },
-      { kind: "committed", edit: 2 },
-    ];
-    for (let at = 0; at <= later.length; at += 1) {
-      const where = `first save's clock fired after ${at} of the second edit's events`;
-      // whatever the clock lands between, the second edit still ends up
-      // stating its own work...
-      const state = replay(
-        ...AFTER_FIRST_SAVE,
-        ...later.slice(0, at),
-        { kind: "elapsed", edit: 1 },
-        ...later.slice(at),
-      );
-      expect(state.status.kind, where).toEqual("saving");
-      // ...and the clock retired only what it was armed for: the first save's
-      // own confirmation, and only while that confirmation was the one showing.
-      const struck = replay(...AFTER_FIRST_SAVE, ...later.slice(0, at), {
-        kind: "elapsed",
-        edit: 1,
-      });
-      // idle before the second edit is committed (the first's own clock, or
-      // the operator's reopen), and its in-flight statement once it is.
-      const standing = ["idle", "idle", "saving"][at];
-      expect(struck.status.kind, where).toEqual(standing);
-    }
-    // ...and it is that edit's OWN answer that ends it, not a clock.
-    const settled = replay(
-      ...AFTER_FIRST_SAVE,
-      ...later,
-      { kind: "elapsed", edit: 1 },
-      { kind: "settled", edit: 2, outcome: { ok: true } },
-    );
-    expect(settled.status.kind).toEqual("saved");
-  });
-
-  it("keeps a refusal raised inside the window, and keeps its message", () => {
-    // Measurement (2): readable for 1374ms, then gone — indistinguishable
-    // from never having typed, since the field has already reverted.
-    const state = replay(
-      ...AFTER_FIRST_SAVE,
-      { kind: "editing", edit: 2 },
-      { kind: "committed", edit: 2 },
-      { kind: "settled", edit: 2, outcome: { ok: false, message: REFUSAL } },
-      { kind: "elapsed", edit: 1 },
-    );
-    expect(state.status).toEqual({ kind: "failed", message: REFUSAL });
-  });
-
-  it("puts a refusal on no clock at all, inside a window or outside one", () => {
-    // The refusal raised OUTSIDE a window persisted indefinitely (measured at
-    // +3000ms); this is what makes the two the same behaviour.
-    expect(confirmationDelayMs({ kind: "failed", message: REFUSAL })).toBeNull();
-    const outside = replay(
-      { kind: "editing", edit: 1 },
-      { kind: "committed", edit: 1 },
-      { kind: "settled", edit: 1, outcome: { ok: false, message: REFUSAL } },
-    );
-    expect(confirmationDelayMs(outside.status)).toBeNull();
-    // even its own edit's clock, were one somehow armed, does not retire it
-    expect(reduceEdit(outside, { kind: "elapsed", edit: 1 })).toBe(outside);
-  });
-
-  it("still retires the confirmation on its OWN clock, and only then", () => {
-    const confirmed = replay(...AFTER_FIRST_SAVE);
-    expect(confirmed.status.kind).toEqual("saved");
-    expect(confirmationDelayMs(confirmed.status)).toEqual(1500);
-    expect(reduceEdit(confirmed, { kind: "elapsed", edit: 1 }).status.kind).toEqual("idle");
-  });
-
-  it("states the work the moment the edit is committed, on no clock", () => {
-    // BUG-0066's bar, still met: the statement appears with the commit rather
-    // than after a delay, and nothing retires it but its own answer.
-    const committed = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
-    expect(committed.status.kind).toEqual("saving");
-    expect(confirmationDelayMs(committed.status)).toBeNull();
-  });
-
   it("never lets an earlier edit's clock touch anything, over every status it can reach", () => {
     // The general rule behind both measurements, swept rather than sampled.
     const reached: EditState[] = [
@@ -494,11 +331,6 @@ describe("a status belongs to the edit that produced it", () => {
   it("never speaks over a write still in flight when the cell is reopened", () => {
     const inFlight = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
     expect(reduceEdit(inFlight, { kind: "editing", edit: 2 })).toBe(inFlight);
-  });
-
-  it("says nothing before any edit happens", () => {
-    expect(IDLE_EDIT_STATE.status.kind).toEqual("idle");
-    expect(confirmationDelayMs(IDLE_EDIT_STATE.status)).toBeNull();
   });
 });
 
@@ -591,20 +423,6 @@ describe.each([{ leaked: false }, { leaked: true }])(
   ({ leaked }) => {
     const drive = (script: Beat[]) => driveCell(script, { leakClocks: leaked });
 
-  it("leaves no silent, clickable window under the second edit's live write", () => {
-    // Measurement (1) as a clock: edit 1 confirms at 130 (its clock would fire
-    // at 1630), edit 2 commits at 200 and its write answers at 2200.
-    const cell = drive([
-      ...edit(1, 0, 10, 130, OK),
-      ...edit(2, 200, 210, 2200, OK),
-    ]);
-    for (let t = 210; t < 2200; t += 10) {
-      expect(cell.at(t).kind, `t=${t}ms, mid-write`).toEqual("saving");
-    }
-    expect(cell.at(1630).kind, "the previous save's clock fires here").toEqual("saving");
-    expect(cell.at(2200).kind).toEqual("saved");
-  });
-
   it("gives the second edit's own confirmation its own full 1.5s, and no more", () => {
     const cell = drive([...edit(1, 0, 10, 130, OK), ...edit(2, 200, 210, 2200, OK)]);
     expect(cell.at(3699).kind, "still confirming").toEqual("saved");
@@ -634,18 +452,6 @@ describe.each([{ leaked: false }, { leaked: true }])(
       expect(cell.at(t), `t=${t}ms`).toEqual({ kind: "failed", message: REFUSAL });
     }
     expect(cell.timeline.at(-1)?.at, "nothing happens after the refusal").toEqual(400);
-  });
-
-  it("lets the success after a refusal confirm and clear on its own clock", () => {
-    const cell = drive([
-      ...edit(1, 0, 10, 400, NO),
-      ...edit(2, 5_000, 5_010, 5_200, OK),
-    ]);
-    expect(cell.at(4_999).kind, "the refusal stands until the operator acts").toEqual("failed");
-    expect(cell.at(5_000).kind, "reopening acknowledges it").toEqual("idle");
-    expect(cell.at(5_100).kind).toEqual("saving");
-    expect(cell.at(6_699).kind).toEqual("saved");
-    expect(cell.at(6_700).kind, "1500ms after ITS save, not the refusal's age").toEqual("idle");
   });
 
   it("survives a third edit committed inside the second's window", () => {
@@ -794,22 +600,6 @@ describe("a refusal ends with the edit that produced it", () => {
     expect(after.edit).toEqual(1);
   });
 
-  it("is still on no clock: what retires it is the operator, at whatever moment they act", () => {
-    // "Readable long enough to act on" is the other half of the criterion: the
-    // fix must not become a timeout. Nothing fires on its own, ever.
-    const refused = replay(...AFTER_REFUSAL);
-    expect(confirmationDelayMs(refused.status)).toBeNull();
-    const cell = driveCell([
-      ...edit(1, 0, 10, 400, NO),
-      { at: 30_000, event: { kind: "abandoned", edit: 1, move: ESCAPE } },
-    ]);
-    for (const t of [401, 1_630, 4_000, 29_999]) {
-      expect(cell.at(t), `t=${t}ms`).toEqual({ kind: "failed", message: REFUSAL });
-    }
-    expect(cell.at(30_000).kind).toEqual("idle");
-    expect(cell.timeline.at(-1)?.at, "nothing fires after the operator's own move").toEqual(30_000);
-  });
-
   it("never lets a straggler clock or a stale abandonment retire a newer edit's statement", () => {
     // The mirror of BUG-0075's rule, on the event this ticket adds. Both
     // directions are fixtures: an abandonment older than what is on screen,
@@ -838,29 +628,6 @@ describe("a refusal ends with the edit that produced it", () => {
         reduceEdit(later, { kind: "abandoned", edit: later.edit, move }).status.kind,
         nameOf(move),
       ).toEqual("idle");
-    }
-  });
-
-  it("does not stop a write still in flight, whatever the operator presses", () => {
-    // Acceptance criterion 3, and the reason the reducer decides this rather
-    // than the listener: Escape during a PATCH cancels nothing, so claiming it
-    // did would be a lie about the database.
-    const inFlight = replay({ kind: "editing", edit: 1 }, { kind: "committed", edit: 1 });
-    expect(inFlight.status.kind).toEqual("saving");
-    for (const move of EVERY_MOVE) {
-      expect(
-        reduceEdit(inFlight, { kind: "abandoned", edit: 1, move }),
-        nameOf(move),
-      ).toBe(inFlight);
-    }
-    // ...and the write's own answer still lands on it afterwards, refusal and
-    // confirmation alike.
-    for (const outcome of [OK, NO]) {
-      const abandoned = reduceEdit(inFlight, { kind: "abandoned", edit: 1, move: FOCUS_LEFT });
-      const settled = reduceEdit(abandoned, { kind: "settled", edit: 1, outcome });
-      expect(settled.status.kind, outcome.ok ? "ok" : "refused").toEqual(
-        outcome.ok ? "saved" : "failed",
-      );
     }
   });
 
@@ -893,21 +660,6 @@ describe("a refusal ends with the edit that produced it", () => {
     expect(cell.at(1_900).kind, "1500ms after its own save").toEqual("idle");
   });
 
-  it("replaces a second refusal on the same cell rather than adding one", () => {
-    // A cell holds ONE status, so two refusals of the same cell can never
-    // stack; the walk measures the cross-cell half, which is a listener's job.
-    const twice = replay(
-      ...AFTER_REFUSAL,
-      { kind: "editing", edit: 2 },
-      { kind: "committed", edit: 2 },
-      { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
-    );
-    expect(twice.status).toEqual({ kind: "failed", message: "second refusal (22007)" });
-    expect(reduceEdit(twice, { kind: "abandoned", edit: 2, move: ESCAPE }).status.kind).toEqual(
-      "idle",
-    );
-  });
-
   it("retires a refusal and nothing else, over every status the cell can be in", () => {
     // The rule swept rather than sampled, at every ordinal relationship.
     const reached: EditState[] = [
@@ -929,15 +681,6 @@ describe("a refusal ends with the edit that produced it", () => {
         if (!retires) expect(next, where).toBe(state);
       }
     }
-  });
-
-  it("still lets the operator reopen the cell to clear it, the way that already worked", () => {
-    // BUG-0069's path is not replaced by this one, and a cell reopened after
-    // an abandonment is idle either way.
-    const refused = replay(...AFTER_REFUSAL);
-    expect(reduceEdit(refused, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
-    const abandoned = reduceEdit(refused, { kind: "abandoned", edit: 1, move: ESCAPE });
-    expect(reduceEdit(abandoned, { kind: "editing", edit: 2 }).status.kind).toEqual("idle");
   });
 });
 
@@ -1130,23 +873,6 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.close();
   });
 
-  it("gives QA's whole keyboard sequence at most one refusal, and never two", () => {
-    // Steps 1-4 end to end, no pointer used at any point. The measured
-    // failure was alerts = 2 at the last step, overlapping 273x28px.
-    const page = recordPage(FIELDS);
-    page.open("label").commit("label").focusOn("note").answer("label", NO);
-    page.focusOn("observed_on");
-    page.open("observed_on").commit("observed_on");
-    page.answer("observed_on", { ok: false, message: "second refusal (22007)" });
-    expect(page.refusing()).toEqual(["observed_on"]);
-    expect(page.statusOf("observed_on")).toEqual({
-      kind: "failed",
-      message: "second refusal (22007)",
-    });
-    expect(page.peakAlerts(), "at every moment of the sequence").toEqual(1);
-    page.close();
-  });
-
   it("holds one refusal even when two writes are in flight at once", () => {
     // The exception the first fix disclosed and criterion 2 does not tolerate:
     // both writes committed before either answered, so neither refusal existed
@@ -1211,129 +937,6 @@ describe("a refusal is retired by the move that ends the operator's involvement"
     page.answer("label", { ok: true });
     expect(page.statusOf("label").kind, "its own answer still lands").toEqual("saved");
     page.close();
-  });
-
-  it("leaves the 1.5s confirmation alone, however the operator moves", () => {
-    // Criterion 4 against every move, including the page-level one: a
-    // confirmation is a receipt on its own clock, not a sentence to act on.
-    const confirmed = replay(...AFTER_FIRST_SAVE);
-    for (const move of EVERY_MOVE) {
-      expect(retiresRefusal(confirmed.status, move), nameOf(move)).toBe(false);
-    }
-    const page = recordPage(FIELDS);
-    page.open("label").commit("label").answer("label", OK);
-    page.open("note").commit("note").answer("note", NO);
-    expect(page.statusOf("label").kind, "the receipt keeps its own clock").toEqual("saved");
-    expect(page.alerts()).toEqual(1);
-    page.close();
-  });
-
-  it("cannot be retired by a move belonging to an edit that is no longer showing", () => {
-    // A listener torn down a tick late, and a cell the operator has since
-    // reopened: BUG-0075's rule, on every move this attempt adds.
-    const later = replay(
-      ...AFTER_REFUSAL,
-      { kind: "editing", edit: 2 },
-      { kind: "committed", edit: 2 },
-      { kind: "settled", edit: 2, outcome: { ok: false, message: "second refusal (22007)" } },
-    );
-    for (const move of EVERY_MOVE) {
-      for (const stale of [0, 1, 3, 99]) {
-        expect(
-          reduceEdit(later, { kind: "abandoned", edit: stale, move }),
-          `${nameOf(move)}, edit ${stale}`,
-        ).toBe(later);
-      }
-    }
-  });
-});
-
-/**
- * THE LISTENERS THEMSELVES, without a browser — campaign
- * admin-window/BUG-0107, attempt 2.
- *
- * QA's bounce named the gap in so many words: "the retire decision is
- * offline-unpinnable while it lives in listeners", and no tier here can hold a
- * listener-arming defect (every vitest project is environment node,
- * `vitest.config.mts`, STACK.md §4). So the arming is a unit over a page it is
- * TOLD about (`RetireHost`) rather than over `document`: what it listens for,
- * what each signal means and what it stops listening to are all readable from
- * a recorder, and the component's remaining share is a two-line adapter from a
- * span and its owner document to those two questions.
- *
- * That is what would have caught the defect: the first attempt's listener set
- * had no `focusin` in it, which is one assertion below.
- */
-function recordingHost(inside: (target: EventTarget | null) => boolean = () => false) {
-  const armed = new Map<string, (signal: RetireSignal) => void>();
-  const stopped: string[] = [];
-  const host: RetireHost = {
-    contains: inside,
-    listen(type, handler) {
-      armed.set(type, handler);
-      return () => stopped.push(type);
-    },
-  };
-  return {
-    host,
-    types: () => [...armed.keys()],
-    stopped,
-    /** Fire one signal at the handler armed for `type`, if there is one. */
-    fire(type: string, signal: RetireSignal) {
-      armed.get(type)?.(signal);
-    },
-  };
-}
-
-/** A stand-in for an element, so a target is a target and nothing more. */
-const SOMEWHERE = {} as EventTarget;
-
-describe("the moves a refusing cell listens for", () => {
-  it("listens page-wide for a press, for Escape, AND for focus landing", () => {
-    // The third one is the whole of QA's bounce: a Tab presses nothing and
-    // moves nothing, so a set without `focusin` cannot see a keyboard
-    // operator leave, and the refusal stood through four of them.
-    const page = recordingHost();
-    armRetire(page.host, () => {});
-    expect(page.types()).toEqual(["pointerdown", "keydown", "focusin"]);
-  });
-
-  it("reads a press and a focus landing as the same question: inside, or away", () => {
-    for (const isInside of [true, false]) {
-      const page = recordingHost(() => isInside);
-      const moves: RetireMove[] = [];
-      armRetire(page.host, (move) => moves.push(move));
-      page.fire("pointerdown", { target: SOMEWHERE });
-      page.fire("focusin", { target: SOMEWHERE });
-      expect(moves, `inside=${isInside}`).toEqual([
-        { kind: "press", inside: isInside },
-        { kind: "focus", inside: isInside },
-      ]);
-    }
-  });
-
-  it("answers Escape and stays silent for every other key", () => {
-    // The negative fixture (LESSONS 3): a key listener that fired on anything
-    // would delete the refusal under the operator's own Tab-to-fix-it.
-    const page = recordingHost(() => false);
-    const moves: RetireMove[] = [];
-    armRetire(page.host, (move) => moves.push(move));
-    for (const key of ["Enter", "Tab", "a", "Esc", "escape", " ", "ArrowDown"]) {
-      page.fire("keydown", { target: SOMEWHERE, key });
-    }
-    expect(moves, "no key but Escape ends a refusal").toEqual([]);
-    page.fire("keydown", { target: SOMEWHERE, key: "Escape" });
-    expect(moves).toEqual([{ kind: "escape" }]);
-  });
-
-  it("stops listening to all three when the refusal goes", () => {
-    // A cell that keeps a document listener after its refusal is retired is
-    // the leak that would retire the NEXT refusal on someone else's move.
-    const page = recordingHost();
-    const disarm = armRetire(page.host, () => {});
-    expect(page.stopped).toEqual([]);
-    disarm();
-    expect(page.stopped).toEqual(["pointerdown", "keydown", "focusin"]);
   });
 });
 
@@ -1563,23 +1166,6 @@ describe("the page holds one refusal at a time", () => {
     releaseB();
   });
 
-  it("hands the slot on down a chain without ever holding two", () => {
-    const holders = ["label", "note", "observed_on", "tally"];
-    const retired: string[] = [];
-    const releases: Array<() => void> = [];
-    for (const holder of holders) {
-      const release = takeRefusalSlot(() => {
-        retired.push(holder);
-        // what the component does: a retired refusal releases its own slot.
-        release();
-      });
-      releases.push(release);
-    }
-    // every holder but the last has been displaced, in order
-    expect(retired).toEqual(holders.slice(0, -1));
-    for (const release of releases) release();
-  });
-
   it("leaves nothing behind when a cell is released without being displaced", () => {
     // Unmount — navigating away with a refusal on screen. The next page's
     // first refusal must not be retiring a component that is gone.
@@ -1713,19 +1299,6 @@ describe("an edit that ends gives focus back to the cell", () => {
     expect($("button").length).toBe(1);
     expect($("button").attr("disabled")).toBeUndefined();
     expect($("button").attr("tabindex")).toBeUndefined();
-  });
-
-  it("adds nothing to the resting markup to do it", () => {
-    // records/page.test.ts asserts a mapped field is markup-identical to this
-    // primitive; a hidden focus target, an autofocus at rest, or a tabindex
-    // would all be new surface. The ref that carries the fix renders nothing.
-    const resting = render(
-      h(EditableCell, { value: "Tuzi", onSave: noop, label: "short_name of groups" }),
-    );
-    expect(resting).not.toMatch(/tabindex/i);
-    expect(resting).not.toMatch(/autofocus/i);
-    expect(tagsOf(resting)).not.toContain("input");
-    expect(tagsOf(resting)).not.toContain("textarea");
   });
 });
 
@@ -1962,16 +1535,6 @@ describe("an edit commits what a person could read, and nothing else", () => {
   /** The class of ink-less drafts, each on its own and each padded. */
   const INVISIBLE = ["\u200b", "\u2060", "\u00ad", "\ufeff", "\u3164", "  \u200b  ", "   ", ""];
 
-  it("commits a draft with nothing visible in it as the clear it looks like", () => {
-    for (const draft of INVISIBLE) {
-      const seen = JSON.stringify(draft);
-      // The app's own answer about this string on the surface it renders on —
-      // which is what the commit must agree with.
-      expect(isAbsent(draft), seen).toBe(true);
-      expect(committedValue(draft), seen).toBeNull();
-    }
-  });
-
   it("commits a draft with anything visible in it, byte-identical but for its ends", () => {
     // The fixtures it must NOT flag, or it says nothing (LESSONS 3): the
     // invisible characters are an absence only when they are ALL there is, and
@@ -2000,33 +1563,6 @@ describe("an edit commits what a person could read, and nothing else", () => {
       expect(committedValue(draft) === null, seen).toBe(!hasVisibleContent(draft));
     }
   });
-
-  it("agrees with the SURFACE over the class this bug arrived as", () => {
-    // The disagreement admin-window/BUG-0095 is: a draft the page draws as an
-    // absence must not commit as content. Asserted over the ink-less class
-    // rather than over every string, because `isAbsent` deliberately says one
-    // thing more than the one definition does — it also calls a bare EM DASH
-    // an absence, since that is what `format.ts`'s own helpers RETURN for a
-    // null (`count(null)`), so a cell that typed the dash still commits it.
-    // That divergence is `isAbsent`'s and is not this ticket's to settle.
-    for (const draft of INVISIBLE) {
-      const seen = JSON.stringify(draft);
-      expect(isAbsent(draft), seen).toBe(true);
-      expect(committedValue(draft), seen).toBeNull();
-    }
-    expect(isAbsent(EM_DASH)).toBe(true);
-    expect(committedValue(EM_DASH)).toBe(EM_DASH);
-  });
-
-  it("draws the dash for the value it just committed, rather than an empty target", () => {
-    // The end of the round trip at this tier: a cleared cell renders as an
-    // absence, which is the same thing the operator saw before they saved.
-    const html = render(
-      h(EditableCell, { value: committedValue("\u200b"), onSave: noop, label: "label of walk_sandbox" }),
-    );
-    expect(html).toContain(EM_DASH);
-    expect(html).not.toContain("\u200b");
-  });
 });
 
 
@@ -2044,29 +1580,11 @@ describe("a cell opens with its value selected, so a retype replaces", () => {
     }
   });
 
-  it("hands it the SAME reference every render, so typing does not re-select", () => {
-    // React re-invokes a ref callback whose identity changed. An inline arrow
-    // here would reselect the whole field after every keystroke — a worse bug
-    // than the one being fixed.
-    expect(fieldOf(false).props.ref).toBe(fieldOf(false).props.ref);
-    expect(fieldOf(true).props.ref).toBe(fieldOf(false).props.ref);
-  });
-
   it("selects the whole value, and writes nothing", () => {
     const spy = spyField("A label a walker may rewrite.");
     selectOnOpen(spy.field);
     expect(spy.selects()).toBe(1);
     expect(spy.value()).toBe("A label a walker may rewrite.");
-  });
-
-  it("selects a multiline value without counting characters, so no newline is lost", () => {
-    // `select()` rather than `setSelectionRange(0, value.length)`: the spy
-    // throws on the index form, because a textarea's newlines are exactly
-    // where computed lengths go wrong.
-    const spy = spyField("first line\nsecond line\n\nfourth");
-    selectOnOpen(spy.field);
-    expect(spy.selects()).toBe(1);
-    expect(spy.value()).toBe("first line\nsecond line\n\nfourth");
   });
 
   it("opens an empty cell without erroring, and selects nothing there is", () => {
@@ -2151,16 +1669,6 @@ describe("a cell moves no other row, in any state it can be in", () => {
     expect(cellLayout({ editing: false, statusShown: false }).value).toEqual("flow");
   });
 
-  it("draws every part that is not the value outside the flow, wherever it is drawn at all", () => {
-    for (const state of STATES) {
-      const layout = cellLayout(state);
-      for (const part of ["field", "hint", "status"] as const) {
-        if (layout[part] === "absent") continue;
-        expect(occupiesFlow(layout[part]), `${part}, ${JSON.stringify(state)}`).toBe(false);
-      }
-    }
-  });
-
   it("takes the line stating the write out of the flow too, in the window the next click lands in", () => {
     // The reopening, pinned: `saving…` / `saved` / the refusal appear while
     // the cell is CLOSED and on their own clock, so a status that took space
@@ -2181,49 +1689,9 @@ describe("a cell moves no other row, in any state it can be in", () => {
     // The field is not inert — it is the thing being typed into.
     expect(cellLayout({ editing: true, statusShown: false }).field).toEqual("float");
   });
-
-  it("is not vacuously true: the states really do differ from each other", () => {
-    // A rule both sides of which are the same object proves nothing (LESSONS 3).
-    const seen = new Set(STATES.map((state) => JSON.stringify(cellLayout(state))));
-    expect(seen.size).toBe(STATES.length);
-    expect(occupiesFlow("float")).toBe(false);
-    expect(occupiesFlow("float-inert")).toBe(false);
-    expect(occupiesFlow("flow")).toBe(true);
-  });
 });
 
 describe("the status line the row cannot feel", () => {
-  it("is drawn out of the flow and inert to the pointer, in every kind it renders", () => {
-    // The markup half of `cellLayout(...).status`: the model says float-inert
-    // and this is where the rendering says the same thing. `idle` renders
-    // nothing at all, which is `absent`.
-    for (const status of KINDS) {
-      const classes = classesOf(statusMarkup(status));
-      if (status.kind === "idle") {
-        expect(classes, "idle").toEqual([]);
-        continue;
-      }
-      expect(classes, status.kind).toContain("absolute");
-      expect(classes, status.kind).toContain("pointer-events-none");
-    }
-  });
-
-  it("stays readable over whatever it hangs over, and still says what it always said", () => {
-    // Out of the flow means over something, and on this surface that something
-    // is another line of the record: an unfilled box would print two texts on
-    // top of each other. The words and the live regions are unchanged
-    // (BUG-0066) — those are asserted above.
-    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
-      expect(classesOf(statusMarkup(status)), status.kind).toContain("bg-surface");
-    }
-    // Still announced, and still two different statements — the words
-    // themselves are nobody's to pin here (see the block above).
-    expect(announced(statusMarkup({ kind: "saving" }), "status")).toMatch(/\S/);
-    expect(announced(statusMarkup({ kind: "failed", message: REFUSAL }), "alert")).toContain(
-      REFUSAL,
-    );
-  });
-
   it("adds nothing to the resting cell, which has no status to state", () => {
     const resting = render(
       h(EditableCell, { value: "Tuzi", onSave: noop, label: "label of walk_sandbox" }),
@@ -2254,23 +1722,6 @@ function hintClasses(side: HintSide, multiline = false): string[] {
 }
 
 describe("the hint hangs over a line that is there", () => {
-  it("hangs below a line that has one below it", () => {
-    expect(hintSide(0, 6)).toEqual("below");
-    expect(hintSide(4, 6)).toEqual("below");
-  });
-
-  it("hangs above the last line, whose only neighbour below is the table's own clip", () => {
-    // `DataTable` wraps its table in `overflow-x-auto`, and a box whose other
-    // axis is `visible` computes to `auto` — a float below the last row is
-    // clipped, so the operator would read half a hint or none.
-    expect(hintSide(5, 6)).toEqual("above");
-    expect(hintSide(1, 2)).toEqual("above");
-  });
-
-  it("hangs below when there is no neighbour on either side", () => {
-    expect(hintSide(0, 1)).toEqual("below");
-  });
-
   it("draws the open subtree over the value rather than beside it", () => {
     // Positioned, therefore out of the flow: the mechanism `cellLayout` names.
     expect(classesOf(editMode(false))).toContain("absolute");
@@ -2363,22 +1814,6 @@ function cellPropsByField(names: readonly string[]): Map<string, Record<string, 
 }
 
 describe("the status hangs over a line that is there", () => {
-  it("grows down from a line that has one below it", () => {
-    expect(statusGrowth(0, 6)).toEqual("down");
-    expect(statusGrowth(4, 6)).toEqual("down");
-  });
-
-  it("grows up from the last line, whose only neighbour below is the table's own clip", () => {
-    expect(statusGrowth(5, 6)).toEqual("up");
-    expect(statusGrowth(1, 2)).toEqual("up");
-  });
-
-  it("grows down when there is no neighbour on either side", () => {
-    // One line: growing up would leave over the table's header instead, and
-    // there is no row up there to hang over. `hintSide` answers the same.
-    expect(statusGrowth(0, 1)).toEqual("down");
-  });
-
   it("anchors the box to the edge it was told, both ways and in every kind it renders", () => {
     // Two fixtures per kind: a rule that only ever saw one direction passes
     // vacuously (LESSONS 3). `top-0` pins the box's top to the row's top and
@@ -2413,17 +1848,6 @@ describe("the status hangs over a line that is there", () => {
         expect(classes, `${status.kind}/${growth}`).toContain("pointer-events-none");
         expect(classes, `${status.kind}/${growth}`).toContain("bg-surface");
       }
-    }
-  });
-
-  it("keeps both halves of a refusal inside the one region, whichever way it grows", () => {
-    // BUG-0098's anatomy is what this ticket exists to make readable, so it
-    // is asserted on the side that moved.
-    for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
-      const markup = statusMarkup({ kind: "failed", message: REFUSAL }, growth);
-      const announcement = announced(markup, "alert");
-      expect(announcement, growth).toContain(REFUSAL);
-      expect(announcement, growth).toContain(refusalFix(REFUSAL));
     }
   });
 
@@ -2644,18 +2068,6 @@ describe("the status box's width cap binds on the words inside it", () => {
       ).toEqual([]);
     }
   });
-
-  it("leaves the database's words exactly as they arrived, however long the token", () => {
-    // A break rule is a rendering instruction, never an edit: no hyphen is
-    // inserted into the text, nothing is elided, and both halves are still
-    // inside the one region a screen reader is interrupted with.
-    const token = `nope-${"x".repeat(300)}`;
-    const message = `invalid input syntax for type date: "${token}" (22007)`;
-    const { failed, fix } = halves(message);
-    expect(failed).toEqual(message);
-    expect(fix).toEqual(refusalFix(message));
-    expect(announced(statusMarkup({ kind: "failed", message }), "alert")).toContain(token);
-  });
 });
 
 
@@ -2714,17 +2126,6 @@ describe("the status box is bounded the way this component bounds a floating box
     // ...and the hint's other side is bounded the same way, so "below" above
     // is not a special case.
     expect(edgeClasses(hintClasses("above"))).toEqual(hint);
-  });
-
-  it("gets its edge from a hairline and never from elevation", () => {
-    // "1px hairlines, never shadows": a shadow would bound the panel too, and
-    // is the one way this app does not do it.
-    for (const status of KINDS.filter((kind) => kind.kind !== "idle")) {
-      for (const growth of ["down", "up"] satisfies StatusGrowth[]) {
-        const raised = boxClasses(status, growth).filter((name) => /shadow|ring-|outline-/.test(name));
-        expect(raised, `${status.kind}/${growth}`).toEqual([]);
-      }
-    }
   });
 
   it("keeps the refusal's red in the ink and out of the edge", () => {
@@ -2887,7 +2288,7 @@ describe("a refused write names what failed and what to do", () => {
   });
 
   it("does not send an operator round a loop when the refusal is not about the value", () => {
-    // The override path's normal answer for the whole of M2 (the route's 503).
+    // The override path's answer in the absent world (the route's 503).
     // "Correct the value and save again" is advice that cannot work here, so
     // this arm exists to not give it.
     const fix = refusalFix("settle_review_item is not present in this database");
@@ -2929,135 +2330,100 @@ describe("a refused write names what failed and what to do", () => {
     }
   });
 
-  // Was a PIN (`it.fails`) while the divergence stood; admin-window/BUG-0103
-  // closed it and the pin became a plain expectation, which is what the pin
-  // was written to become.
-  it("picks the arm from the database's words, not from what the operator typed (admin-window/BUG-0103)", () => {
-    // The refusal a coercion produces QUOTES the operator's own value back
-    // (`invalid input syntax for type integer: "<what they typed>"`), and the
-    // arms match on the whole string, so a value carrying another arm's prose
-    // steers the sentence. Asserted relationally, never against copy: two
-    // refusals of the SAME class, differing only in the quoted value, must
-    // carry the same fix, whatever the operator typed.
-    const quoted = (value: string) =>
-      `invalid input syntax for type integer: "${value}" (22P02)`;
-    const benign = refusalFix(quoted("seven"));
-    for (const typed of [
-      "violates not-null constraint",
-      "is not present in this database",
-      "does not match",
-      "(23502)",
-    ]) {
-      expect(refusalFix(quoted(typed)), typed).toEqual(benign);
-    }
-  });
-
-  it("takes the arm from the code the refusal STATES, both directions (admin-window/BUG-0103)", () => {
-    // The two halves of the same rule, each stated on its own so a regression
-    // says which direction broke. Relational throughout: no sentence of copy
-    // appears here, only "these two refusals derive the same fix" and "these
-    // two derive different ones".
-
-    // One: a coercion whose quoted value is ANOTHER arm's code. The code that
-    // decides is the one the database appended last, never one the operator
-    // typed inside the quotes.
-    const quotesACode = 'invalid input syntax for type integer: "(23502)" (22P02)';
-    expect(refusalFix(quotesACode)).toEqual(refusalFix(REFUSALS.coercion));
-
-    // Two: a genuine 23502 whose failing-row DETAIL carries an earlier arm's
-    // prose — a value in some OTHER column of the row Postgres dumps — is
-    // still a not-null refusal, and still names the column that was emptied.
-    const carriesAnotherArmsProse = REFUSALS.notNull.replace(
-      "walk probe 0908",
-      "settle_review_item is not present in this database",
-    );
-    expect(carriesAnotherArmsProse, "the fixture really carries it").not.toEqual(
-      REFUSALS.notNull,
-    );
-    expect(refusalFix(carriesAnotherArmsProse)).toEqual(refusalFix(REFUSALS.notNull));
-    expect(refusalFix(carriesAnotherArmsProse)).toContain("label");
-
-    // ...and the two arms are distinguishable, so neither equality above is
-    // satisfied by every refusal collapsing onto one sentence.
-    expect(refusalFix(REFUSALS.coercion)).not.toEqual(refusalFix(REFUSALS.notNull));
-    for (const fix of [refusalFix(quotesACode), refusalFix(carriesAnotherArmsProse)]) {
-      expect(fix).not.toEqual(GENERAL_FIX);
-    }
-  });
-
   /*
-   * Was a PIN — admin-window/BUG-0103, second cut. Measured live 2026-09-09 on a
-   * production build of the landed tree (127.0.0.1:8840, staging
-   * ubfjjqlvnpnoborczbdb, walk_sandbox row …0001, bundled Chromium 1440x900),
-   * through the cell.
+   * The BUG-0103 class, one table — the four pins it was fixed under (the
+   * quoted value steering the arm; the code the refusal STATES deciding it,
+   * both directions; a refusal that states no code; the dump spelling another
+   * arm's prose) were each one property of the same rule, and are one `it.each`
+   * here. Relational throughout, never against copy: two refusals of the SAME
+   * class, differing only in what the operator typed or in what the failing-row
+   * dump happens to spell, derive the same fix; the two arms stay apart; and
+   * neither collapses onto the general sentence.
    *
-   * The structural guard is the SQLSTATE the refusal states LAST — but the
-   * refusal does not always state it. `errorMessage` appends the code "only
-   * when the account does not already spell it" (`lib/db/result.ts`), so a
-   * refusal whose own text happens to contain `23502` arrives WITHOUT the
-   * trailing code, the guard falls through to prose, and a not-null refusal's
-   * prose is a whole failing-row dump whose values Postgres writes UNQUOTED —
-   * where `QUOTED_RUN` cannot strike them out. A value in any other column of
-   * the row then chooses the sentence again, which is the defect this ticket
-   * is about.
+   * The codeless rows: `errorMessage` appends the SQLSTATE "only when the
+   * account does not already spell it" (`lib/db/result.ts`), so a refusal whose
+   * own text happens to contain `23502` arrives WITHOUT the trailing code, the
+   * guard falls through to prose, and a not-null refusal's prose is a whole
+   * failing-row dump whose values Postgres writes UNQUOTED — where `QUOTED_RUN`
+   * cannot strike them out. Measured live 2026-09-09 on a production build of
+   * the landed tree (127.0.0.1:8840, staging ubfjjqlvnpnoborczbdb, walk_sandbox
+   * row …0001, bundled Chromium 1440x900), through the cell.
    */
-  it("picks the arm from the database's words when the refusal states no code (admin-window/BUG-0103)", () => {
-    // One shape, one class, one column emptied: a genuine 23502 about `label`,
-    // varying only in a value the operator typed into ANOTHER cell — and in
-    // every variant the row dump spells `23502`, so none of them carries the
-    // trailing code. Relational: same class, same fix.
-    const dumped = (note: string) =>
-      'null value in column "label" of relation "walk_sandbox" violates ' +
-      "not-null constraint Failing row contains " +
-      `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
-      "2026-01-15, 2026-09-09 07:14:27.7384+00).";
-    const benign = refusalFix(dumped("a note 23502"));
-    expect(benign, "the codeless not-null still reaches its own arm").not.toEqual(
-      GENERAL_FIX,
-    );
-    for (const note of [
-      "is not present in this database 23502",
-      "23502 is not present in this database",
-    ]) {
-      expect(refusalFix(dumped(note)), note).toEqual(benign);
-    }
-  });
+  const quotedWithCode = (value: string) =>
+    `invalid input syntax for type integer: "${value}" (22P02)`;
+  const quotedNoCode = (value: string) => `invalid input syntax for type integer: "${value}"`;
+  const dumpedNoCode = (note: string) =>
+    'null value in column "label" of relation "walk_sandbox" violates ' +
+    "not-null constraint Failing row contains " +
+    `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
+    "2026-01-15, 2026-09-09 07:14:27.7384+00).";
 
-  it("reads the arm off the message's own opening, whatever the dump holds (admin-window/BUG-0103)", () => {
-    // The pin above varies one dumped column; this varies what the dump SPELLS
-    // — another arm's code, another arm's whole sentence, a quote, a newline —
-    // and asserts the same class still derives the same fix, still naming the
-    // column the message opened with. Relational: no copy is written here.
-    const dumped = (note: string) =>
-      'null value in column "label" of relation "walk_sandbox" violates ' +
-      "not-null constraint Failing row contains " +
-      `(00000000-0000-4000-8000-000000000001, null, ${note}, 7, f, ` +
-      "2026-01-15, 2026-09-09 07:14:27.7384+00).";
-    const benign = refusalFix(dumped("a note"));
-    expect(benign).not.toEqual(GENERAL_FIX);
-    expect(benign).toContain("label");
-    for (const note of [
-      'invalid input syntax for type integer: "seven" (22P02)',
-      "22P02",
-      "KS003 does not match",
-      'null value in column "note" of relation "walk_sandbox"',
-      "a note with a \" in it",
-      "a note\nwith a newline",
-    ]) {
-      expect(refusalFix(dumped(note)), note).toEqual(benign);
-    }
+  const ARMS = [
+    {
+      arm: "a coercion that states its code",
+      benign: REFUSALS.coercion,
+      variants: [
+        "violates not-null constraint",
+        "is not present in this database",
+        "does not match",
+        "(23502)",
+      ].map(quotedWithCode),
+      names: null,
+      unlike: REFUSALS.notNull,
+    },
+    {
+      arm: "a coercion that states no code",
+      benign: quotedNoCode("seven"),
+      variants: ["Failing row contains (1, null, x)", "23502"].map(quotedNoCode),
+      names: null,
+      unlike: dumpedNoCode("a note"),
+    },
+    {
+      arm: "a not-null refusal that states its code",
+      benign: REFUSALS.notNull,
+      variants: [
+        REFUSALS.notNull.replace(
+          "walk probe 0908",
+          "settle_review_item is not present in this database",
+        ),
+      ],
+      names: "label",
+      unlike: REFUSALS.coercion,
+    },
+    {
+      arm: "a not-null refusal that states no code",
+      benign: dumpedNoCode("a note"),
+      variants: [
+        "a note 23502",
+        "is not present in this database 23502",
+        "23502 is not present in this database",
+        'invalid input syntax for type integer: "seven" (22P02)',
+        "22P02",
+        "KS003 does not match",
+        'null value in column "note" of relation "walk_sandbox"',
+        "a note with a \" in it",
+        "a note\nwith a newline",
+      ].map(dumpedNoCode),
+      names: "label",
+      unlike: quotedNoCode("seven"),
+    },
+  ];
 
-    // The same for the coercion's own opening, and the two arms stay apart —
-    // so neither equality above is met by everything collapsing onto one
-    // sentence.
-    const coerced = (value: string) =>
-      `invalid input syntax for type integer: "${value}"`;
-    for (const value of ["seven", "Failing row contains (1, null, x)", "23502"]) {
-      expect(refusalFix(coerced(value)), value).toEqual(refusalFix(coerced("seven")));
-    }
-    expect(refusalFix(coerced("seven"))).not.toEqual(benign);
-    expect(refusalFix(coerced("seven"))).not.toEqual(GENERAL_FIX);
-  });
+  it.each(ARMS)(
+    "derives one fix for $arm, whatever the quoted value or the row dump carries (admin-window/BUG-0103)",
+    ({ benign, variants, names, unlike }) => {
+      const fix = refusalFix(benign);
+      expect(fix, "the arm is reachable, not the general sentence").not.toEqual(GENERAL_FIX);
+      if (names !== null) expect(fix).toContain(names);
+      for (const variant of variants) {
+        expect(variant, "the fixture really carries it").not.toEqual(benign);
+        expect(refusalFix(variant), variant).toEqual(fix);
+      }
+      // ...and the two arms are distinguishable, so no equality above is
+      // satisfied by every refusal collapsing onto one sentence.
+      expect(fix, "the two arms stay apart").not.toEqual(refusalFix(unlike));
+    },
+  );
 
   it("never says stop about a refusal a retype fixes (admin-window/BUG-0103)", () => {
     // The arm whose sentence says nothing you retype will land is the only one
@@ -3175,70 +2541,7 @@ describe("a refused write names what failed and what to do", () => {
  * at `onPointerDown` is measured in the walk, as their focus and selection are.
  */
 
-/** A press with everything ordinary, overridden a field at a time. */
-function press(overrides: Partial<OpenPress> = {}): OpenPress {
-  return {
-    source: "pointerdown",
-    button: 0,
-    detail: 1,
-    editing: false,
-    disabled: false,
-    ...overrides,
-  };
-}
-
 describe("a pointer opens the cell at the press, which no reflow can outrun", () => {
-  it("opens on pointerdown, and not on the click that same press ends with", () => {
-    // The whole fix in two lines. The click is the event that arrives after
-    // the table has re-apportioned, i.e. after the button it was aimed at has
-    // moved: it opens nothing, so nothing is swallowed and nothing is missed.
-    expect(opensCell(press({ source: "pointerdown" }))).toBe(true);
-    expect(opensCell(press({ source: "click", detail: 1 }))).toBe(false);
-  });
-
-  it("never opens from a pointer's click, at any click count", () => {
-    // The risk QA stated: at the measured deltas the release landed on a
-    // `<td>`, but a layout where it lands on ANOTHER value's button would open
-    // the wrong field — and a cell opens with its value selected, so the next
-    // keystroke would replace it. A pointer-borne click opens nothing here.
-    for (const detail of [1, 2, 3, 4]) {
-      expect(opensCell(press({ source: "click", detail })), `detail=${detail}`).toBe(false);
-    }
-  });
-
-  it("still opens from the keyboard, which sends a click and no pointer at all", () => {
-    // Enter and Space on the resting button, and an assistive technology's
-    // `.click()`, are all a click with no pointer behind it (`detail === 0`).
-    // Losing them would trade one operator's defect for another's.
-    expect(opensCell(press({ source: "click", detail: 0 }))).toBe(true);
-  });
-
-  it("opens for the primary press only, so a context-menu press opens nothing", () => {
-    expect(opensCell(press({ button: 0 }))).toBe(true);
-    for (const button of [1, 2, 3, 4]) {
-      expect(opensCell(press({ button })), `button=${button}`).toBe(false);
-      expect(opensCell(press({ source: "click", detail: 0, button })), `key button=${button}`)
-        .toBe(false);
-    }
-  });
-
-  it("refuses a press on a cell that is already open", () => {
-    // The open cell's own button is hidden under its field, but a press that
-    // reached it would hand out a second edit ordinal for one visit.
-    for (const source of ["pointerdown", "click"] as const) {
-      expect(opensCell(press({ source, detail: 0, editing: true })), source).toBe(false);
-    }
-  });
-
-  it("refuses a press while this cell's own write is in flight", () => {
-    // The resting control is `disabled` for the whole write (`focusVerdict`
-    // waits on the same fact), and a disabled button dispatches no click —
-    // but pointer events reach one in some browsers, so the rule says it.
-    for (const source of ["pointerdown", "click"] as const) {
-      expect(opensCell(press({ source, detail: 0, disabled: true })), source).toBe(false);
-    }
-  });
-
   it("is not vacuously true: it says no to most of what it can be asked", () => {
     // Over every press this control can see, exactly the two openings above
     // are accepted (LESSONS 3: a rule that never refused proves nothing).

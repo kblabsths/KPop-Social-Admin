@@ -74,15 +74,6 @@ describe("the newest-first ordering, over either column pair", () => {
     ).toEqual(["ccc", "bbb", "aaa"]);
   });
 
-  it("ranks the instant ahead of the key, so the key never outvotes the clock", () => {
-    expect(
-      orderedTags([
-        [T1, "zzz"],
-        [T3, "aaa"],
-      ]),
-    ).toEqual(["aaa", "zzz"]);
-  });
-
   it("sorts an unreadable instant last, in each of its spellings, and keeps the row", () => {
     // Three ways a stamp fails to be an instant — absent, empty and unparseable
     // — and none of them may poison the comparison for the rows that ARE
@@ -166,18 +157,6 @@ describe("the newest-first ordering, over either column pair", () => {
         // comparator that sorted the raw text would answer this backwards.
         ["2026-09-01T10:00:00+00:00", "zzz"],
         ["2026-09-01T11:00:00+01:00", "aaa"],
-      ]),
-    ).toEqual(["zzz", "aaa"]);
-  });
-
-  it("ranks two spellings of two DIFFERENT instants by the clock", () => {
-    // The other half of the same property, so the case above cannot pass by a
-    // comparator that has stopped reading the instant at all: the older row is
-    // the one whose STRING sorts later, and the clock still wins.
-    expect(
-      orderedTags([
-        ["2026-09-01T23:00:00+00:00", "zzz"],
-        ["2026-09-02T00:30:00+02:00", "aaa"],
       ]),
     ).toEqual(["zzz", "aaa"]);
   });

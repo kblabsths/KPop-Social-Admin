@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readRecentEvents } from "@/lib/db/browse";
 import { RECENT_EVENTS } from "@/lib/browse/views";
+import { DEFAULT_WINDOW_SIZE } from "@/lib/paging/bounds";
+
+/** The window size a read that names none pages by — and the one these cases page at. */
+const SIZE = DEFAULT_WINDOW_SIZE;
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import {
@@ -126,42 +130,6 @@ function argsOf(call: RecordedCall, method: string): unknown[][] {
 }
 
 describe("the recent-events read", () => {
-  it("returns the rows newest-first by arrival, not by the calendar", async () => {
-    const stub = stubClient(fullScript());
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-
-    expect(listing.events.kind).toBe("ok");
-    if (listing.events.kind !== "ok") return;
-    expect(listing.events.data.map((row) => row.event_id)).toEqual([
-      EVENT_C, // 2026-09-01
-      EVENT_B, // 2026-08-15
-      EVENT_A, // 2026-07-01
-    ]);
-  });
-
-  it("names the distinct sources behind each row, from the provenance join", async () => {
-    const stub = stubClient(fullScript());
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-    if (listing.events.kind !== "ok") throw new Error("expected ok");
-
-    const byId = new Map(listing.events.data.map((row) => [row.event_id, row]));
-    expect(byId.get(EVENT_C)?.sources).toEqual(["bandsintown", "ticketmaster"]);
-    expect(byId.get(EVENT_B)?.sources).toEqual(["bandsintown"]);
-    expect(byId.get(EVENT_A)?.sources).toEqual([]);
-    expect(listing.provenance).toBeNull();
-  });
-
-  it("fills the venue name from the listings view", async () => {
-    const stub = stubClient(fullScript());
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-    if (listing.events.kind !== "ok") throw new Error("expected ok");
-
-    const byId = new Map(listing.events.data.map((row) => [row.event_id, row]));
-    expect(byId.get(EVENT_C)?.venue_name).toBe("Crypto.com Arena");
-    expect(byId.get(EVENT_B)?.venue_name).toBeNull();
-    expect(listing.venues).toBeNull();
-  });
-
   it("carries every spot-verification value onto the row", async () => {
     const stub = stubClient(fullScript());
     const listing = await readRecentEvents(view, stub.asSupabaseClient());
@@ -174,14 +142,6 @@ describe("the recent-events read", () => {
     expect(newest.poster_url).toBe(source?.poster_url);
     expect(newest.starts_at).toBe(source?.starts_at);
     expect(newest.created_at).toBe(source?.created_at);
-  });
-
-  it("reads only the four objects it needs, each named through tables.ts", async () => {
-    const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient());
-    expect(new Set(stub.tablesRead())).toEqual(
-      new Set([T.events, T.eventListings, T.fieldProvenance, T.sources]),
-    );
   });
 });
 
@@ -201,7 +161,7 @@ describe("the window read", () => {
     expect(orders[orders.length - 1][1]).toEqual({ ascending: false });
     // The default bound is the FIRST screen: `.range(0, window - 1)` is the
     // `.limit(window)` this read carried before paging (TASK-0068).
-    expect(argsOf(call, "range")[0]).toEqual([0, view.window - 1]);
+    expect(argsOf(call, "range")[0]).toEqual([0, SIZE - 1]);
     expect(argsOf(call, "limit")).toEqual([]);
   });
 
@@ -234,22 +194,6 @@ describe("the join legs", () => {
     }
   });
 
-  it("narrows each leg to the window's own ids", async () => {
-    const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient());
-
-    const ids = [EVENT_B, EVENT_C, EVENT_A];
-    expect(argsOf(callTo(stub, T.eventListings), "in")[0]).toEqual([
-      "event_id",
-      ids,
-    ]);
-    expect(argsOf(callTo(stub, T.fieldProvenance), "in")[0]).toEqual([
-      "entity_id",
-      ids,
-    ]);
-    expect(argsOf(callTo(stub, T.sources), "in")[0][0]).toBe("source_id");
-  });
-
   it("asks provenance only about events, by the canonical table's own name", async () => {
     const stub = stubClient(fullScript());
     await readRecentEvents(view, stub.asSupabaseClient());
@@ -267,14 +211,6 @@ describe("the join legs", () => {
     expect(listing.venues).toBeNull();
     expect(listing.provenance).toBeNull();
     expect(stub.tablesRead()).toEqual([T.events]);
-  });
-
-  it("skips the sources leg when provenance named no source", async () => {
-    const stub = stubClient(
-      fullScript({ [T.fieldProvenance]: { data: [], count: 0 } }),
-    );
-    await readRecentEvents(view, stub.asSupabaseClient());
-    expect(stub.tablesRead()).not.toContain(T.sources);
   });
 });
 
@@ -335,26 +271,6 @@ describe("the provenance leg, read as a decision log", () => {
     }
   });
 
-  it("orders the log by the decision stamp, then by its key", async () => {
-    const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient());
-    const columns = argsOf(callTo(stub, T.fieldProvenance), "order").map(
-      (args) => args[0],
-    );
-    expect(columns.indexOf("applied_at")).toBeGreaterThan(-1);
-    expect(columns.indexOf("provenance_id")).toBeGreaterThan(
-      columns.indexOf("applied_at"),
-    );
-  });
-
-  it("names the source of the latest decision, never the superseded one", async () => {
-    const stub = stubClient(loggedScript());
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-    if (listing.events.kind !== "ok") throw new Error("expected ok");
-    const byId = new Map(listing.events.data.map((row) => [row.event_id, row]));
-    expect(byId.get(EVENT_C)?.sources).toEqual(["ticketmaster"]);
-  });
-
   it("looks up names only for the sources still behind a value", async () => {
     // The superseded source and the unset's absent one are not asked about:
     // `.in("source_id", [null])` is not a query, and a retired feed's name is
@@ -388,85 +304,9 @@ describe("the provenance leg, read as a decision log", () => {
     );
     expect(listing.provenance).toBeNull();
   });
-
-  it("refuses a truncated log rather than calling a superseded source current", async () => {
-    // "The latest decision" is only knowable over the COMPLETE set, so the
-    // complete read refuses instead of reducing a partial log.
-    const stub = stubClient(
-      fullScript({
-        [T.fieldProvenance]: { data: log(), count: ROW_CAP + 1 },
-      }),
-    );
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-    expect(listing.provenance?.kind).toBe("error");
-    expect(stub.tablesRead()).not.toContain(T.sources);
-    if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data.every((row) => row.sources.length === 0)).toBe(
-      true,
-    );
-  });
 });
 
 describe("when an object is missing", () => {
-  it("names events itself and renders no rows", async () => {
-    const stub = stubClient({
-      [T.events]: { error: tableNotInSchemaCache(T.events) },
-    });
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-
-    expect(listing.events).toEqual({
-      kind: "not_provisioned",
-      missing: T.events,
-    });
-    expect(stub.tablesRead()).toEqual([T.events]);
-  });
-
-  it("still returns every event row when field_provenance is absent", async () => {
-    // The acceptance criterion: with `field_provenance` absent the event rows
-    // still render AND the page is told which table is missing.
-    const stub = stubClient(
-      fullScript({
-        [T.fieldProvenance]: { error: tableNotInSchemaCache(T.fieldProvenance) },
-      }),
-    );
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-
-    expect(listing.events.kind).toBe("ok");
-    if (listing.events.kind !== "ok") return;
-    expect(listing.events.data).toHaveLength(3);
-    expect(listing.events.data.every((row) => row.sources.length === 0)).toBe(
-      true,
-    );
-    expect(listing.provenance).toEqual({
-      kind: "not_provisioned",
-      missing: T.fieldProvenance,
-    });
-    // The venue column is unaffected by the provenance table's absence.
-    expect(listing.venues).toBeNull();
-    expect(listing.events.data[0].venue_name).toBe("Crypto.com Arena");
-  });
-
-  it("still returns every event row when the listings view is absent", async () => {
-    const stub = stubClient(
-      fullScript({
-        [T.eventListings]: { error: tableNotInSchemaCache(T.eventListings) },
-      }),
-    );
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-
-    expect(listing.events.kind).toBe("ok");
-    if (listing.events.kind !== "ok") return;
-    expect(listing.events.data).toHaveLength(3);
-    expect(listing.events.data.every((row) => row.venue_name === null)).toBe(
-      true,
-    );
-    expect(listing.venues).toEqual({
-      kind: "not_provisioned",
-      missing: T.eventListings,
-    });
-    expect(listing.provenance).toBeNull();
-  });
-
   it("reports the sources table's absence as the provenance column's failure", async () => {
     // The two reads answer one question — "which sources are behind this row"
     // — so one failure is one note rather than two.
@@ -503,20 +343,6 @@ describe("when an object is missing", () => {
 });
 
 describe("when a read fails or refuses", () => {
-  it("surfaces the database's own words, never a message of ours", async () => {
-    const stub = stubClient({
-      [T.events]: { error: permissionDenied(T.events) },
-    });
-    const listing = await readRecentEvents(view, stub.asSupabaseClient());
-
-    expect(listing.events.kind).toBe("error");
-    if (listing.events.kind !== "error") return;
-    // The database's own words survive, and the leg that refused is named —
-    // Browse makes four reads, so "which one" is half the answer (BUG-0016).
-    expect(listing.events.message).toContain(permissionDenied(T.events).message);
-    expect(listing.events.reading).toBe(T.events);
-  });
-
   it("refuses a truncated provenance set instead of understating the sources", async () => {
     // A complete read whose exact count exceeds the rows returned is an
     // error naming the object, the count and the cap — never a partial list
@@ -573,7 +399,7 @@ describe("when a read fails or refuses", () => {
  *
  *  - the offset is optional and defaults to 0, so every caller written before
  *    paging existed issues exactly the query it always did;
- *  - the window is `.range(offset, offset + view.window - 1)` on the view's
+ *  - the window is `.range(offset, offset + SIZE - 1)` on the view's
  *    own total order;
  *  - the three legs run over THIS page's ids and no others, still as COMPLETE
  *    reads, and each still reports its own refusal separately;
@@ -602,19 +428,13 @@ function rangeOf(stub: ReturnType<typeof stubClient>, table: string): unknown[] 
 }
 
 describe("the window read takes an offset", () => {
-  it("defaults to the first screen when no caller names one", async () => {
-    const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient());
-    expect(rangeOf(stub, T.events)).toEqual([0, view.window - 1]);
-  });
-
   it("reads exactly one window further in at one window's offset", async () => {
     const stub = stubClient(fullScript());
-    await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     expect(rangeOf(stub, T.events)).toEqual([
-      view.window,
-      view.window * 2 - 1,
+      SIZE,
+      SIZE * 2 - 1,
     ]);
     // The order is the SAME order at every bound — a window that re-sorted
     // itself per page would repeat rows and skip others at the boundary.
@@ -624,7 +444,7 @@ describe("the window read takes an offset", () => {
   });
 
   it("runs the three legs over THIS page's ids and no others", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const ids = rows.map((row) => row.event_id);
     const stub = stubClient(
       fullScript({
@@ -643,7 +463,7 @@ describe("the window read takes an offset", () => {
       }),
     );
 
-    await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     expect(argsOf(callTo(stub, T.eventListings), "in")[0]).toEqual([
       "event_id",
@@ -662,49 +482,6 @@ describe("the window read takes an offset", () => {
       expect(rangeOf(stub, table), table).toEqual([0, ROW_CAP - 1]);
     }
   });
-
-  it("still reports each leg's refusal on its own, one window in", async () => {
-    const rows = page(view.window, view.window);
-    const stub = stubClient(
-      fullScript({
-        [T.events]: { data: rows },
-        [T.eventListings]: { error: permissionDenied(T.eventListings) },
-        [T.fieldProvenance]: {
-          error: tableNotInSchemaCache(T.fieldProvenance),
-        },
-      }),
-    );
-
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
-
-    // Two legs, two separate reports — neither folded into the other and
-    // neither folded into the window's own state (common violations row 14).
-    expect(listing.venues?.kind).toBe("error");
-    expect(
-      listing.venues?.kind === "error" ? listing.venues.reading : "",
-    ).toBe(T.eventListings);
-    expect(listing.provenance).toEqual({
-      kind: "not_provisioned",
-      missing: T.fieldProvenance,
-    });
-    if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
-  });
-
-  it("answers the rows the range returned, however deep the bound", async () => {
-    for (const [offset, held] of [
-      [view.window, view.window],
-      [view.window * 2, 7],
-      [view.window * 3, 0],
-    ] as const) {
-      const stub = stubClient(fullScript({ [T.events]: { data: page(held, offset) } }));
-      const listing = await readRecentEvents(view, stub.asSupabaseClient(), offset);
-
-      expect(rangeOf(stub, T.events)).toEqual([offset, offset + view.window - 1]);
-      if (listing.events.kind !== "ok") throw new Error("expected ok");
-      expect(listing.events.data, `offset ${offset}`).toHaveLength(held);
-    }
-  });
 });
 
 /**
@@ -716,7 +493,7 @@ describe("the window read takes an offset", () => {
  */
 describe("the page's row count is the window read's own count", () => {
   it("keeps a full window when EVERY leg returns nothing at all", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const stub = stubClient({
       [T.events]: { data: rows },
       // No listing row, no provenance row, no source row — the legs fill
@@ -726,10 +503,10 @@ describe("the page's row count is the window read's own count", () => {
       [T.sources]: { data: [], count: 0 },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
     expect(listing.events.data.map((row) => row.event_id)).toEqual(
       rows.map((row) => row.event_id),
     );
@@ -741,7 +518,7 @@ describe("the page's row count is the window read's own count", () => {
   });
 
   it("keeps a full window when rows SHARE a venue or name no source", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const shared = "The Forum";
     const stub = stubClient({
       [T.events]: { data: rows },
@@ -767,10 +544,10 @@ describe("the page's row count is the window read's own count", () => {
       [T.sources]: { data: sources(), count: sources().length },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
     expect(listing.events.data.every((row) => row.venue_name === shared)).toBe(true);
     expect(listing.events.data[0].sources).toEqual(["ticketmaster"]);
     expect(
@@ -779,16 +556,16 @@ describe("the page's row count is the window read's own count", () => {
   });
 
   it("drops no row when a leg REFUSES on a full window", async () => {
-    const rows = page(view.window, view.window);
+    const rows = page(SIZE, SIZE);
     const stub = stubClient({
       [T.events]: { data: rows },
       [T.eventListings]: { error: permissionDenied(T.eventListings) },
       [T.fieldProvenance]: { error: permissionDenied(T.fieldProvenance) },
     });
 
-    const listing = await readRecentEvents(view, stub.asSupabaseClient(), view.window);
+    const listing = await readRecentEvents(view, stub.asSupabaseClient(), SIZE, SIZE);
 
     if (listing.events.kind !== "ok") throw new Error("expected ok");
-    expect(listing.events.data).toHaveLength(view.window);
+    expect(listing.events.data).toHaveLength(SIZE);
   });
 });

@@ -2184,3 +2184,119 @@ Scraper-side in origin and in fix, carried on this campaign's for-human list
 since the M2 retro for want of anywhere better. A closing campaign is not a
 backlog; it belongs in the root `backlog/` with the other cross-campaign debt.
 Nothing is lost and nothing is decided — only the owner changes.
+
+## 2026-10-16 — Testing rules: no test asserts a value it did not write, none writes anywhere shared, live tests are few and read-only, every test earns its place (Ben's ruling of 2026-09-16, installed 2026-10-16)
+
+The ruling, in Ben's words and ours
+(`agenticflow/tracker/proposals/2026-09-16-testing-rules.md`), now contract in
+ARCHITECTURE §10 and the README's "Testing" section:
+
+1. **No test asserts a value it did not write.** A count, an id, a title or a
+   population read from a shared database is not a fixture.
+2. **No test writes anywhere shared.** Not production, not staging, not a
+   sandbox table on staging. If a proof seems to need a shared write, the
+   proof is in the wrong place — redesign it, never grant an exception.
+3. **Live tests are expensive.** Few, read-only, each with a one-line reason it
+   must be live. Their only job is to prove the offline stubs are honest about
+   how the real service answers.
+4. **A test earns its place** by naming a bug it would catch that no other test
+   catches. A pin that restates an existing rule, or grades how a thing happened
+   to be written, is deleted.
+
+**Proof versus test.** "Proven end to end" in an acceptance list means a person
+or an agent walks the real thing ONCE, watches it, and leaves a dated note. It
+never means a re-runnable test that does it on every run. The M2/M3 acceptance
+items 6, 7 and 8 were read the second way, became a live settle test and three
+tasks that had to write staging (TASK-0084/0085/0086), and produced BUG-0215's
+residue; Ben walked them instead on 2026-09-16. Acceptance items say "walked
+and recorded" wherever they used to say "proven", and the verifier's close walk
+is the mechanism.
+
+The door this closes: **the live tier is `tests/live/contract.live.test.ts`
+alone** — at most ~10 read-only cases asserting SHAPES of PostgREST's answers,
+each with a `LIVE BECAUSE:` line — and `tests/offline/live-guard.test.ts` pins
+it structurally (one live file, no write-shaped call, no walk import, a reason
+above every case). The eleven per-page oracles (117 cases), their parity and
+sweep machinery, and the residue sweep are deleted; every value they asserted
+is pinned offline against a fixture the test owns. The incident record that
+earned this: BUG-0215 (a live test wrote real overrides on staging on every run
+once the settle function existed), BUG-0219 (live cases graded a population read
+minutes earlier on a project another campaign writes), BUG-0208 (a live case
+timed out under its own parallelism and the fix was a bigger budget).
+
+**Deferred, on the record so it is not reinvented as a staging test:** a
+release-time live suite against a **disposable** database — never staging,
+never production — is the one legitimate re-runnable end-to-end run. Not worth
+building until there is a production release to protect.
+
+## 2026-10-16 — Page windows replace append-on-press on `/claims` and `/browse` (Ben's ruling of 2026-09-11, built 2026-10-16)
+
+Ben, 2026-09-11, after walking `/claims`' paging: *"I don't want to be
+scrolling down a long ass list like this. We should have pagination e.g. only
+show items 1-50 or 51-100 at a time (adjustable as 20, 50, and 100)."* The
+strategist stopped for his answer (`tracker/for-human/M3-paging-shape-for-ben.md`)
+and the architect held BUG-0221 behind it (2026-09-12 entry above). Built
+outside the factory on 2026-10-16 from
+`tracker/for-human/external-ticket-page-windows.md`.
+
+**What moved.** The "show the next 50" control that appended rows under the
+first screen is retired on both surfaces. The list shows ONE window — rows
+1–50, 51–100, … at a size of 20, 50 or 100 — the window lives in the URL
+(`?page=`, `?size=`), a cold load renders the window the address names, and a
+move between windows is one bounded client request against the same route
+handler, pushed into the browser's history first so reload, Back and a shared
+link all land on the same window (LOOK_AND_FEEL bar 11, now graded by its own
+sentence — its dated 2026-09-11 clause retired itself as it said it would).
+The controls sit ABOVE the list (bar 14). ARCHITECTURE §4.3 kind 3 is
+rewritten in place; SPEC F14 is rewritten; `lib/paging/*` carries the one
+guard (`windowBound`) both pages and both routes read, and the one driver
+(`requestPage`, which never throws) the surfaces move with. The id still
+crosses the client boundary as a KEY NAME (`RowIdKey`), never a function.
+
+**The four design questions, answered in code and in SPEC F14.**
+1. *Size change mid-walk:* the new window is the one at the new size that
+   holds the current window's FIRST row (`containingWindow`): rows 51–100 at
+   50 → rows 41–60 at 20, rows 1–100 at 100.
+2. *Out-of-range page in the URL:* refused BY NAME — the parameter and the
+   rule, never the value echoed — when the spelling is not canonical, the page
+   is below 1, the size is not one of the three, or the window would start
+   past `MAX_PAGE_OFFSET`; the page reads nothing, draws nothing and offers
+   the first window. A page past the END of the data under the ceiling is an
+   EMPTY WINDOW, not a refusal: the read happened and found nothing there, and
+   the surface says so. Never clamped.
+3. *The first screen:* no longer byte-identical across addresses — it is the
+   window the address names. The pin that replaces byte-identity: the page's
+   server render for an address and the route's answer for the same address
+   draw the same rows (`tests/offline/paging/*-route.test.ts`).
+4. *What the line says on every arm, and what the control offers on the last
+   window:* drawn → "rows a–b are below" with the count stated as its own
+   read; refused → the refusal line names the object and the window asked,
+   the window on screen stands, "ask for it again" is offered; not provisioned
+   → the clause, gray, and no control at all; exhausted → no "next", the line
+   says the set ends with these rows (or states each read where they
+   disagree); an empty window → "the read at rows a–b found none" and the way
+   back. The end of the set is ONE derivation (`endsHere`): the read's short
+   window, or on `/claims` the count reached by the last row on screen — the
+   count can end a set, never extend it past a short read.
+
+**Tests.** Rewritten to the new contract, table-driven, one case per class
+(README "Testing"): the window invariant — every id drawn exactly once across
+all windows at each of the three sizes — is pinned OFFLINE over fixtures the
+route suites own, and was walked once on staging in a browser (the hand-back
+note records the numbers). No live case was added; the live tier is still
+`tests/live/contract.live.test.ts` alone. BUG-0221's `it.fails` pin is retired
+and replaced by the rule that stands in its place: a window is one read of one
+order, never merged with what was on screen.
+
+**What this does NOT close.** BUG-0221's skip — a claim settled between two
+reads is drawn on neither — is inherent to offset paging over a moving
+population and is still not promised against (no snapshot across moves). What
+page windows remove is the CONCATENATION: the list on screen is never two
+orders glued together, so there is no seam to duplicate or skip AT. The ticket
+is folded into this shape as its 2026-09-12 entry said it would be, and closes
+obsolete, not fixed.
+
+**The door this closes.** The bound on the wire is a page and a size, in the
+URL, on both surfaces; no ticket introduces a second spelling, a cursor, or a
+caller-chosen size outside `WINDOW_SIZES`. Keyset paging is not on the table
+while the shape is positional.

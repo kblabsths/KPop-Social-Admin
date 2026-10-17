@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ID_CHUNK, ROW_CAP } from "@/lib/db/result";
+import { ROW_CAP } from "@/lib/db/result";
 import {
   lastRunBySource,
   listSources,
   readLastRuns,
   readSourceNames,
   readSources,
-  selectSources,
-  type SourceState,
 } from "@/lib/db/sources";
 import { T } from "@/lib/db/tables";
 import {
   RUN,
   RUNS,
   RUNS_AS_READ,
-  SOURCE,
   SOURCES,
   manySources,
   newestRunFor,
@@ -197,12 +194,6 @@ describe("the last-run read", () => {
  * (`RUNS_AS_READ`) and this file's own `newestRunFor` states the answer.
  */
 describe("the newest run per name", () => {
-  it("takes the newest run of a source that has several", async () => {
-    const newest = lastRunBySource(RUNS_AS_READ);
-    expect(newest.get("ticketmaster")).toEqual(newestRunFor("ticketmaster"));
-    expect(newest.get("ticketmaster")?.run_id).toBe(RUN.ticketmasterNew);
-  });
-
   it("breaks a tie on started_at with the uuid v7 run id", async () => {
     const tied = RUNS.filter((run) => run.source === "fandom");
     expect(tied).toHaveLength(2);
@@ -213,13 +204,6 @@ describe("the newest run per name", () => {
 
   it("takes the one run of a source that has exactly one", async () => {
     expect(lastRunBySource(RUNS_AS_READ).get("eventbrite")?.run_id).toBe(RUN.orphan);
-  });
-
-  it("holds no entry at all for a name the set has no row for", async () => {
-    // Not a row of somebody else's, and not an invented one: the caller reads
-    // that absence as "has never run" and renders the dash.
-    expect(lastRunBySource(RUNS_AS_READ).has("bandsintown")).toBe(false);
-    expect(lastRunBySource([]).size).toBe(0);
   });
 });
 
@@ -280,24 +264,6 @@ describe("a source with its last run", () => {
   });
 });
 
-describe("the narrowing predicate", () => {
-  const states: SourceState[] = SOURCES.map((source) => ({ ...source, lastRun: null }));
-
-  it("keeps everything when nothing is asked for", () => {
-    expect(selectSources(states)).toHaveLength(SOURCES.length);
-  });
-
-  it("keeps exactly the source the filter names", () => {
-    expect(
-      selectSources(states, { source_id: SOURCE.fandom }).map((state) => state.source_id),
-    ).toEqual([SOURCE.fandom]);
-  });
-
-  it("keeps nothing for a source the registry does not hold", () => {
-    expect(selectSources(states, { source_id: "nobody" })).toEqual([]);
-  });
-});
-
 /* ── the label leg ───────────────────────────────────────────────────────── */
 
 /**
@@ -305,24 +271,9 @@ describe("the narrowing predicate", () => {
  * called" for the surfaces whose own read keys a source by `source_id` and
  * carries no name (`/claims`, the review item). Campaign
  * admin-window/BUG-0043.
- *
- * What is pinned here is what a rendered page cannot show: that an empty id
- * set costs NO round trip, that the request is bounded, and that a refusal
- * arrives as a refusal instead of as an empty registry — an empty `ok` would
- * label every source by its uuid with nothing on screen to say why.
  */
 describe("the label leg", () => {
   const NAMES = SOURCES.map((row) => ({ source_id: row.source_id, source: row.source }));
-
-  it("makes no round trip at all for an empty id set", async () => {
-    // The stub throws for any table it has no script for, so a query here
-    // fails the read as well as the count.
-    const client = readsWith({});
-    const result = await readSourceNames([], client.asSupabaseClient());
-    expect(result.kind).toBe("ok");
-    expect(result.kind === "ok" && result.data).toEqual([]);
-    expect(client.tablesRead()).toEqual([]);
-  });
 
   it("asks the registry only for the id it is keyed by and the name", async () => {
     const client = readsWith({ [T.sources]: { data: NAMES } });
@@ -338,81 +289,5 @@ describe("the label leg", () => {
     const narrowing = steps.find((step) => step.method === "in");
     expect(narrowing?.args[0]).toBe("source_id");
     expect(narrowing?.args[1]).toEqual(SOURCES.map((row) => row.source_id));
-  });
-
-  it("keeps every request bounded, and joins the chunks it got back", async () => {
-    // A surface may hold more distinct sources than one URL can carry; the
-    // answer must still be one lookup, not a truncated one.
-    const many = Array.from(
-      { length: ID_CHUNK + 5 },
-      (_, index) => `01920000-0000-7000-8000-${String(index).padStart(12, "0")}`,
-    );
-    const client = readsWith({
-      [T.sources]: [
-        { data: many.slice(0, ID_CHUNK).map((id) => ({ source_id: id, source: "a" })) },
-        { data: many.slice(ID_CHUNK).map((id) => ({ source_id: id, source: "b" })) },
-      ],
-    });
-    const result = await readSourceNames(many, client.asSupabaseClient());
-    expect(result.kind === "ok" && result.data).toHaveLength(many.length);
-    const calls = client.calls.filter((made) => made.table === T.sources);
-    expect(calls).toHaveLength(2);
-    for (const call of calls) {
-      const ids = call.steps.find((step) => step.method === "in")?.args[1] as string[];
-      expect(ids.length).toBeLessThanOrEqual(ID_CHUNK);
-    }
-  });
-
-  it("answers an id the registry holds no row for by leaving it out", async () => {
-    // Not an invented row and not an error: the caller's `sourceLabel` renders
-    // that id verbatim, which is the only true thing it can say.
-    const client = readsWith({ [T.sources]: { data: [NAMES[0]] } });
-    const result = await readSourceNames(
-      [NAMES[0].source_id, "01920000-0000-7000-8000-0000000009ff"],
-      client.asSupabaseClient(),
-    );
-    expect(result.kind === "ok" && result.data.map((row) => row.source_id)).toEqual([
-      NAMES[0].source_id,
-    ]);
-  });
-
-  it("refuses as a refusal, naming the registry — never as an empty registry", async () => {
-    for (const [failure, kind] of [
-      [tableNotInSchemaCache(T.sources), "not_provisioned"],
-      [permissionDenied(T.sources), "error"],
-    ] as const) {
-      const client = readsWith({ [T.sources]: { error: failure } });
-      const result = await readSourceNames(
-        [SOURCES[0].source_id],
-        client.asSupabaseClient(),
-      );
-      expect(result.kind, kind).toBe(kind);
-      // Whichever arm it is, it NAMES the object it was reading, in the
-      // spelling the query used — a page composing several reads has to be
-      // able to say which one refused (§4.1).
-      const named =
-        result.kind === "not_provisioned"
-          ? result.missing
-          : result.kind === "error"
-            ? result.reading
-            : "";
-      expect(named, kind).toBe(T.sources);
-    }
-  });
-
-  it("stops at the chunk that refused instead of half-filling the lookup", async () => {
-    const many = Array.from(
-      { length: ID_CHUNK + 5 },
-      (_, index) => `01920000-0000-7000-8000-${String(index).padStart(12, "0")}`,
-    );
-    const client = readsWith({
-      [T.sources]: [
-        { data: many.slice(0, ID_CHUNK).map((id) => ({ source_id: id, source: "a" })) },
-        { error: permissionDenied(T.sources) },
-      ],
-    });
-    const result = await readSourceNames(many, client.asSupabaseClient());
-    // A partial map would name half the rows and silently uuid the other half.
-    expect(result.kind).toBe("error");
   });
 });

@@ -60,9 +60,10 @@ import { isRecordId } from "@/lib/records/id";
  * fact `admin_locked` and logs the verdict. There is no second write here, no
  * provenance insert, no lock update.
  *
- * **The absent function is the normal answer** for the whole of M2, and it is
- * not an error: the seam comes back `not_provisioned` naming what it called,
- * and this route answers 503 naming the same object. Nothing queues, buffers,
+ * **The absent function is a graded answer, not an error** (which databases
+ * lack it is ARCHITECTURE.md §9.2's to say): the seam comes back
+ * `not_provisioned` naming what it called, and this route answers 503 naming
+ * the same object. Nothing queues, buffers,
  * retries or writes around it (spec §10's one forbidden move) — the surface
  * degrades to the read-only page M1 already shipped.
  *

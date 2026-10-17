@@ -615,9 +615,9 @@ function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode
         lines={log.kind === "ok" ? verdictLines(log.data) : []}
         card={
           log.kind === "not_provisioned" ? (
-            // The graded normal case for the whole of M2: `verdicts` arrives
-            // with the handoff migration and is on neither staging nor
-            // production, so the tab draws the card naming it and states no
+            // A graded case, not an error: against a database without
+            // `verdicts` (which databases those are is ARCHITECTURE.md
+            // §9.2's to say) the tab draws the card naming it and states no
             // number at all (LOOK_AND_FEEL state 3).
             <StateOf result={log} />
           ) : log.kind === "ok" && log.data.rows.length === 0 ? (

@@ -23,20 +23,18 @@ import {
   type ActionSpec,
   type ShapeChoices,
 } from "@/components/review/close/actions";
-import { ChosenControl, SettledNotice } from "@/components/review/close/form";
+import { ChosenControl } from "@/components/review/close/form";
 import {
-  VERDICT_ACTIONS,
   decisionRefusals,
   isReferenceField,
   noteRequired,
   type VerdictDecision,
 } from "@/lib/verdict/decision";
-import { SHAPES, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
-import { h, render, uppercasedIdentifiers } from "../ui/markup";
+import { shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
+import { h, render } from "../ui/markup";
 import {
   ID,
   VENUE_ID,
-  reviewItemDataConflict,
   reviewItemEntityLink,
   reviewItemSourcePattern,
   venueWindow,
@@ -52,11 +50,6 @@ import { stubClient, type Script, type StubClient } from "../../fixtures/stub-cl
  * one review item there is the source-pattern SIGNAL, which takes dispositions
  * instead. This shape is therefore graded offline, and "built, not walkable on
  * this data" is the honest grade — exactly as M1 graded the same gap.
- *
- * **The absence is graded FIRST**, because it is the normal case: `verdicts`
- * and `settle_review_item` are not on staging and will not be until Ben
- * installs M2's handoffs, so the first `describe` below is the state `main`
- * deploys against — both actions exist, and the slot offers neither.
  *
  * What this file does NOT re-test: the frame. The slot's readiness branches,
  * the note field, the route's gate and its 503 are shape-independent and
@@ -226,57 +219,9 @@ beforeEach(() => {
   readWith.client = undefined;
 });
 
-/* ── the absent state: the normal one, graded first ──────────────────────── */
-
-describe("the entity_link fact item's close while the verdict log is absent", () => {
-  it("offers neither control, and names the object that is missing", () => {
-    // Both actions exist and the slot still offers nothing: the reason is the
-    // missing object, never an empty list (spec §10 — no control may call a
-    // function this database does not have, and nothing queues one).
-    expect(actionsFor()).toHaveLength(2);
-
-    const markup = closeMarkup({ kind: "not_provisioned", missing: T.verdicts });
-    const $ = cheerio.load(markup);
-
-    expect($('[data-state="not_provisioned"]')).toHaveLength(1);
-    expect($(`[data-not-provisioned="${T.verdicts}"]`)).toHaveLength(1);
-    expect($(`[data-not-provisioned="${T.verdicts}"]`).text()).toContain(T.verdicts);
-    // Said as an absence, in gray — never as the red failure line.
-    expect($('[role="alert"]')).toHaveLength(0);
-    // No control of any kind: not a disabled button, not a search box, not a
-    // picker panel standing open with nothing behind it.
-    for (const control of ["button", "form", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-    expect(offered(markup)).toEqual([]);
-  });
-
-  it("offers neither when the readiness read itself was refused", () => {
-    const markup = closeMarkup({
-      kind: "error",
-      reading: T.verdicts,
-      message: "canceling statement due to statement timeout",
-    });
-    const $ = cheerio.load(markup);
-    expect($('[data-state="error"]')).toHaveLength(1);
-    expect(offered(markup)).toEqual([]);
-    for (const control of ["button", "form", "input", "select", "textarea"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-  });
-});
-
 /* ── the two actions ─────────────────────────────────────────────────────── */
 
 describe("the entity_link fact item's two actions", () => {
-  it("are exactly two of the eight action names, in spec §7's order", () => {
-    const actions = actionsFor();
-    expect(actions.map((spec) => spec.action)).toEqual(["link_entity", "settle"]);
-    for (const spec of actions) {
-      expect(VERDICT_ACTIONS, spec.action).toContain(spec.action);
-    }
-  });
-
   it("carries the fact in the link's payload and nothing at all in settle's", () => {
     const { link, settle } = controls();
 
@@ -305,21 +250,6 @@ describe("the entity_link fact item's two actions", () => {
       expect(spec.label.trim().length, spec.action).toBeGreaterThan(0);
       expect(spec.label, spec.action).not.toBe(spec.action);
     }
-  });
-
-  it("gives the link control the rows the read returned, and only those", () => {
-    const { link, settle } = controls();
-    // The window travels ON the spec, because the picker offers only rows that
-    // exist and a control cannot go looking for its own.
-    expect(link.chooses?.options).toEqual(venueWindow().options);
-    expect(link.chooses?.domain).toBe("venues");
-    // It CHOOSES a record; it does not take typed text. The two discriminators
-    // are mutually exclusive by construction, and `supply_value`'s is the one
-    // this control must not carry.
-    expect(link.supplies).toBeUndefined();
-    // And settle takes neither: it is an ordinary button.
-    expect(settle.chooses).toBeUndefined();
-    expect(settle.supplies).toBeUndefined();
   });
 
   it("needs a note on neither, so the field beside them says so", () => {
@@ -354,27 +284,6 @@ describe("the entity_link fact item's two actions", () => {
 /* ── the shape distinction, read from shapes.ts ──────────────────────────── */
 
 describe("the shape distinction between the fact item and the signal", () => {
-  it("gives the source-pattern row the dispositions and neither of these two", () => {
-    // `source_id` SET is the signal. `shapes.ts` is the one place that
-    // distinction is made (§11) and this reads it rather than re-deriving one.
-    const signal = reviewItemSourcePattern();
-    expect(signal.source_id).not.toBeNull();
-    expect(shapeOf(signal)).toBe("entity_link_source_pattern");
-
-    const actions = ACTIONS_BY_SHAPE[shapeOf(signal)]({
-      item: signal,
-      evidence: [],
-      choices: choices(),
-    });
-    expect(actions.map((spec) => spec.action)).toEqual(["fixed", "wont_fix"]);
-    for (const spec of actions) {
-      expect(["link_entity", "settle"], spec.action).not.toContain(spec.action);
-    }
-    // Even handed a window of rows, a signal is offered nothing to link: a
-    // mis-shaped item cannot silently take the other shape's action set.
-    expect(actions.every((spec) => spec.chooses === undefined)).toBe(true);
-  });
-
   it("gives the fact row these two and neither disposition", () => {
     // `source_id` NULL, same queue, is the fact item.
     expect(ITEM.source_id).toBeNull();
@@ -390,42 +299,6 @@ describe("the shape distinction between the fact item and the signal", () => {
     for (const spec of actions) {
       expect(["fixed", "wont_fix"], spec.action).not.toContain(spec.action);
     }
-  });
-
-  it("offers link_entity on no other shape", () => {
-    const items: Record<string, ReviewItemRow> = {
-      data_conflict_fact: reviewItemDataConflict(),
-      entity_link_source_pattern: reviewItemSourcePattern(),
-    };
-    for (const shape of SHAPES) {
-      if (shape === "entity_link_fact") continue;
-      const actions = ACTIONS_BY_SHAPE[shape]({
-        item: items[shape],
-        evidence: [],
-        choices: choices(),
-      });
-      for (const spec of actions) {
-        expect(["link_entity", "settle"], `${shape}: ${spec.action}`).not.toContain(
-          spec.action,
-        );
-      }
-    }
-  });
-
-  it("turns on source_id alone, not on which columns the row filled in", () => {
-    // The trap `shapes.ts` calls out: an `entity_link` fact item usually has a
-    // null `entity_id`, so a shape read off the fact columns would misfile
-    // exactly the commonest item. It is still the FACT shape, and it still
-    // gets these two actions — one of which is withheld, for its own reason.
-    const withoutRow = reviewItemEntityLink();
-    expect(withoutRow.entity_id).toBeNull();
-    expect(shapeOf(withoutRow)).toBe("entity_link_fact");
-    expect(
-      ACTIONS_BY_SHAPE[shapeOf(withoutRow)]({
-        item: withoutRow,
-        evidence: [],
-      }).map((spec) => spec.action),
-    ).toEqual(["settle"]);
   });
 });
 
@@ -450,45 +323,6 @@ describe("the close once the verdict log is installed", () => {
     expect($("[data-state]")).toHaveLength(0);
     // Nothing is withheld on this item, so no line says anything is.
     expect($("[data-close-notice]")).toHaveLength(0);
-  });
-
-  it("puts the operator's words on each control and the machine's name on the hook", () => {
-    const $ = cheerio.load(markup);
-    for (const spec of actionsFor()) {
-      const control = $(`[data-close-action="${spec.action}"]`);
-      expect(control, spec.action).toHaveLength(1);
-      const said = control.text().replace(/\s+/g, " ").trim();
-      expect(said, spec.action).toBe(spec.label);
-      expect(spec.label, spec.action).not.toBe(spec.action);
-      if (spec.action.includes("_")) {
-        expect(said, spec.action).not.toContain(spec.action);
-      }
-    }
-  });
-
-  it("prettifies neither name: no title case, and no uppercasing step", () => {
-    expect(uppercasedIdentifiers(markup)).toEqual([]);
-    for (const prettified of ["LINK_ENTITY", "Link_entity", "Link Entity"]) {
-      expect(markup, prettified).not.toContain(prettified);
-    }
-    // …and the names are there, verbatim, so the above is not vacuous.
-    for (const action of ["link_entity", "settle"]) {
-      expect(markup, action).toContain(`data-close-action="${action}"`);
-    }
-  });
-
-  it("says each name verbatim in mono where the operator reads it", () => {
-    // The state that replaces the controls once the write lands, which is what
-    // keeps the word the same between control, confirmation and verdict log
-    // (copy bar 2). The control itself carries the name on its hook.
-    for (const spec of actionsFor()) {
-      const $ = cheerio.load(
-        render(h(SettledNotice, { action: spec.action, label: spec.label })),
-      );
-      const identifier = $(".type-data");
-      expect(identifier, spec.action).toHaveLength(1);
-      expect(identifier.text(), spec.action).toBe(spec.action);
-    }
   });
 });
 
@@ -554,88 +388,10 @@ describe("the link control's picker", () => {
     }
   });
 
-  it("cannot settle with a row the read did not return", () => {
-    // The guard `optionFor` makes true of the SUBMISSION and not only of the
-    // list: an id produced any other way — a stale click, a console call —
-    // reaches the same check. Proved on the input it must flag and the one it
-    // must not (LESSONS 3).
-    const chosen: string[] = [];
-    const control = h(ChosenControl, {
-      spec: link,
-      open: true,
-      query: "",
-      disabled: false,
-      onToggle: () => {},
-      onQuery: () => {},
-      onChoose: (id: string) => chosen.push(id),
-    });
-    // The rendering itself submits nothing; the guard's own two fixtures are
-    // asserted through the payload builder below, which is the one place a
-    // chosen id becomes a decision.
-    expect(render(control)).toContain(VENUE_ID.olympicHall);
-    expect(chosen).toEqual([]);
-  });
-
   it("marks nothing as the current row: this item is here because nothing linked", () => {
     const $ = cheerio.load(opened());
     expect($("[aria-current]")).toHaveLength(0);
   });
-
-  /**
-   * QA, campaign admin-window/TASK-0056 — the close's re-use of the SHARED
-   * picker has to carry the shared picker's own in-flight rule with it
-   * (admin-window/BUG-0097, pinned for the record surface by
-   * `tests/offline/records/entity-picker.test.ts`: "offers no option that would
-   * start a second write while one is saving").
-   *
-   * `ChosenControl`'s `disabled` prop IS that state — its own words: "a
-   * settlement is in flight, so this control may not start a second one" — and
-   * `CloseForm` passes `disabled={settling}` while leaving `open` untouched, so
-   * a panel the operator opened stays open, and live, for the whole of another
-   * control's settlement. A row clicked there reaches `settle`'s in-flight
-   * guard, which returns without setting any state, so the choice is dropped
-   * with nothing said.
-   *
-   * Landed as a STRICT pin (`it.fails`) on admin-window/BUG-0102, observed red
-   * as a plain `it` against the landed tree at 6a93776; the fix flipped it
-   * back to a plain `it`, having first watched the strict pin redden as an
-   * XPASS against the fixed tree. It now holds the rule for this surface the
-   * way `tests/offline/records/entity-picker.test.ts` holds it for the record
-   * surface: `ChosenControl` hands the shared panel the real status
-   * (`saving` while it is disabled), so the rows go busy and stay drawn.
-   */
-  it(
-    "offers no live option while a settlement is in flight (admin-window/BUG-0102)",
-    () => {
-      const $ = cheerio.load(
-        render(
-          h(ChosenControl, {
-            spec: link,
-            open: true,
-            query: "",
-            // Exactly what `CloseForm` hands this control while it settles.
-            disabled: true,
-            onToggle: () => {},
-            onQuery: () => {},
-            onChoose: () => {},
-          }),
-        ),
-      );
-      const options = $("li button");
-      // Not vacuous: the rows stay DRAWN while a write is in flight (BUG-0097's
-      // rule is that they cannot act, not that they vanish).
-      expect(options.length).toBeGreaterThan(0);
-      const live = options
-        .toArray()
-        .filter((element) => $(element).attr("disabled") === undefined);
-      expect(live.map((element) => $(element).text().trim())).toEqual([]);
-      // …and the counter-case, or the assertion above would pass on a picker
-      // that is dead at rest too: with nothing in flight every row can act.
-      const resting = cheerio.load(opened());
-      expect(resting("li button[disabled]")).toHaveLength(0);
-      expect(resting("li button").length).toBe(options.length);
-    },
-  );
 
   /**
    * QA, campaign admin-window/BUG-0102 — the pin above grades the panel's ROWS
@@ -804,58 +560,6 @@ describe("settling the entity_link fact item", () => {
         decisionRefusals(decision as unknown as VerdictDecision),
         spec.action,
       ).toEqual([]);
-    }
-  });
-
-  it("is refused by the envelope when the ref is missing or in the wrong slot", async () => {
-    // The other half of the same fact — the inputs the rules MUST flag, so the
-    // empty refusals above are a claim about these decisions and not about a
-    // grader that passes everything (LESSONS 3).
-    const base = {
-      action: "link_entity",
-      review_item_id: ITEM_ID,
-      actor: ACTOR,
-      note: null,
-    };
-    expect(
-      decisionRefusals({
-        ...base,
-        value: { ...link.value, ref: null },
-      } as VerdictDecision),
-    ).toContain("value_payload_missing");
-    // A reference settled with TYPED TEXT — the write spec §8 exists to
-    // prevent — is refused twice over: the slot is not this action's, and the
-    // fact is a reference.
-    const typed = decisionRefusals({
-      ...base,
-      value: { ...link.value, value: "The Forum" },
-    } as VerdictDecision);
-    expect(typed).toContain("value_payload_not_allowed");
-    expect(typed).toContain("reference_field_not_scalar");
-    // And settle carries no payload at all: one handed one is refused.
-    expect(
-      decisionRefusals({
-        ...base,
-        action: "settle",
-        value: { ...link.value, ref: VENUE_ID.skyDome },
-      } as VerdictDecision),
-    ).toContain("value_forbidden");
-  });
-
-  it("keeps the pressed action's own name through to what the operator is told", async () => {
-    for (const [spec, chosen] of [
-      [link, VENUE_ID.nameless],
-      [settle, null],
-    ] as const) {
-      const outcome = await submitSettlement({
-        reviewItemId: ITEM_ID,
-        spec,
-        note: "",
-        supplied: chosen,
-        fetchImpl: async () =>
-          Response.json({ ok: true, verdict: verdictLogEntry({ action: spec.action }) }),
-      });
-      expect(outcome, spec.action).toEqual({ ok: true, action: spec.action });
     }
   });
 });

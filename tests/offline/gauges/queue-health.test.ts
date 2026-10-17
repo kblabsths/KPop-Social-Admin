@@ -27,8 +27,8 @@ import {
  * here (spec §10 parks the visibility × impact formula).
  *
  * The one figure this gauge cannot compute is settles-per-week —
- * `review_items` carries no settle timestamp, and `verdicts` does not exist
- * until M2's handoff. It reports `null`, and the test below is what stops a
+ * `review_items` carries no settle timestamp, and the gauge reads
+ * `review_items` alone. It reports `null`, and the test below is what stops a
  * later hand from filling that null with a zero.
  */
 
@@ -241,13 +241,5 @@ describe("readQueueHealth", () => {
     const stub = withRows(population());
     const result = await readQueueHealth({ now: NOW, days: 7 }, stub.asSupabaseClient());
     expect(result.kind === "ok" && result.data.items).toBe(5);
-  });
-
-  it("passes a not-provisioned database straight through", async () => {
-    const stub = stubClient({ [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) } });
-    await expect(readQueueHealth({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.reviewItems,
-    });
   });
 });

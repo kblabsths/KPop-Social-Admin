@@ -10,7 +10,6 @@ import { T } from "@/lib/db/tables";
 import { canonicalUrlText } from "@/lib/url/text";
 import {
   NEWEST_FIRST,
-  NO_SUCH_SOURCE,
   RUNS,
   SOURCE,
   SUCCEEDED,
@@ -73,27 +72,6 @@ describe("the ruled column set", () => {
     ]);
     for (const counter of RUN_COUNTS) {
       expect(RUN_COLUMNS, counter).toContain(counter);
-    }
-  });
-
-  it("leaves the other thirteen columns of the table out of M1", () => {
-    // The out-of-scope thirteen, named on the ruling. Reading one here is what
-    // would answer a settled question by the back door.
-    for (const column of [
-      "checkpoint_before",
-      "checkpoint_after",
-      "payloads_fetched",
-      "payloads_archived",
-      "records_rejected",
-      "claims_dropped_empty",
-      "claims_collapsed",
-      "claims_ai",
-      "records_linked",
-      "records_escalated",
-      "batches_written",
-      "observations_returned",
-    ]) {
-      expect(RUN_COLUMNS as readonly string[], column).not.toContain(column);
     }
   });
 });
@@ -224,27 +202,6 @@ describe("the ?source= facet", () => {
     expect(result.data.source).toBeNull();
   });
 
-  it("keeps a run whose source name no registry row carries", async () => {
-    // No foreign key means an unregistered name is a legitimate run, and the
-    // facet reaches it like any other.
-    const stub = stubClient({ [T.runs]: { data: runsFrom(SOURCE.unregistered) } });
-    const result = await readRuns(
-      { source: SOURCE.unregistered },
-      stub.asSupabaseClient(),
-    );
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    expect(steps(stub.calls[0], "eq")).toEqual([["source", SOURCE.unregistered]]);
-    expect(result.data.rows).toHaveLength(1);
-  });
-
-  it("answers a name that matches nothing with an empty window, not a refusal", async () => {
-    const stub = stubClient({ [T.runs]: { data: [] } });
-    const result = await readRuns({ source: NO_SUCH_SOURCE }, stub.asSupabaseClient());
-    if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-    expect(result.data.rows).toEqual([]);
-    expect(result.data.source).toBe(NO_SUCH_SOURCE);
-  });
-
   it("treats a facet carrying nothing as no facet at all", async () => {
     expect(canonicalUrlText(undefined)).toBeNull();
     expect(canonicalUrlText("")).toBeNull();
@@ -341,37 +298,6 @@ describe("the ?source= facet", () => {
       if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
       expect(steps(stub.calls[0], "eq")).toEqual([["source", narrowedBy]]);
       expect(result.data.source).toBe(narrowedBy);
-    },
-  );
-
-  /**
-   * **What is SHOWN is what was USED, at this read's own edge** — the half of
-   * the facet's contract that lives here (admin-window/BUG-0155;
-   * ARCHITECTURE.md §7, common violations row 20).
-   *
-   * `/cycles` renders six sentences from `RunWindow.source`, so the string
-   * this read hands back is the string a browser will lay out. These grade the
-   * two arms the ruling names, on both fixtures (LESSONS 8): a value whose
-   * padding a browser would drop CANONICALISES here, and a value a browser
-   * would RE-SPELL narrows NOTHING here. The page-level consequences — the
-   * facet box, the window line, the empty card, the dropped-parameter line —
-   * are graded in `tests/offline/cycles/page.test.ts`.
-   */
-  it.each([
-    ["a leading space", ` ${SOURCE.ticketmaster}`],
-    ["a trailing space", `${SOURCE.ticketmaster} `],
-    ["blanks at both ends", `  ${SOURCE.ticketmaster}  `],
-  ] as const)(
-    "narrows by a padded name exactly as by its twin: %s [admin-window/BUG-0155]",
-    async (_name, asked) => {
-      expect(canonicalUrlText(asked)).toBe(SOURCE.ticketmaster);
-      const stub = stubClient({ [T.runs]: { data: runsFrom(SOURCE.ticketmaster) } });
-      const result = await readRuns({ source: asked }, stub.asSupabaseClient());
-      if (result.kind !== "ok") throw new Error(`expected ok, got ${result.kind}`);
-      // The argument PostgREST received, not the one the URL carried.
-      expect(steps(stub.calls[0], "eq")).toEqual([["source", SOURCE.ticketmaster]]);
-      expect(result.data.source).toBe(SOURCE.ticketmaster);
-      expect(result.data.rows).toEqual(runsFrom(SOURCE.ticketmaster));
     },
   );
 

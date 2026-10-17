@@ -37,9 +37,9 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  * nothing and settles nothing.
  *
  * **Whether any control renders at all is not this module's question.** It is
- * `readSettlementReadiness`', asked once by `CloseSlot` — with `verdicts`
- * absent (staging today, and what `main` deploys against for the whole of M2)
- * the slot draws the not-provisioned card and this list is never rendered. No
+ * `readSettlementReadiness`', asked once by `CloseSlot` — against a database
+ * without `verdicts` (which databases those are is ARCHITECTURE.md §9.2's to
+ * say) the slot draws the not-provisioned card and this list is never rendered. No
  * control here would ever call a function this database does not have, and
  * nothing queues, buffers or works around one (spec §10's one forbidden move).
  *

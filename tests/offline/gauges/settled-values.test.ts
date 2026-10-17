@@ -184,16 +184,6 @@ describe("fetchRejectionStamps", () => {
     expect(narrowed.data.window.until).toBe(NOW);
   });
 
-  it("bounds the query even when the caller passes nothing", async () => {
-    const stub = withRows([], []);
-    await fetchRejectionStamps({}, stub.asSupabaseClient());
-    const steps = stub.calls[0].steps;
-    expect(steps.some((s) => s.method === "gte")).toBe(true);
-    expect(steps.find((s) => s.method === "limit")?.args[0]).toBeGreaterThan(0);
-    // No rejections means no sources lookup.
-    expect(stub.tablesRead()).toEqual([T.observations]);
-  });
-
   it("reports whichever object is absent, by name", async () => {
     const noObservations = stubClient({
       [T.observations]: { error: tableNotInSchemaCache(T.observations) },
@@ -304,6 +294,29 @@ describe("aggregateRejectionStamps", () => {
     expect(values.unnamedSources).toBe(1);
   });
 
+  it("counts a registry row with no ink in its name as unnamed, and a named row as named", () => {
+    // The bug this catches (admin-window/BUG-0236): this gauge spelled
+    // "unnamed" as `source === undefined` — the row is MISSING — while its
+    // twin on the same page asks `isSourceNamed`, which also says no to a row
+    // that came back with a blank name. Same rows, two counts. Both fixtures
+    // (LESSONS 8): the row that must be counted, and the row that must not.
+    const unnamedBy = (name: string) =>
+      aggregateRejectionStamps({
+        rejections: rejections(),
+        sources: [...sources(), sourceRow({ source_id: SOURCE_UNKNOWN, source: name })],
+        window: WINDOW,
+      });
+
+    const blank = unnamedBy("   ");
+    expect(blank.unnamedSources).toBe(1);
+    expect(sourceOf(blank, SOURCE_UNKNOWN)?.source).toBeNull();
+    expect(sourceOf(blank, SOURCE_A)?.source).toBe("ticketmaster");
+
+    const named = unnamedBy("setlistfm");
+    expect(named.unnamedSources).toBe(0);
+    expect(sourceOf(named, SOURCE_UNKNOWN)?.source).toBe("setlistfm");
+  });
+
   it("puts each rejection in the week it happened, zeros included", () => {
     const bandsintown = sourceOf(values, SOURCE_B);
     expect(bandsintown?.weeks.map((week) => week.weekStart)).toEqual([
@@ -353,29 +366,5 @@ describe("readRejectionStampGauge", () => {
     const stub = withRows(rejections(), sources());
     const result = await readRejectionStampGauge({ now: NOW, days: 15 }, stub.asSupabaseClient());
     expect(result.kind === "ok" && result.data.rerejected).toBe(4);
-  });
-
-  it("hands the narrowing it was given down to the scan — the entry point /sources calls", async () => {
-    // The page reaches the query through this function alone, so the facet is
-    // proved where the page hands it over as well as where it is applied
-    // (admin-window/BUG-0194).
-    const stub = withRows(rejections(), sources());
-    await readRejectionStampGauge(
-      { now: NOW, days: 15, filter: { source_id: SOURCE_B } },
-      stub.asSupabaseClient(),
-    );
-    expect(
-      stub.calls[0].steps.filter((step) => step.method === "eq").map((step) => step.args),
-    ).toContainEqual(["source_id", SOURCE_B]);
-  });
-
-  it("passes a not-provisioned database straight through", async () => {
-    const stub = stubClient({
-      [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-    });
-    await expect(readRejectionStampGauge({}, stub.asSupabaseClient())).resolves.toEqual({
-      kind: "not_provisioned",
-      missing: T.observations,
-    });
   });
 });

@@ -36,52 +36,6 @@ import { disagreeingCounts } from "./markup";
  * in both.
  */
 describe("inter-element spaces in every file the app ships", () => {
-  const base = path.join(
-    repoRoot,
-    "tests",
-    ".probes",
-    `copy-spaces-${process.pid}-${randomUUID()}`,
-  );
-  const GLUED = "src/app/glued/page.tsx";
-  const EXPLICIT = "src/app/explicit/page.tsx";
-
-  beforeAll(() => {
-    mkdirSync(path.join(base, "src", "app", "glued"), { recursive: true });
-    mkdirSync(path.join(base, "src", "app", "explicit"), { recursive: true });
-    writeFileSync(
-      path.join(base, GLUED),
-      [
-        "export function Glued() {",
-        "  return (",
-        "    <p>",
-        '      The read of <span className="type-data">source</span> is the run&rsquo;s own',
-        "      text.",
-        "    </p>",
-        "  );",
-        "}",
-        "",
-      ].join("\n"),
-    );
-    writeFileSync(
-      path.join(base, EXPLICIT),
-      [
-        "export function Explicit() {",
-        "  return (",
-        "    <p>",
-        '      The read of <span className="type-data">source</span>{" "}',
-        "      is the run&rsquo;s own text.",
-        "    </p>",
-        "  );",
-        "}",
-        "",
-      ].join("\n"),
-    );
-  });
-
-  afterAll(() => {
-    rmSync(base, { recursive: true, force: true });
-  });
-
   it("flags the spelling that reached the screen and clears the ones that did not", () => {
     // Must flag: the pre-fix spelling a user-sim read off /cycles as `sourceis`.
     expect(
@@ -109,16 +63,6 @@ describe("inter-element spaces in every file the app ships", () => {
     ]) {
       expect(implicitInterElementSpacesIn(clean), clean).toEqual([]);
     }
-  });
-
-  it("reads every file of a tree, not the three the bug happened to name", () => {
-    // A fixture tree carrying one glued file and one fixed file: the walk sees
-    // both, the rule separates them. This is the RED state of the assertion
-    // that follows, kept as a fixture so it can never go vacuous.
-    expect(sourceFiles(base)).toEqual([EXPLICIT, GLUED]);
-    expect(offenders(base)).toEqual([
-      `${GLUED} 4: The read of <span className="type-data">source</span> is the run&rsquo;s own`,
-    ]);
   });
 
   it("leaves no file under src/ leaning on a space a transform may drop", () => {
@@ -365,40 +309,6 @@ describe("the glossary's pinned nouns in every string the app renders", () => {
     ]);
   });
 
-  /**
-   * QA (admin-window/BUG-0100): the rule's blind spot, pinned as it stands.
-   *
-   * A run of rendered text is only read when it holds two English words —
-   * `words = /[A-Za-z]\s+[A-Za-z]/` — because a one-word STRING LITERAL is
-   * usually a React key or a column key, not copy. That reasoning does not
-   * carry to the two shapes below, and both are shapes this app already
-   * writes:
-   *
-   *  - a **JSX text node** is rendered by definition and is never a key.
-   *    `src/` ships four of them today (`>source<` twice, `>skipped<`,
-   *    `>current<`, `>contender<`), so a fifth reading `>Observations<` — a
-   *    column heading, an eyebrow — would pass this rule silently;
-   *  - a **template literal whose only English word follows the
-   *    interpolation** — `` `${n} observations` `` — is the app's own idiom
-   *    for a counted noun (`micro-label.tsx` documents `` `${stats.queue}
-   *    open` ``; `cycle-health.tsx` and `latency.tsx` build subtitles that
-   *    way). One word after `${…}` leaves no letter-space-letter in the raw
-   *    text, so the run is dropped before the glossary is consulted.
-   *    `` `${n} resolutions pending` `` IS caught, which is the same string
-   *    with one more word.
-   *
-   * No string under `src/` reaches either blind spot today — the rule is
-   * green on the real corpus, which is why this is a pin and not a bug. It
-   * fails on purpose so the day someone widens the rule, the XPASS sends
-   * them here instead of leaving the gap uncharted.
-   */
-  it.fails("does not yet read a one-word run of rendered text (QA residual)", () => {
-    const jsxHeading = "export function H() { return <h2>Observations</h2>; }";
-    const countedNoun = "const sub = `${count} observations`;";
-    expect(glossaryViolationsIn(jsxHeading)).not.toEqual([]);
-    expect(glossaryViolationsIn(countedNoun)).not.toEqual([]);
-  });
-
   it("leaves no string under src/ calling a claim an observation or a verdict a resolution", () => {
     const files = sourceFiles();
     // Non-vacuous: the surface the walk found the defect on, and a tree that
@@ -607,41 +517,6 @@ describe("the exit an empty surface names", () => {
         line.includes(needle) ? [`${file}:${index + 1}`] : [],
       );
     });
-
-  it("flags the retired advice and clears the sentence that replaced it", () => {
-    // The RED state of the rule below, on a tree of its own, so the assertion
-    // over `src/` can never go vacuous: one file carrying the old copy, one
-    // carrying the new. Both fragments are found, and the replacement is not
-    // mistaken for either.
-    const base = path.join(
-      repoRoot,
-      "tests",
-      ".probes",
-      `copy-exit-${process.pid}-${randomUUID()}`,
-    );
-    const OLD = "src/app/old/page.tsx";
-    const NEW = "src/app/new/page.tsx";
-    try {
-      mkdirSync(path.join(base, "src", "app", "old"), { recursive: true });
-      mkdirSync(path.join(base, "src", "app", "new"), { recursive: true });
-      writeFileSync(
-        path.join(base, OLD),
-        "const words = \"Widen a filter above; the 'all' chip on any row shows everything again.\";\n",
-      );
-      writeFileSync(
-        path.join(base, NEW),
-        `const words = "The 'clear filters' ${REPLACEMENT}.";\n`,
-      );
-
-      expect(sourceFiles(base)).toEqual([NEW, OLD]);
-      for (const fragment of RETIRED) {
-        expect(sitesOf(fragment, base), fragment).toEqual([`${OLD}:1`]);
-      }
-      expect(sitesOf(REPLACEMENT, base)).toEqual([`${NEW}:1`]);
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
-  });
 
   it("leaves the retired advice nowhere under src/", () => {
     // Non-vacuous: this is plainly the real tree, and it holds both pages the

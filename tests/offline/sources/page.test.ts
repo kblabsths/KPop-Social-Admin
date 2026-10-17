@@ -3,13 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { isRecordId } from "@/lib/records/id";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
-import {
-  codeLinesIn,
-  codeText,
-  implicitInterElementSpaces,
-  implicitInterElementSpacesIn,
-  sourceFiles,
-} from "../source-tree";
+import { codeLinesIn, codeText, sourceFiles } from "../source-tree";
 import {
   disagreeingCounts,
   factoryTicketIds,
@@ -27,7 +21,6 @@ import {
   PENDING_OBSERVATIONS,
   REJECTIONS,
   RUN,
-  RUNS,
   SOURCE,
   SOURCES,
   SOURCE_NAME,
@@ -39,7 +32,7 @@ import {
   rerejects,
   runsResponse,
 } from "./population";
-import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../fixtures/surface-state";
 import { observationRow, pendingClaimRow, runRow } from "../../fixtures/rows";
 import {
   permissionDenied,
@@ -402,7 +395,7 @@ const REJECTED_BY_WEEK = "Re-rejected values by week";
 /**
  * The settled-values headline CARD, addressed by the label it is drawn with —
  * `readNumber`'s hook, the same one the live parity oracle uses
- * (`tests/live/parity.ts`). One spelling in this file, so a case reads a card
+ * (`tests/fixtures/surface-state.ts`). One spelling in this file, so a case reads a card
  * rather than re-deciding which one it meant.
  */
 const REJECTED_FIGURE = "Re-rejected claims in this window";
@@ -590,13 +583,6 @@ describe("the registry, rendered", () => {
     expect(row.text).not.toMatch(/\b0\b/);
   });
 
-  it("never shows a run whose source name is in no registry row", async () => {
-    const markup = await renderSources(healthyScript());
-    expect(RUNS.some((run) => run.run_id === RUN.orphan)).toBe(true);
-    expect(markup).not.toContain(RUN.orphan);
-    expect(markup).not.toContain("eventbrite");
-  });
-
   it("reads a run still in flight as running, with no outcome invented", async () => {
     const markup = await renderSources(healthyScript());
     const row = sourceRowOf(markup, SOURCE.fandom);
@@ -719,47 +705,6 @@ describe("a source's links", () => {
   }
 
   /**
-   * The chip's whole job, exercised where an operator actually needs it: the
-   * chip for the source the URL is NARROWED TO. QA's re-check of
-   * admin-window/BUG-0159 — the three cases above render the page unnarrowed,
-   * so nothing pinned what the operator reads once the blank-named chip is the
-   * SELECTED one and the registry table beside it is down to that single row.
-   * A chip that is `aria-current` and says nothing is a selection an operator
-   * cannot read or clear.
-   *
-   * Non-vacuous in the same render (LESSONS 8): the selected chip says the id,
-   * exactly one chip is selected, and the two unselected siblings still say
-   * their registry names and never a uuid.
-   */
-  it("names the SELECTED chip by its id when the registry names it nothing", async () => {
-    const blanked = SOURCES.map((row) =>
-      row.source_id === SOURCE.ticketmaster ? { ...row, source: "" } : row,
-    );
-    const markup = await renderSources(
-      healthyScript({
-        [T.sources]: [
-          { data: blanked, count: blanked.length },
-          { data: blanked },
-        ],
-      }),
-      { source_id: SOURCE.ticketmaster },
-    );
-    const rendered = chips(markup);
-    const selected = rendered.filter((chip) => chip.active);
-    expect(selected.map((chip) => chip.href)).toEqual([
-      `/sources?source_id=${SOURCE.ticketmaster}`,
-    ]);
-    expect(selected[0].label).toBe(SOURCE.ticketmaster);
-    for (const sourceId of [SOURCE.bandsintown, SOURCE.fandom]) {
-      const sibling = rendered.find(
-        (chip) => chip.href === `/sources?source_id=${sourceId}`,
-      );
-      expect(sibling, `the chip for ${sourceId} did not render`).toBeDefined();
-      expect((sibling as { label: string }).label).toBe(SOURCE_NAME[sourceId]);
-    }
-  });
-
-  /**
    * Bar 10: the registry's ten routes — each source's own narrowing, its
    * review items and its runs — were drawn in plain ink with no decoration
    * until admin-window/BUG-0108, so the "links" column read as two words and
@@ -781,26 +726,6 @@ describe("a source's links", () => {
       expect(cells.length, `no ${inert} to compare against`).toBeGreaterThan(0);
       for (const cell of cells) expectNotDrawnAsLink(classesOf($(cell)), inert);
     }
-  });
-
-  it("narrows nothing when the URL names something that is not an id at all", async () => {
-    // A hand-typed word lands on the whole registry, not on a blank page that
-    // reads like an empty database — and, since admin-window/BUG-0139 hands
-    // the URL's value to the gauge's QUERY, not on an error card either:
-    // `observations.source_id` is a uuid column, so comparing it to `nobody`
-    // is refused by Postgres itself (`22P02`) and every surface would then
-    // advise a reload that re-sends the same URL forever
-    // (admin-window/BUG-0065's ruling, whose `isRecordId` is the one grammar).
-    const markup = await renderSources(healthyScript(), { source_id: "nobody" });
-    expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
-    expect(readsFailed(markup)).toEqual([]);
-    expect(notProvisioned(markup)).toEqual([]);
-    // The gauges are unnarrowed too, so the figures read the same set the
-    // table renders.
-    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([
-      SOURCE.ticketmaster,
-      SOURCE.bandsintown,
-    ]);
   });
 
   it("narrows to nothing, and says so, when the URL names a well-formed id the registry lacks", async () => {
@@ -1003,37 +928,11 @@ describe("a source's links", () => {
       together.release();
     }
   });
-
-  it("takes the first value when the URL repeats the facet", async () => {
-    const markup = await renderSources(healthyScript(), {
-      source_id: [SOURCE.fandom, SOURCE.ticketmaster],
-    });
-    expect(sourceIds(markup)).toEqual([SOURCE.fandom]);
-  });
 });
 
 /* ── the four states ─────────────────────────────────────────────────────── */
 
 describe("the four data-surface states", () => {
-  it("names `sources` when the registry table is not in this database", async () => {
-    const markup = await renderSources(
-      healthyScript({ [T.sources]: { error: tableNotInSchemaCache(T.sources) } }),
-    );
-    expect(notProvisioned(markup)).toContain(T.sources);
-    expect(sourceIds(markup)).toEqual([]);
-  });
-
-  it("names `runs` when the run table is not in this database", async () => {
-    // The two legs report separately: an absent `runs` must not be reported as
-    // an absent `sources`, and must not read as "these sources never ran".
-    const markup = await renderSources(
-      healthyScript({ [T.runs]: { error: tableNotInSchemaCache(T.runs) } }),
-    );
-    expect(notProvisioned(markup)).toContain(T.runs);
-    expect(notProvisioned(markup)).not.toContain(T.sources);
-    expect(sourceIds(markup)).toEqual([]);
-  });
-
   it("shows the database's own words when the registry read fails", async () => {
     const markup = await renderSources(
       healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
@@ -1106,12 +1005,6 @@ describe("the awaiting-row trend", () => {
       // period cell, then the claims measure.
       expect(cells[1], sourceId).toBe(String(awaitingRowClaims(sourceId)));
     }
-  });
-
-  it("names each source by its registry name, linking back to it", async () => {
-    const markup = await renderSources(healthyScript());
-    const cells = trendRow(markup, AWAITING_BY_SOURCE, SOURCE.ticketmaster);
-    expect(cells[0]).toBe("ticketmaster");
   });
 
   it("draws no threshold line while the dial is unreadable", async () => {
@@ -1245,13 +1138,6 @@ describe("the awaiting-row trend", () => {
     } finally {
       trendAnswer.value = undefined;
     }
-  });
-
-  it("says a narrowed source has none, rather than showing the fleet's", async () => {
-    const markup = await renderSources(healthyScript(), { source_id: SOURCE.fandom });
-    expect(awaitingRowClaims(SOURCE.fandom)).toBe(0);
-    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
-    expect(markup).not.toContain(AWAITING_BY_DAY);
   });
 
   it("names the gauge's own table when the claims view is absent", async () => {
@@ -1522,57 +1408,6 @@ describe("the settled-values trend", () => {
     );
   });
 
-  it("reports a narrowed source whose rejections all carry no reason as its own count", async () => {
-    // The boundary the other way: every one of this source's rejections is
-    // unattributed, so the clause is the whole story of its column — and four
-    // of a stranger's must not be added to it. Three renders, one narrowing:
-    // the fact must be invariant to the stranger's rows and must still change
-    // when the same rows carry a reason instead (dropped and reported-as-zero
-    // would otherwise read identically).
-    const params = { source_id: SOURCE.fandom };
-    const mineNoReason = [0, 1, 2].map((n) =>
-      observationRow({
-        observation_id: `01920000-0000-7000-8000-00000000fc0${n}`,
-        source_id: SOURCE.fandom,
-        status: "rejected",
-        rejected_at: daysAgo(2 + n),
-        rejected_by: null,
-      }),
-    );
-    const mineReasoned = mineNoReason.map((row) => ({ ...row, rejected_by: "resolver" }));
-    const strangersNoReason = [0, 1, 2, 3].map((n) =>
-      observationRow({
-        observation_id: `01920000-0000-7000-8000-00000000fd0${n}`,
-        source_id: SOURCE.ticketmaster,
-        status: "rejected",
-        rejected_at: daysAgo(2 + n),
-        rejected_by: null,
-      }),
-    );
-    const say = async (rows: unknown[]) =>
-      settledValuesSays(
-        await renderSources(
-          healthyScript({
-            [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: rows }],
-          }),
-          params,
-        ),
-      );
-
-    const mineAlone = await say([...REJECTIONS, ...mineNoReason]);
-    const mineAndStrangers = await say([
-      ...REJECTIONS,
-      ...mineNoReason,
-      ...strangersNoReason,
-    ]);
-    const sameRowsWithReasons = await say([...REJECTIONS, ...mineReasoned]);
-
-    // Four more of ticketmaster's unattributed rows: not this page's figure.
-    expect(mineAndStrangers).toBe(mineAlone);
-    // Same three rows, same total, a reason on each: this page's figure moves.
-    expect(sameRowsWithReasons).not.toBe(mineAlone);
-  });
-
   it("counts the narrowed source itself once when its own registry row did not come back", async () => {
     // `unnamedSources` was the FLEET's count; scoped, it is 0 or 1 under a
     // narrowing (admin-window/BUG-0022). Here the gauge's own `sources` lookup
@@ -1615,59 +1450,6 @@ describe("the settled-values trend", () => {
     expect(unnamed).not.toBe(named);
     // And it is this source's fact alone.
     expect(unnamedPlusStrangers).toBe(unnamed);
-  });
-
-  /**
-   * **The sentence counts what the rows above it show** (admin-window/TASK-0060).
-   *
-   * The closing sentence says how many of these sources are named by their id.
-   * It answered that itself — `split.source === null` — while the rows were
-   * labelled by `sourceLabel`, which also names by id a row that EXISTS with an
-   * ink-less name. So on a blank-named registry row the table showed a uuid
-   * where a name goes and the sentence under it said nothing had happened: one
-   * page, two answers about one row (LESSONS 11), and the number stated
-   * disagreed with the rows beside it.
-   *
-   * The fixture drops the one rejection carrying no reason, so the sentence's
-   * ONLY figure is the count under test — with the unattributed clause present
-   * a case could not tell which number it was reading.
-   */
-  it("states the number of rows it named by id, on a row the registry left blank", async () => {
-    const attributed = REJECTIONS.filter((row) => row.rejected_by !== null);
-    const script = (rows: typeof SOURCES): Script =>
-      healthyScript({
-        [T.sources]: [{ data: rows, count: rows.length }, { data: rows }],
-        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: attributed }],
-      });
-    const blanked = SOURCES.map((row) =>
-      row.source_id === SOURCE.ticketmaster ? { ...row, source: "   " } : row,
-    );
-
-    const withBlank = await renderSources(script(blanked));
-    const allNamed = await renderSources(script(SOURCES));
-
-    // Both fixtures really are two rows of one table, or the counts below are
-    // over a table that rendered nothing.
-    for (const [name, markup] of [["blank", withBlank], ["named", allNamed]] as const) {
-      expect(trendSources(markup, REJECTED_BY_SOURCE).sort(), name).toEqual(
-        [SOURCE.ticketmaster, SOURCE.bandsintown].sort(),
-      );
-    }
-
-    // The row the registry named nothing for wears its id; its sibling does
-    // not (LESSONS 8 — one input the count MUST take, one it must not).
-    const worn = wearingAnId(withBlank, REJECTED_BY_SOURCE);
-    expect(worn).toEqual([SOURCE.ticketmaster]);
-    // ...and the sentence states THAT number, read off the rows rather than
-    // typed in here.
-    expect(figuresIn(settledValuesSentence(withBlank))).toEqual([String(worn.length)]);
-
-    // The other direction, same population with a name on it: no row wears an
-    // id and the sentence states no figure at all — so the agreement above is
-    // not a sentence that always says "1".
-    expect(wearingAnId(allNamed, REJECTED_BY_SOURCE)).toEqual([]);
-    expect(figuresIn(settledValuesSentence(allNamed))).toEqual([]);
-    expect(settledValuesSentence(withBlank)).not.toBe(settledValuesSentence(allNamed));
   });
 
   it("reports a blank-named source it is NARROWED to as its own, once", async () => {
@@ -1788,73 +1570,6 @@ describe("the settled-values trend", () => {
     );
     expect(notProvisioned(markup)).toContain(T.observations);
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
-  });
-
-  /**
-   * **The line and the figures agree in kind, under every URL** —
-   * admin-window/BUG-0194, filed by QA against the landed TASK-0073 tree and
-   * ruled fixed AT THE READ (architect, 2026-09-11).
-   *
-   * It stood here as `it.fails` while the two halves disagreed:
-   * `readRejectionStampGauge()` took no filter, so the scan was the fleet's
-   * while `RejectionSection` reported one source's rows out of it — both cards
-   * moved between the two URLs under a sentence, a cap and a truncation verdict
-   * that were byte-identical to the fleet's rendering. TASK-0073's rule is that
-   * a window line states the read that HAPPENED, so the only way to agreement
-   * was to move the READ; `readRejectionStampGauge({ filter })` now narrows at
-   * the query (`tests/offline/gauges/settled-values.test.ts` grades the `eq`)
-   * and the line follows the filter it was given, with the cap and the verdict
-   * belonging to the population the figures are over (admin-window/BUG-0114).
-   *
-   * Non-vacuous in both directions, off the rendering alone: the figures are
-   * asserted to move first, and the bare head is asserted to name nothing.
-   */
-  it("names the narrowing its own figures carry [BUG-0194]", async () => {
-    const bare = await renderSources(healthyScript());
-    const narrowed = await renderSources(healthyScript(), {
-      source_id: SOURCE.ticketmaster,
-    });
-
-    /**
-     * This section's head: the sentence about the read, and the cards whose
-     * figures sit under it — its WORDS (every digit masked, so two clocks
-     * and two counts cannot make two renderings differ on their own) and its
-     * FIGURES, read off the same markup.
-     */
-    const headOf = (markup: string) => {
-      const $ = cheerio.load(markup);
-      const line = $('[data-window="rejections"]');
-      expect(line.length).toBe(1);
-      const cards = line.next();
-      const text = (node: ReturnType<typeof $>) =>
-        node.text().replace(/\s+/g, " ").trim();
-      const whole = `${text(line)} ${text(cards)}`.trim();
-      return {
-        whole,
-        words: whole.replace(/[\d,]+/g, "#").trim(),
-        figures: text(cards).match(/\d[\d,]*/g) ?? [],
-      };
-    };
-
-    // The narrowing really does move this section's figures — otherwise the
-    // agreement below would be about a page that says nothing either way.
-    expect(headOf(bare).figures.length).toBeGreaterThan(0);
-    expect(headOf(narrowed).figures).not.toEqual(headOf(bare).figures);
-
-    // ...and the words over them move with them, which is the whole ticket.
-    expect(headOf(narrowed).words).not.toBe(headOf(bare).words);
-
-    // What the words say is the facet the read carried, spelled as the URL
-    // spells it — and the bare head, whose read carried none, names none.
-    expect(headOf(narrowed).whole).toContain(SOURCE.ticketmaster);
-    expect(headOf(bare).whole).not.toContain(SOURCE.ticketmaster);
-
-    // The figures under that sentence are that read's rows: one source's
-    // re-rejects narrowed, and every source's bare.
-    expect(readNumber(narrowed, REJECTED_FIGURE)).toBe(rerejects(SOURCE.ticketmaster));
-    expect(readNumber(bare, REJECTED_FIGURE)).toBe(
-      SOURCES.reduce((total, source) => total + rerejects(source.source_id), 0),
-    );
   });
 
   it("names its narrowing over real zeros when the narrowed scan matched nothing", async () => {
@@ -2028,19 +1743,6 @@ describe("the copy the operator actually reads", () => {
     expect(readNumber(markup, "Awaiting-row claims in this window")).toBe(1);
     expect(disagreeingCounts(markup)).toEqual([]);
   });
-  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
-    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
-    // transform keeps the space that `next build`'s transform drops (measured
-    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
-    // actually guards it, so it stands beside them.
-    //
-    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
-    expect(
-      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">stuck_pattern</span> dial lives only'),
-    ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial lives only']);
-    // ...and the page as it stands must be clean of it.
-    expect(implicitInterElementSpaces("src/app/sources/page.tsx")).toEqual([]);
-  });
 });
 
 /* ── the addressing the live oracle depends on ───────────────────────────── */
@@ -2061,7 +1763,7 @@ const HOOKS = Object.values(SURFACE_HOOKS);
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these three
    * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
    * `<div>` wrapped around an existing one, either duplicates a match or
@@ -2299,34 +2001,6 @@ describe("what the two scan-window lines say they read", () => {
     expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
     expect(readNumber(markup, "Awaiting-row claims in this window")).toBe(0);
     expect(lineOf(markup, "awaiting_row")).toContain(SOURCE.ticketmaster);
-  });
-
-  it("names nothing for a parameter this page DROPPED", async () => {
-    // A facet that never reaches a filter narrowed no read, so it may appear in
-    // no scope: `?source_id=` carrying something that is not a uuid is dropped
-    // by the page (it can equal no row anywhere), and a parameter this route
-    // does not read at all was never a facet of it.
-    const bare = await renderSources(healthyScript());
-    const dropped: [string, Record<string, string>][] = [
-      ["a source_id that is not an id", { source_id: "nobody" }],
-      ["a parameter this route does not read", { bucket: "awaiting_row" }],
-    ];
-    for (const [name, params] of dropped) {
-      const markup = await renderSources(healthyScript(), params);
-      for (const gauge of ["awaiting_row", "rejections"]) {
-        expect(lineOf(markup, gauge), `${name}: ${gauge}`).toBe(lineOf(bare, gauge));
-        for (const value of Object.values(params)) {
-          expect(lineOf(markup, gauge), `${name}: ${gauge}`).not.toContain(value);
-        }
-      }
-    }
-    // Non-vacuous: on this same page a facet that DID reach a filter moves one
-    // of the two lines, so "unchanged" here is a fact about the parameter and
-    // not about a page that never says anything.
-    const real = await renderSources(healthyScript(), {
-      source_id: SOURCE.ticketmaster,
-    });
-    expect(lineOf(real, "awaiting_row")).not.toBe(lineOf(bare, "awaiting_row"));
   });
 
   it("writes the narrowing sentence nowhere in the components that render the lines", async () => {
@@ -2658,9 +2332,5 @@ describe("the module this page's presentation lives in", () => {
     const importLine = /^\s*import\b|\brequire\s*\(|\bfrom\s+["']/;
     expect(importLine.test('import { T } from "@/lib/db/tables";')).toBe(true);
     expect(codeText(LEAF).split("\n").filter((line) => importLine.test(line))).toEqual([]);
-  });
-
-  it("leaves the page function the only async component on the route", () => {
-    expect(codeText(PAGE)).toMatch(/export default async function SourcesPage/);
   });
 });

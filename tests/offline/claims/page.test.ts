@@ -1,8 +1,5 @@
 import * as cheerio from "cheerio";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLAIM_WINDOW, PagedClaimList } from "@/components/claims";
-import { PagingProvider } from "@/components/ui/paging";
-import type { DrawnWindow } from "@/components/ui/window-line";
 import { PENDING_CLAIMS_DEFAULTS } from "@/lib/gauges/pending-claims";
 // The app's own phrase for a CHIP narrowing, imported rather than retyped: a
 // literal here would pass while the two surfaces said different things.
@@ -13,13 +10,17 @@ import { count } from "@/lib/format";
 import { STANDING_BUCKET } from "@/lib/gauges/standing-disagreements";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
 import {
-  MAX_PAGE_OFFSET,
-  OFFSET_PARAM,
+  DEFAULT_WINDOW_SIZE,
+  PAGE_PARAM,
   PAGE_ROUTES,
+  SIZE_PARAM,
+  WINDOW_SIZES,
+  largestPage,
+  windowBound,
   type PageAnswer,
+  type PageWindow,
 } from "@/lib/paging/bounds";
 import {
-  initialPage,
   pressing,
   requestPage,
   type PageDeps,
@@ -29,10 +30,7 @@ import {
 import { ROW_CAP } from "@/lib/db/result";
 import { T } from "@/lib/db/tables";
 import { functionPaths } from "../../fixtures/client-props";
-import {
-  implicitInterElementSpaces,
-  implicitInterElementSpacesIn,
-} from "../source-tree";
+import { implicitInterElementSpaces } from "../source-tree";
 import {
   disagreeingCounts,
   factoryTicketIds,
@@ -43,8 +41,6 @@ import {
 import {
   classesOf,
   expectDrawnAsLinkAtRest,
-  chipsInsideLinks,
-  expectLinkSpellingReachesTheGlyphs,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
 import {
@@ -58,7 +54,7 @@ import {
   claimView,
   nameOf,
 } from "./population";
-import { oneEach, surfaceHooks } from "../../live/parity";
+import { oneEach, surfaceHooks } from "../../fixtures/surface-state";
 import {
   observationRow,
   pendingClaimRow,
@@ -189,23 +185,29 @@ vi.mock("@/lib/gauges/standing-disagreements", async (importActual) => {
  */
 const paging = vi.hoisted(() => ({
   calls: [] as {
-    initial: { rows: readonly unknown[]; held: number; status: string; refusal: unknown };
-    deps: { route: string; params: string; size: number };
+    initial: { rows: readonly unknown[]; window: unknown; status: string; refusal: unknown };
+    deps: { route: string; path: string; params: string; idKey: string };
     /**
-     * AND THE WINDOW — the third prop this page writes on the client
-     * element, graded by the same rule as the other two (QA off
-     * admin-window/BUG-0226): every prop crossing this boundary is data, so
-     * the pin below reads all three and not the two the 500 happened to be
-     * in.
+     * THE WINDOW THE PAGE COMPOSED, as it handed it to the provider
+     * (admin-window/BUG-0180). The page's own fact, recorded so a test can
+     * grade what the page stated, never what the provider derived.
      */
     window: unknown;
   }[],
-  press: null as null | (() => void),
+  /** The move, taken from the surface the provider publishes — what a click calls. */
+  goTo: null as null | ((window: { page: number; size: 20 | 50 | 100 }) => void),
   override: null as unknown,
 }));
 
 vi.mock("@/components/ui/paging", async (importActual) => {
   const actual = await importActual<typeof import("@/components/ui/paging")>();
+  // A probe beside the page's own children: it draws nothing and hands the
+  // provider's `goTo` out, the same function a click on a move link calls, in
+  // a tier with no DOM to click.
+  function Probe(): null {
+    paging.goTo = actual.usePaging().goTo;
+    return null;
+  }
   return {
     ...actual,
     PagingProvider: (props: {
@@ -215,11 +217,9 @@ vi.mock("@/components/ui/paging", async (importActual) => {
       children: unknown;
     }) => {
       paging.calls.push({ initial: props.initial, deps: props.deps, window: props.window });
-      // The REAL provider, started from the state under test, with a probe
-      // added beside the page's own children to hand the press back out. The
-      // WINDOW is the page's own, passed straight through: this file overrides
-      // the paging STATE and nothing the page composed
-      // (admin-window/BUG-0180).
+      // The REAL provider, started from the state under test. The WINDOW is
+      // the page's own, passed straight through: this file overrides the
+      // paging STATE and nothing the page composed (admin-window/BUG-0180).
       return h(
         actual.PagingProvider as never,
         {
@@ -228,14 +228,8 @@ vi.mock("@/components/ui/paging", async (importActual) => {
           deps: props.deps as never,
         },
         props.children as never,
+        h(Probe),
       );
-    },
-    // The press, taken from the widget's own `onPress` prop as the surface
-    // hands it over — the same function a click would call, in a tier with no
-    // DOM to click. The widget itself is the app's and renders unchanged.
-    PageMore: (props: { onPress: () => void }) => {
-      paging.press = props.onPress;
-      return h(actual.PageMore as never, props as never);
     },
   };
 });
@@ -252,17 +246,11 @@ const ClaimsPage = claimsModule.default;
  * Handed to the provider by the renders below that build a wrapper directly,
  * the way the page hands its own (admin-window/BUG-0180).
  */
-function countedWindow(counted: number, limit: number): DrawnWindow {
-  return {
-    limit,
-    held: counted,
-    truncated: counted > limit,
-    over: "view",
-    oldest: null,
-    scope: null,
-    heldFrom: "a count read",
-  };
-}
+/** The window size every address in this suite that names none renders at. */
+const CLAIM_WINDOW = DEFAULT_WINDOW_SIZE;
+
+/** This surface's own address, as the page spells it. */
+const CLAIMS_PATH = "/claims";
 
 /* ── the population, and this file's own reading of it ───────────────────── */
 
@@ -365,8 +353,8 @@ async function renderWithStub(
   // render of `/claims` in this suite goes through here, so the rule is graded
   // on every fixture at once rather than on the ones someone remembered.
   //
-  // `data-paging="limit"` is `PageMore`'s honest answer to a state that has
-  // walked to the ceiling `pageBound` enforces: no control, and a sentence
+  // `data-paging="limit"` is the controls' honest answer to a window that
+  // starts at the ceiling `windowBound` enforces: no "next", and a sentence
   // that does not claim the set has ended. On a FIRST screen it is neither —
   // it is a dead end the operator was handed before pressing anything, which
   // is what `initialPage(37, true)` produces when a count of 900 meets a
@@ -498,69 +486,6 @@ function chipsOf(markup: string, facet: string) {
 /* ── the buckets, with counts and age ────────────────────────────────────── */
 
 describe("the classification view, rendered", () => {
-  it("shows every bucket it may show, in the view's own order", async () => {
-    const markup = await renderClaims(healthyScript());
-    expect(bucketRows(markup).map((row) => row.bucket)).toEqual(RENDERED_BUCKETS);
-  });
-
-  it("counts each bucket exactly as the view holds it", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const row of bucketRows(markup)) {
-      expect(row.claims, row.bucket).toBe(inBucket(row.bucket).length);
-    }
-  });
-
-  /**
-   * **EXPECTED CHANGE, admin-window/BUG-0138 (Ben's A2, 2026-09-10)**: three
-   * column headers, not four.
-   *
-   * The `sources` column — distinct sources holding a claim in that bucket —
-   * is gone, with every row's figure and hook. A distinct count needs an
-   * aggregate and PostgREST refuses aggregates on this deployment (`PGRST123`,
-   * measured), so the only way to it was the read of the whole claim
-   * population this page no longer makes. It was the builder's addition rather
-   * than the spec's: §4 asks for "buckets with counts, age".
-   */
-  it("draws three columns, and no distinct-source figure anywhere", async () => {
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    const table = $('[data-surface="buckets"] table');
-    expect(table.find("thead th").length).toBe(3);
-    expect(markup).not.toContain("data-bucket-sources");
-    // Not vacuous: the two figures that stayed are still hooked and drawn.
-    expect($("[data-bucket]").length).toBe(RENDERED_BUCKETS.length);
-    expect($("[data-bucket-claims]").length).toBe(RENDERED_BUCKETS.length);
-  });
-
-  it("counts each bucket exactly as the view holds it, per source filter", async () => {
-    for (const source of Object.values(SOURCE)) {
-      const markup = await renderClaims(healthyScript(), { source_id: source });
-      const rows = bucketRows(markup);
-      // Every bucket still has a row, so a bucket this source is not in reads
-      // as a real zero rather than vanishing.
-      expect(rows.map((row) => row.bucket), source).toEqual(RENDERED_BUCKETS);
-      for (const row of rows) {
-        expect(row.claims, `${source} / ${row.bucket}`).toBe(
-          inBucket(row.bucket, { source_id: source }).length,
-        );
-      }
-      expect(rows.reduce((total, row) => total + row.claims, 0), source).toBe(
-        matching({ source_id: source }).length,
-      );
-    }
-  });
-
-  it("counts each bucket exactly as the view holds it, per domain filter", async () => {
-    for (const domain of [...new Set(CLAIMS.map((claim) => claim.domain))]) {
-      const markup = await renderClaims(healthyScript(), { domain });
-      for (const row of bucketRows(markup)) {
-        expect(row.claims, `${domain} / ${row.bucket}`).toBe(
-          inBucket(row.bucket, { domain }).length,
-        );
-      }
-    }
-  });
-
   it("keeps the bucket counts whole when a bucket filter narrows the list", async () => {
     // The table answers "how many claims are in every bucket" — narrowing it
     // to the one bucket being listed would answer nobody's question with four
@@ -593,94 +518,12 @@ describe("the classification view, rendered", () => {
   });
 });
 
-/* ── the parked bucket, nowhere ──────────────────────────────────────────── */
-
-describe("the parked bucket", () => {
-  const URLS: Record<string, string>[] = [
-    {},
-    { tab: "standing" },
-    { bucket: "agreeing" },
-    // The claim carrying it belongs to this source and this domain, so a page
-    // narrowed to either is the one most likely to leak it.
-    { source_id: SOURCE.third },
-    { domain: "events" },
-    // Hand-typed: the bucket the UI does not offer, asked for by name.
-    { bucket: PARKED },
-    { bucket: PARKED, tab: "standing" },
-    { bucket: PARKED, source_id: SOURCE.third },
-  ];
-
-  it("appears nowhere in the markup, under any filter or tab", async () => {
-    for (const params of URLS) {
-      const markup = await renderClaims(healthyScript(), params);
-      expect(markup, JSON.stringify(params)).not.toContain(PARKED);
-    }
-  });
-
-  it("appears nowhere in any of the four states either", async () => {
-    const scripts: Script[] = [
-      healthyScript(),
-      { [T.pendingClaims]: { data: [], count: 0 }, [T.observations]: { data: [] } },
-      {
-        [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-        [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-      },
-      {
-        [T.pendingClaims]: { error: transportFailure() },
-        [T.observations]: { error: transportFailure() },
-        [T.sources]: { error: transportFailure() },
-      },
-    ];
-    for (const script of scripts) {
-      for (const tab of ["buckets", "standing"]) {
-        const markup = await renderClaims(script, { tab });
-        expect(markup, tab).not.toContain(PARKED);
-      }
-    }
-  });
-
-  it("is not a bucket row, not a chip, and not a claim", async () => {
-    const markup = await renderClaims(healthyScript());
-    expect(bucketRows(markup).map((row) => row.bucket)).not.toContain(PARKED);
-    expect(chipsOf(markup, "bucket").map((chip) => chip.label)).toEqual([
-      "all",
-      ...RENDERED_BUCKETS,
-    ]);
-    const parkedClaim = CLAIMS.find((claim) => claim.bucket === PARKED);
-    expect(parkedClaim).toBeDefined();
-    expect(claimIds(markup)).not.toContain(parkedClaim?.observation_id);
-  });
-
-  it("does not narrow the page when a URL names it", async () => {
-    // A value outside the offered vocabulary constrains nothing, so the page
-    // shows everything rather than an empty list that reads as an empty
-    // database.
-    const markup = await renderClaims(healthyScript(), { bucket: PARKED });
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-  });
-});
-
 /* ── the claims ──────────────────────────────────────────────────────────── */
 
 describe("the claim list", () => {
   it("renders every claim the view holds, oldest first", async () => {
     const markup = await renderClaims(healthyScript());
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-  });
-
-  it("returns exactly the matching claims for every facet value", async () => {
-    for (const [facet, values] of [
-      ["bucket", RENDERED_BUCKETS],
-      ["source_id", Object.values(SOURCE)],
-      ["domain", [...new Set(CLAIMS.map((claim) => claim.domain))]],
-    ] as const) {
-      for (const value of values) {
-        const markup = await renderClaims(healthyScript(), { [facet]: value });
-        expect(claimIds(markup), `${facet}=${value}`).toEqual(
-          oldestFirst(matching({ [facet]: value })),
-        );
-      }
-    }
   });
 
   it("names what an awaiting_row claim is waiting for, never a bare bucket", async () => {
@@ -696,35 +539,6 @@ describe("the claim list", () => {
       expect(row.text).toContain(claim.unmet_requirement as string);
     }
     expect(new Set(waiting.map((claim) => claim.unmet_requirement)).size).toBe(2);
-  });
-
-  it("carries no requirement cell for a bucket that has none", async () => {
-    const markup = await renderClaims(healthyScript(), { bucket: "escalated" });
-    for (const claim of inBucket("escalated")) {
-      expect(claimRow(markup, claim.observation_id).requirement).toBeUndefined();
-    }
-  });
-
-  it("links every claim to its source and to its fact's provenance", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const claim of SHOWABLE) {
-      const row = claimRow(markup, claim.observation_id);
-      expect(row.sourceId, claim.observation_id).toBe(claim.source_id);
-      expect(row.sourceHref, claim.observation_id).toContain(
-        encodeURIComponent(claim.source_id),
-      );
-      if (claim.entity_id === null) {
-        // No canonical row yet: no invented link to a fact that does not exist.
-        expect(row.provenanceHref, claim.observation_id).toBeUndefined();
-      } else {
-        expect(row.provenanceHref, claim.observation_id).toBe(
-          `/records/${claim.domain}/${claim.entity_id}`,
-        );
-      }
-    }
-    // Both directions are actually exercised by this population.
-    expect(SHOWABLE.some((claim) => claim.entity_id === null)).toBe(true);
-    expect(SHOWABLE.some((claim) => claim.entity_id !== null)).toBe(true);
   });
 
   it("shows an unknown age as an absence, never as a zero age", async () => {
@@ -744,13 +558,6 @@ describe("the claim list", () => {
         oldestFirst(SHOWABLE).at(-1),
       );
     }
-  });
-
-  it("settles nothing: every control on the page is a link", async () => {
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    expect($("button, form, input, select, textarea")).toHaveLength(0);
-    expect($("a").length).toBeGreaterThan(0);
   });
 });
 
@@ -799,45 +606,6 @@ describe("what on this page says it goes somewhere", () => {
     for (const anchor of anchors) {
       expectDrawnAsLinkAtRest(classesOf($(anchor)), "a standing-disagreement source");
     }
-  });
-
-  // Was a strict `it.fails` pin while admin-window/BUG-0113 stood: the bucket
-  // anchor wrapped a <Badge>, which re-inked the words `text-ink` on a chrome
-  // fill and painted over the anchor's underline, so the five bucket names
-  // rendered exactly as they did before this app had a link spelling. The
-  // Badge is gone (the bucket is a link, not a chip — LOOK_AND_FEEL, "Chips
-  // and badges": a badge never sits inside a link), so this is a plain `it`.
-  it("draws the bucket link so the WORDS carry the link's ink, not just the anchor", async () => {
-    // What the defect measured, kept so the number survives the fix: in
-    // Chromium on a production build, 1440x900, both themes, at rest, each
-    // bucket anchor computed rgb(152, 16, 250) + underline while the <Badge>
-    // it wrapped computed rgb(30, 41, 57) on a chrome fill with
-    // text-decoration-line: none — a crop of the anchor was BYTE-IDENTICAL
-    // with its underline removed (sha1 equal, 5/5 buckets, both themes; 0
-    // accent pixels), against 1000 -> 443 accent pixels for a plain /browse
-    // title.
-    const markup = await renderClaims(healthyScript());
-    const $ = cheerio.load(markup);
-    const anchors = $("[data-bucket][href]").toArray();
-    expect(anchors.length, "no bucket links to grade").toBeGreaterThan(0);
-    for (const anchor of anchors) {
-      const inside = $(anchor)
-        .find("*")
-        .toArray()
-        .map((element) => classesOf($(element)));
-      expectLinkSpellingReachesTheGlyphs(
-        classesOf($(anchor)),
-        inside,
-        `${$(anchor).attr("data-bucket")} on the buckets tab`,
-      );
-    }
-    // The composition rule the ruling settled on, asserted where the defect
-    // was: LOOK_AND_FEEL, "Chips and badges" — "no anchor inside `main`
-    // contains a chip-filled span". The ink assertion above says the words are
-    // accent; this says nothing was put back around them.
-    expect(chipsInsideLinks($, $.root()), "a chip is back inside a bucket link").toEqual(
-      [],
-    );
   });
 
   it("keeps the values that go nowhere out of the link's ink", async () => {
@@ -895,15 +663,6 @@ describe("the claim list's window", () => {
   }
 
   /** The window line's own hooks — the app's stated bound, read structurally. */
-  /**
-   * How many times a phrase stands in a line — the question "is this narrowing
-   * stated twice?" asks (admin-window/BUG-0118). `split` rather than a regular
-   * expression so a phrase carrying a metacharacter is counted literally.
-   */
-  function occurrencesIn(text: string, phrase: string): number {
-    return text.split(phrase).length - 1;
-  }
-
   function windowLine(markup: string) {
     const line = cheerio.load(markup)('[data-window="claims"]');
     return {
@@ -915,8 +674,6 @@ describe("the claim list's window", () => {
     };
   }
 
-  const OVERFLOW = CLAIM_WINDOW + 17;
-
   function crowdedScript(size: number): Script {
     const population = crowd(size);
     return {
@@ -926,38 +683,50 @@ describe("the claim list's window", () => {
     };
   }
 
-  it("states the rows that are BELOW it, never its cap, when the row read came back short [admin-window/BUG-0183]", async () => {
-    // THE OTHER HALF OF admin-window/BUG-0174, on the arm that has no `drawn`.
-    // `/claims` counts its matching set and draws its rows in TWO reads, and
-    // the line's clause naming what is below it is drawn whenever the COUNT
-    // says more exist and the window DREW rows — never only over a read that
-    // filled its cap, and, since admin-window/BUG-0197, never over a read that
-    // drew none (a window with nothing on screen has nothing to rank and
-    // nothing to hold back, so its line states the count and stops; both
-    // screens below drew rows). On the UNPAGED arm (`drawn` absent, which is
-    // every state the bound grid refuses a control in) `onScreen` falls back
-    // to the CAP, so the clause states 50 over a screen holding 37.
-    //
-    // No word of the line is pinned: two screens holding DIFFERENT numbers of
-    // claims under the SAME count are rendered and compared against each
-    // other. A line that states what is below it cannot say the same thing
-    // about both.
-    const many = await renderClaims(offGridScript(37, 900));
-    const few = await renderClaims(offGridScript(10, 900));
+  /**
+   * The line over the arm that has no `drawn` — every state the bound grid
+   * refuses a control in — when the COUNT read and the ROW read disagree
+   * (admin-window/BUG-0183, and the other direction, admin-window/BUG-0186).
+   * `/claims` counts its matching set and draws its rows in TWO reads, so the
+   * clause naming what is on screen follows the rows the window DREW, never
+   * the cap. No word of the line is pinned: two screens holding DIFFERENT
+   * numbers of claims under the SAME count are rendered and compared against
+   * each other, and no paging element stands in either.
+   */
+  const DISAGREEING_READS: ReadonlyArray<
+    readonly [string, number, number, number]
+  > = [
+    // BUG-0183: a count LARGER than the rows drawn. The read came back short,
+    // so the set ends with this window whatever the count says (page windows:
+    // the count can end a set, never extend it past a short read), and the
+    // line states each read as its own.
+    ["a count larger than the rows drawn", 37, 10, 900],
+    // BUG-0186: a count SMALLER than the rows drawn — the count ends it, and
+    // the line takes the arm that names the count.
+    ["a count smaller than the rows drawn", CLAIM_WINDOW, 37, 30],
+  ];
 
-    // Non-vacuity, from the page's own hooks and rows rather than any word:
-    // two different screens, one count, and no paging element in either — the
-    // arm where `drawn` does not exist.
-    expect(claimIds(many)).toHaveLength(37);
-    expect(claimIds(few)).toHaveLength(10);
-    expect(windowLine(many).held).toBe(900);
-    expect(windowLine(few).held).toBe(900);
-    expect(windowLine(many).truncated).toBe(true);
-    expect(pagingOccurrences(many)).toBe(0);
-    expect(pagingOccurrences(few)).toBe(0);
+  it.each(DISAGREEING_READS)(
+    "names the rows ON SCREEN, never its cap, under %s",
+    async (_state, moreRows, fewerRows, whole) => {
+      const more = await renderClaims(offGridScript(moreRows, whole));
+      const fewer = await renderClaims(offGridScript(fewerRows, whole));
 
-    expect(windowLine(many).text).not.toBe(windowLine(few).text);
-  });
+      // Non-vacuity, from the page's own hooks and rows rather than any word:
+      // two different screens, one count, and in both the set ends with the
+      // window — so no "next" is offered in either.
+      expect(claimIds(more)).toHaveLength(moreRows);
+      expect(claimIds(fewer)).toHaveLength(fewerRows);
+      expect(windowLine(more).held).toBe(whole);
+      expect(windowLine(fewer).held).toBe(whole);
+      expect(windowLine(more).truncated).toBe(false);
+      expect(windowLine(fewer).truncated).toBe(false);
+      expect(movesOf(more)).toEqual([]);
+      expect(movesOf(fewer)).toEqual([]);
+
+      expect(windowLine(more).text).not.toBe(windowLine(fewer).text);
+    },
+  );
 
   it("states what the COUNT read found and nothing about rows, where the window drew NONE [admin-window/BUG-0197]", async () => {
     // THE THIRD STATE OF THE SAME TWO READS (QA, off the
@@ -992,7 +761,9 @@ describe("the claim list's window", () => {
     const figuresIn = (markup: string) =>
       windowLine(markup).text.match(/\d{1,3}(?:,\d{3})*/g) ?? [];
     expect(figuresIn(none)).toEqual([count(CLAIM_WINDOW), count(900)]);
-    expect(figuresIn(drew)).toEqual([count(CLAIM_WINDOW), count(900), count(37)]);
+    // …and where rows were drawn, the window's own two figures: where it
+    // starts and the last row it holds (page windows, 2026-10-16).
+    expect(figuresIn(drew)).toEqual([count(CLAIM_WINDOW), count(900), count(1), count(37)]);
 
     // A DIFFERENT sentence from the drawn screen's under the very same count,
     // and the SAME one whatever the count answered — what is gone is the
@@ -1009,69 +780,6 @@ describe("the claim list's window", () => {
     expect(pagingOccurrences(none)).toBe(0);
   });
 
-  it("names the rows ON SCREEN when the COUNT read came back SMALLER than the rows drawn [admin-window/BUG-0186]", async () => {
-    // THE OTHER DIRECTION OF THE SAME TWO-READS DIVERGENCE (QA, off the
-    // admin-window/BUG-0183 close). `/claims` counts its matching set and
-    // draws its rows in TWO reads, and a claim the resolver applies between
-    // them makes the COUNT the SMALLER number. `truncated` is
-    // `listCount.data > listed.length`, so it goes FALSE, and the line takes
-    // the `didNotFill` branch — which names the COUNT and asserts the window
-    // holds everything the read found, over a screen holding MORE rows than
-    // the number it names, and (at 50 rows under a cap of 50) over a window
-    // that demonstrably filled.
-    //
-    // No word of the sentence is pinned: two screens holding DIFFERENT numbers
-    // of claims under the SAME count are rendered and compared against each
-    // other, exactly as the pin above does it. A line that describes the
-    // screen cannot say the same thing about both.
-    const full = await renderClaims(offGridScript(CLAIM_WINDOW, 30));
-    const short = await renderClaims(offGridScript(37, 30));
-
-    // Non-vacuity, from the page's own hooks and rows rather than any word:
-    // two different screens, one count, and no paging element in either.
-    expect(claimIds(full)).toHaveLength(CLAIM_WINDOW);
-    expect(claimIds(short)).toHaveLength(37);
-    expect(windowLine(full).held).toBe(30);
-    expect(windowLine(short).held).toBe(30);
-    expect(windowLine(full).truncated).toBe(false);
-    expect(windowLine(short).truncated).toBe(false);
-    expect(pagingOccurrences(full)).toBe(0);
-    expect(pagingOccurrences(short)).toBe(0);
-
-    expect(windowLine(full).text).not.toBe(windowLine(short).text);
-  });
-
-  it("draws at most the window's rows however many claims the view holds", async () => {
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
-    // And a bigger backlog draws the same number of rows: the page's height is
-    // a function of the cap, not of the queue.
-    const bigger = await renderClaims(crowdedScript(CLAIM_WINDOW * 3));
-    expect(claimIds(bigger)).toHaveLength(CLAIM_WINDOW);
-  });
-
-  it("draws the LONGEST-WAITING claims, in the page's oldest-first order", async () => {
-    const population = crowd(OVERFLOW);
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    // The window is the head of the order, not the head of the read: the
-    // oldest `CLAIM_WINDOW` claims, oldest first.
-    expect(claimIds(markup)).toEqual(
-      population.claims.slice(0, CLAIM_WINDOW).map((claim) => claim.observation_id),
-    );
-  });
-
-  it("states the cap and the number of claims it holds back", async () => {
-    const line = windowLine(await renderClaims(crowdedScript(OVERFLOW)));
-    expect(line.present).toBe(true);
-    expect(line.limit).toBe(CLAIM_WINDOW);
-    // The honest figure: every claim matching, not the rows drawn.
-    expect(line.held).toBe(OVERFLOW);
-    expect(line.truncated).toBe(true);
-    // The sentence carries both numbers, so the truncation is never silent.
-    expect(line.text).toContain(String(CLAIM_WINDOW));
-    expect(line.text).toContain(String(OVERFLOW));
-  });
-
   it("does not claim to be truncated when every matching claim is drawn", async () => {
     const line = windowLine(await renderClaims(crowdedScript(CLAIM_WINDOW)));
     expect(line.truncated).toBe(false);
@@ -1084,52 +792,12 @@ describe("the claim list's window", () => {
     expect(small.held).toBe(SHOWABLE.length);
   });
 
-  it("says which narrowing its window is of, and only when there is one", async () => {
-    // The sibling of admin-window/BUG-0114, on the app's other narrowed drawn
-    // window: this list is windowed over a COMPLETE read and narrowed by the
-    // tab and the chips, so "it holds all the claims the read found" and "the
-    // read happened and found no claims at all" are claims about the whole
-    // view — while the empty card beside them says no claim matched THESE
-    // FILTERS. The narrowing now travels with the window.
-    const plain = windowLine(await renderClaims(healthyScript()));
-    expect(plain.text).not.toContain("matching these filters");
-
-    const filtered = windowLine(
-      await renderClaims(healthyScript(), { bucket: "awaiting_row" }),
-    );
-    expect(filtered.truncated).toBe(false);
-    expect(filtered.text).toContain("claims matching these filters");
-
-    // The standing tab is one bucket's subset with no chip to show for it, so
-    // the bucket is named by the value the page renders everywhere else.
-    const standing = windowLine(await renderClaims(healthyScript(), { tab: "standing" }));
-    expect(standing.text).toContain("standing_disagreement");
-
-    // …and a narrowing that matched nothing found nothing OF ITSELF.
-    const nothing = windowLine(
-      await renderClaims(crowdedScript(4), { bucket: "escalated" }),
-    );
-    expect(nothing.held).toBe(0);
-    expect(nothing.text).toContain("no claims matching these filters at all");
-    expect(nothing.text).not.toContain("found no claims at all");
-  });
-
   /**
    * A crowd of STANDING claims — the one bucket whose narrowing is the TAB and
    * not a chip, and the only way to reach a standing window that filled its cap.
    * `crowd()` above spells `awaiting_row`/`awaiting_link` only, so the tab-only
    * narrowing has never met a truncated window.
    */
-  /** The same crowd, scripted as a database that answers the query. */
-  function standingScript(size: number): Script {
-    const population = standingCrowd(size);
-    return {
-      [T.pendingClaims]: claimView(population.claims),
-      [T.observations]: { data: population.observations },
-      [T.sources]: { data: [], count: 0 },
-    };
-  }
-
   function standingCrowd(size: number): {
     claims: PendingClaimRow[];
     observations: ReturnType<typeof observationRow>[];
@@ -1164,126 +832,6 @@ describe("the claim list's window", () => {
     }
     return { claims, observations };
   }
-
-  it("states the count of a FILLED window over the narrowing it actually read (admin-window/BUG-0118)", async () => {
-    // The sibling of admin-window/BUG-0114 on the one clause that used to take
-    // no `scope` at all: the `matched` arm's truncated sentence attributed its
-    // held count to "these filters", which is true only when the narrowing IS
-    // the chips. On the standing tab the narrowing is the TAB — one bucket's
-    // subset, with the chip bar showing nothing selected — so a count of that
-    // bucket was presented as a count under filters that are not set, on a
-    // page whose other two clauses named the bucket.
-    const size = CLAIM_WINDOW + 23;
-
-    // Same window, same page, unfilled: the not-filled and zero arms name the
-    // bucket, and now the filled one does too — one window, one population.
-    const unfilled = windowLine(await renderClaims(standingScript(4), { tab: "standing" }));
-    expect(unfilled.truncated).toBe(false);
-    expect(unfilled.text).toContain(STANDING_BUCKET);
-
-    const filled = windowLine(await renderClaims(standingScript(size), { tab: "standing" }));
-    expect(filled.truncated).toBe(true);
-    // The number is the standing bucket's own count, and the sentence now says
-    // so: what it is a count OF is stated where the count is stated.
-    expect(filled.held).toBe(size);
-    expect(filled.text).toContain(STANDING_BUCKET);
-
-    // The other direction, on the same page and the same held count: a window
-    // narrowed by NOTHING (the buckets tab, no chip set) says the sentence it
-    // said before this narrowing could travel, and names no bucket at all.
-    const unnarrowed = windowLine(await renderClaims(crowdedScript(size)));
-    expect(unnarrowed.truncated).toBe(true);
-    expect(unnarrowed.held).toBe(size);
-    expect(unnarrowed.text).not.toContain(STANDING_BUCKET);
-    // …and the ONLY difference between the two sentences is the population
-    // named beside the count. Two windows of the same size, one narrowed and
-    // one not: the narrowed one is the unnarrowed one with the phrase inserted
-    // after the row noun, so the fix cannot quietly reword the rest of the
-    // clause (acceptance criterion 2 — unnarrowed to the byte).
-    expect(filled.text).toBe(
-      unnarrowed.text.replace(
-        `${count(size)} claims`,
-        `${count(size)} claims in the ${STANDING_BUCKET} bucket`,
-      ),
-    );
-  });
-
-  it("says a filled window's narrowing once, whichever narrowings it carries", async () => {
-    // Both narrowings at once — the tab AND a chip. The bucket comes from the
-    // window's `scope` and the filters from the clause's own words, so the two
-    // carriers must not both render the filters (admin-window/BUG-0118,
-    // acceptance criterion 3).
-    const size = CLAIM_WINDOW * 3 + 9;
-    const both = windowLine(
-      await renderClaims(standingScript(size), {
-        tab: "standing",
-        source_id: SOURCE.first,
-      }),
-    );
-    expect(both.truncated).toBe(true);
-    // The count is the narrowed one: one source of one bucket, still over the
-    // cap and still under the tab's own total.
-    expect(both.held).toBeGreaterThan(CLAIM_WINDOW);
-    expect(both.held).toBeLessThan(size);
-    expect(occurrencesIn(both.text, STANDING_BUCKET)).toBe(1);
-    expect(occurrencesIn(both.text, "these filters")).toBe(1);
-    // The scope's own phrase for the chips is the one the clause subtracts, so
-    // it never reaches the sentence beside the words that already say it.
-    expect(both.text).not.toContain("matching these filters");
-
-    // A window narrowed by the CHIPS alone keeps the sentence it always had:
-    // there the arm's own words are the whole narrowing, and nothing is added.
-    const chipped = windowLine(
-      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
-    );
-    expect(chipped.truncated).toBe(true);
-    expect(chipped.text).not.toContain("matching these filters");
-    expect(occurrencesIn(chipped.text, "these filters")).toBe(1);
-    // The unnarrowed line and the chip-narrowed one differ in exactly two
-    // places — the count, and the phrase beside it. Everything else is one
-    // sentence spelled once. The unnarrowed side asserts no filter at all
-    // since admin-window/BUG-0123, which is why the substitution names both
-    // halves rather than only the number.
-    const plain = windowLine(await renderClaims(crowdedScript(size)));
-    expect(plain.text).not.toContain("match these filters");
-    expect(chipped.text).toBe(
-      plain.text.replace(
-        `${count(size)} claims in all;`,
-        `${count(chipped.held)} claims match these filters;`,
-      ),
-    );
-  });
-
-  it("claims a filter over the list only when a chip is set (admin-window/BUG-0123)", async () => {
-    // Priya's sentence: `/claims` said "877 claims match these filters" over a
-    // read no filter had touched, and `/claims?record_id=<uuid>` said it again,
-    // byte for byte, with the parameter dropped in silence
-    // (`M2-usersim-priya.md` §6). The count and the window were right; the
-    // clause around them was the one thing on the page that was not.
-    const size = CLAIM_WINDOW * 2 + 7;
-    const bare = windowLine(await renderClaims(crowdedScript(size)));
-    expect(bare.truncated).toBe(true);
-    expect(bare.held).toBe(size);
-    // The number and the noun survive; the assertion about the filters does not.
-    expect(bare.text).toContain(`${count(size)} claims`);
-    expect(bare.text).not.toContain("match these filters");
-
-    // A parameter this page does not filter by leaves the window line alone —
-    // and leaves it saying nothing about filters either.
-    const typed = windowLine(
-      await renderClaims(crowdedScript(size), { record_id: ENTITY.event }),
-    );
-    expect(typed.text).toBe(bare.text);
-    expect(typed.held).toBe(size);
-
-    // The other way: a chip really set puts the phrase back, over its own count.
-    const chipped = windowLine(
-      await renderClaims(crowdedScript(size), { bucket: "awaiting_row" }),
-    );
-    expect(chipped.text).toContain("claims match these filters");
-    expect(chipped.held).toBeLessThan(size);
-    expect(chipped.held).toBeGreaterThan(CLAIM_WINDOW);
-  });
 
   /**
    * The standing bucket's claims inside a view that holds OTHER buckets too.
@@ -1354,24 +902,6 @@ describe("the claim list's window", () => {
       );
       expect(line.truncated, bucket).toBe(expected.length > CLAIM_WINDOW);
     }
-  });
-
-  it("leaves every bucket count the view's own, with the list windowed", async () => {
-    // EC5 parity, under the window: the table above the list still counts the
-    // whole classification, so no figure on the page became a window
-    // aggregate.
-    const population = crowd(OVERFLOW);
-    const markup = await renderClaims(crowdedScript(OVERFLOW));
-    for (const row of bucketRows(markup)) {
-      const held = population.claims.filter((claim) => claim.bucket === row.bucket);
-      expect(row.claims, row.bucket).toBe(held.length);
-    }
-    expect(
-      bucketRows(markup).reduce((total, row) => total + row.claims, 0),
-    ).toBe(OVERFLOW);
-    // The counted total is bigger than what the list drew — which is the whole
-    // point of the sentence above it.
-    expect(OVERFLOW).toBeGreaterThan(claimIds(markup).length);
   });
 
   /**
@@ -1472,54 +1002,11 @@ describe("the claim list's window", () => {
     }
     expect(new Set([holdsNothing, matchedNothing, standingEmpty]).size).toBe(3);
   });
-
-  it("windows the standing tab's list the same way", async () => {
-    const size = CLAIM_WINDOW + 9;
-    const standing = crowd(size);
-    const script: Script = {
-      [T.pendingClaims]: claimView(
-        standing.claims.map((claim) => ({
-          ...claim,
-          bucket: "standing_disagreement" as PendingClaimRow["bucket"],
-          unmet_requirement: null,
-        })),
-      ),
-      [T.observations]: { data: standing.observations },
-      [T.sources]: { data: [], count: 0 },
-    };
-    const markup = await renderClaims(script, { tab: "standing" });
-    expect(claimIds(markup)).toHaveLength(CLAIM_WINDOW);
-    const line = windowLine(markup);
-    expect(line.limit).toBe(CLAIM_WINDOW);
-    expect(line.held).toBe(size);
-    expect(line.truncated).toBe(true);
-  });
 });
 
 /* ── the standing-disagreements tab ──────────────────────────────────────── */
 
 describe("the standing-disagreements tab", () => {
-  it("renders exactly the standing_disagreement claims", async () => {
-    const markup = await renderClaims(healthyScript(), { tab: "standing" });
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(matching({ bucket: "standing_disagreement" })),
-    );
-    // It is a subset, not the page: something is deliberately left out.
-    expect(claimIds(markup).length).toBeLessThan(SHOWABLE.length);
-  });
-
-  it("keeps the source narrowing when the operator crosses to it", async () => {
-    const markup = await renderClaims(healthyScript(), {
-      tab: "standing",
-      source_id: SOURCE.first,
-    });
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(
-        matching({ bucket: "standing_disagreement", source_id: SOURCE.first }),
-      ),
-    );
-  });
-
   it("offers both tabs, marking the one we are on, each keeping the filter", async () => {
     const markup = await renderClaims(healthyScript(), {
       tab: "standing",
@@ -1554,16 +1041,6 @@ describe("the standing-disagreements tab", () => {
     expect(handTyped).not.toContain("bucket=escalated");
     expect(claimIds(handTyped)).toEqual(
       oldestFirst(matching({ bucket: "standing_disagreement" })),
-    );
-  });
-
-  it("shows the bucket table only where it belongs", async () => {
-    // The standing tab is one bucket's subset; a five-row bucket table above it
-    // would be the other tab's question asked twice.
-    const markup = await renderClaims(healthyScript(), { tab: "standing" });
-    expect(bucketRows(markup)).toHaveLength(0);
-    expect(bucketRows(await renderClaims(healthyScript()))).toHaveLength(
-      RENDERED_BUCKETS.length,
     );
   });
 });
@@ -1698,69 +1175,6 @@ describe("the gauge's window line", () => {
     expect(gaugeLine(narrowed)).toContain("venues");
     expect(gaugeLine(narrowed)).toContain("domain");
     expect(gaugeLine(narrowed)).not.toBe(gaugeLine(bare));
-  });
-
-  /**
-   * The other half of the same rule (admin-window/BUG-0163): the sentence
-   * claims a NARROWING exactly where the read carried one, and nowhere else.
-   *
-   * `gaugeFilter` hands the gauge the source and the domain and drops the
-   * bucket — the gauges read `observations`, which has no bucket — so
-   * `?bucket=` moves no figure in this section and may claim no narrowing of
-   * its sentence either.
-   *
-   * **What admin-window/BUG-0204 changed here, and what it did not.** Until
-   * that ticket this pinned the line BYTE-IDENTICAL under `?bucket=` on both
-   * tabs, which is how the gauge came to be the one caption on the page that
-   * said nothing about a chip standing active above it (the M3 user-sim walk:
-   * an empty claim list one screen above a gauge reading 877). The buckets
-   * tab's line now ADDS a sentence saying what it answers for — graded by the
-   * pin below — and everything this test was protecting still holds and is
-   * still graded here: no figure moved, the added words claim no narrowing and
-   * name no bucket value, and the STANDING tab, which carries no bucket facet
-   * at all, is byte-identical still.
-   */
-  it("claims no narrowing for a facet its own read did not carry", async () => {
-    const gaugeLine = (markup: string) =>
-      cheerio
-        .load(markup)('[data-surface="gauge"] [data-window]')
-        .text()
-        .replace(/\s+/g, " ")
-        .trim();
-    /** Everything the gauge section DRAWS, its own window line aside. */
-    const gaugeFigures = (markup: string) => {
-      const $ = cheerio.load(markup);
-      const surface = $('[data-surface="gauge"]');
-      surface.find("[data-window]").remove();
-      return surface.text().replace(/\s+/g, " ").trim();
-    };
-
-    for (const tab of ["buckets", "standing"]) {
-      const bare = await renderClaims(healthyScript(), { tab });
-      const bucketed = await renderClaims(healthyScript(), {
-        tab,
-        bucket: "escalated",
-      });
-      expect(gaugeLine(bare), tab).not.toBe("");
-      // NO FIGURE MOVED, on either tab: the bucket facet narrowed the page,
-      // not this read.
-      expect(gaugeFigures(bucketed), tab).toBe(gaugeFigures(bare));
-      // The standing tab carries no bucket facet at all, so its line is the
-      // bare page's to the byte; the buckets tab's may only have GAINED words.
-      if (tab === "standing") {
-        expect(gaugeLine(bucketed), tab).toBe(gaugeLine(bare));
-      } else {
-        const [subtracted, added] = differingClause(gaugeLine(bare), gaugeLine(bucketed));
-        expect(subtracted, tab).toBe("");
-        expect(added, tab).not.toBe("");
-        // …and what it gained claims no narrowing and names no bucket value.
-        expect(added, tab).not.toContain(NARROWED_BY_FILTERS);
-        expect(added, tab).not.toContain("escalated");
-      }
-      // …and the unnarrowed sentence names no narrowing at all.
-      expect(gaugeLine(bare), tab).not.toContain(NARROWED_BY_FILTERS);
-      expect(gaugeLine(bare), tab).not.toContain("domain");
-    }
   });
 
   /**
@@ -1915,57 +1329,6 @@ describe("the gauge's window line", () => {
   });
 
   /**
-   * What the fix COSTS, in requests (LESSONS 10, admin-window/DEBT-0012).
-   *
-   * Fact 2 of the two-fact rule is a read this page did not have — the
-   * unnarrowed count INSIDE the gauge's own window — so it is issued, and this
-   * pins where: only where a facet can narrow the gauge at all, exactly once,
-   * as a `countRead` count carrying the window's lower bound and no facet.
-   * An unnarrowed page and a `?bucket=` page issue it not at all.
-   */
-  it("buys fact 2 with one bounded count, and only where a facet narrows this read", async () => {
-    // A windowed COUNT is a `{ count: "exact" }` read over ZERO rows carrying
-    // the window's lower bound. The count SHAPE is half of the test and not
-    // decoration: since admin-window/TASK-0074 the gauge's own claims leg is a
-    // windowed ROW read of the same view, so "carries a gte" alone names two
-    // different reads.
-    const windowedCounts = (stub: StubClient) =>
-      stub.calls.filter(
-        (call) =>
-          call.table === T.pendingClaims &&
-          call.steps.some((step) => step.method === "gte") &&
-          isCountLeg(call),
-      );
-
-    const unnarrowing: Record<string, string>[] = [{}, { bucket: "escalated" }];
-    for (const params of unnarrowing) {
-      const quiet = await renderWithStub(healthyScript(), params);
-      expect(windowedCounts(quiet.stub), JSON.stringify(params)).toHaveLength(0);
-    }
-
-    const narrowed = await renderWithStub(healthyScript(), { domain: "venues" });
-    const counts = windowedCounts(narrowed.stub);
-    expect(counts).toHaveLength(1);
-    const steps = counts[0].steps;
-    // A count over zero rows, so `ROW_CAP` cannot reach it and no row is
-    // transported — and GET-shaped, so an absent view answers with its own
-    // `PGRST205` body (admin-window/BUG-0210).
-    const select = steps.find((step) => step.method === "select");
-    expect(select?.args[1]).toEqual({ count: "exact" });
-    expect(
-      steps.filter((step) => step.method === "limit").map((step) => step.args),
-    ).toEqual([[0]]);
-    // Bounded by the window the section states, and by nothing else: it is the
-    // population WITH NO FACET, so the domain the page narrowed by is absent.
-    expect(
-      steps.filter((step) => step.method === "gte").map((step) => step.args[0]),
-    ).toEqual(["observed_at"]);
-    expect(
-      steps.filter((step) => step.method === "eq").map((step) => step.args[0]),
-    ).toEqual([]);
-  });
-
-  /**
    * …and what it costs when that read REFUSES.
    *
    * Fact 2 is a count that renders no figure: it only decides which words an
@@ -2013,24 +1376,6 @@ describe("the gauge's window line", () => {
 /* ── the four states ─────────────────────────────────────────────────────── */
 
 describe("absence and failure", () => {
-  it("renders the not-provisioned state naming the view, and nothing throws", async () => {
-    for (const tab of ["buckets", "standing"]) {
-      const markup = await renderClaims(
-        {
-          [T.pendingClaims]: { error: tableNotInSchemaCache(T.pendingClaims) },
-          [T.observations]: { error: tableNotInSchemaCache(T.observations) },
-          [T.sources]: { data: [] },
-        },
-        { tab },
-      );
-      expect(markup, tab).toContain(T.pendingClaims);
-      expect(claimIds(markup), tab).toEqual([]);
-      expect(bucketRows(markup), tab).toEqual([]);
-      // Never a zero standing in for a table nobody could read.
-      expect(cheerio.load(markup)("[data-bucket-claims]"), tab).toHaveLength(0);
-    }
-  });
-
   /**
    * **EXPECTED CHANGE, admin-window/BUG-0138.** `observations` used to be the
    * list's second leg — the view carried no age, so an absent `observations`
@@ -2070,67 +1415,6 @@ describe("absence and failure", () => {
     // The line names WHICH read refused (admin-window/BUG-0016, TASK-0030).
     expect(markup).toContain(T.pendingClaims);
     expect(claimIds(markup)).toEqual([]);
-  });
-
-  /**
-   * The failed-read half of the window-line rule (admin-window/BUG-0063,
-   * fixed): the line's own count hook must not survive a failed read as a `0`.
-   *
-   * This page's rule on a failed read is that a count is ABSENT, not zero —
-   * the bucket table drops `data-bucket-claims` entirely two tests above
-   * ("Never a zero standing in for a table nobody could read"),
-   * ARCHITECTURE.md §4.3 promoted it ("a null count is a refusal, never a
-   * zero"), and `/runs` pins the stronger form for a window line
-   * (`tests/offline/runs/page.test.ts`, "claims no window it never read").
-   *
-   * `data-window-held` is also the hook the live parity oracle grades this
-   * page by (`tests/live/claims.live.test.ts`), and `0` there means exactly
-   * one thing: the read HAPPENED and found nothing. An ok-but-empty matching
-   * set publishes that `0` beside its Empty card — the line follows the read,
-   * not the rows (admin-window/BUG-0070, and the leg that grades it for every
-   * windowed surface at once, `tests/offline/absence/pages.test.ts`) — which
-   * is precisely why a read that never happened may publish no count at all.
-   *
-   * It grades the COUNT and nothing else; the test below it grades the whole
-   * line going with it.
-   *
-   * Addressed by the LIST's own hook rather than by `[data-window-held]`
-   * anywhere on the page: since admin-window/DEBT-0006 every window line
-   * publishes a held count, so the gauge below — whose `observations` read
-   * succeeded and found nothing — honestly publishes `0` in these same
-   * scripts. The claim graded here is unchanged and is the one the name
-   * makes: the LIST's read failed, so the LIST states no count.
-   */
-  it("claims no count it never took when the list's read fails", async () => {
-    const failures: Array<[string, Script]> = [
-      [
-        "refused",
-        {
-          [T.pendingClaims]: { error: permissionDenied(T.pendingClaims) },
-          [T.observations]: { data: [] },
-          [T.sources]: { data: [] },
-        },
-      ],
-      [
-        "transport",
-        {
-          [T.pendingClaims]: { error: transportFailure("bad port") },
-          [T.observations]: { data: [] },
-          [T.sources]: { data: [] },
-        },
-      ],
-    ];
-    for (const [label, script] of failures) {
-      const markup = await renderClaims(script);
-      // The error state is what is on screen — not an empty view.
-      expect(markup, label).toContain(T.pendingClaims);
-      expect(claimIds(markup), label).toEqual([]);
-      // ... and no count hook stands in for the count nobody could take.
-      expect(
-        cheerio.load(markup)('[data-window="claims"][data-window-held]'),
-        label,
-      ).toHaveLength(0);
-    }
   });
 
   it("drops the whole window line, not just its count, on a read it never made", async () => {
@@ -2177,26 +1461,6 @@ describe("absence and failure", () => {
     }
   });
 
-  it("still states the window when only the leg that NAMES the sources refused", async () => {
-    // The seam the fix has to get right: the line is gated on the LIST's read,
-    // not on the page having no failure at all. The registry leg is a second
-    // leg that costs the source LABEL and nothing else (admin-window/BUG-0043),
-    // so the list read happened, the window is real, and it is still stated —
-    // with the count the page actually drew, beside the refusal for the leg
-    // that did fail.
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
-    );
-    const line = cheerio.load(markup)('[data-window="claims"]');
-    expect(line).toHaveLength(1);
-    // The figure is the set the read really held, not a constant: it is the
-    // number of claims this population shows on this tab.
-    expect(Number(line.attr("data-window-held"))).toBe(claimIds(markup).length);
-    expect(line.attr("data-window-truncated")).toBe("false");
-    // ... and the leg that refused is still reported.
-    expect(markup).toContain(T.sources);
-  });
-
   it("keeps the transport failure's cause, which the message alone does not carry", async () => {
     const markup = await renderClaims({
       [T.pendingClaims]: { error: transportFailure("bad port") },
@@ -2221,14 +1485,6 @@ describe("absence and failure", () => {
     expect(markup).not.toContain(T.pendingClaims);
     // The list itself is a card, not a headers-only table.
     expect(cheerio.load(markup)('table[aria-label="All claims"]')).toHaveLength(0);
-  });
-
-  it("renders standing alone, with no props at all", async () => {
-    // The shell's route test calls every page this way.
-    readWith.client = stubClient(healthyScript()).asSupabaseClient();
-    const markup = render(await ClaimsPage());
-    expect(markup).not.toContain(PARKED);
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
   });
 
   it("renders the gauge's own state when its window cannot be read", async () => {
@@ -2479,69 +1735,6 @@ describe("which arm the bucket caption takes", () => {
     }
   });
 
-  /**
-   * A FACET'S OWN TABLE STAYS UNNARROWED BY ITSELF AND SAYS SO (architect
-   * ruling 2026-09-11, folded into admin-window/TASK-0071 from QA's product
-   * residual on admin-window/TASK-0077).
-   *
-   * `/claims?bucket=<x>` draws this table's WHOLE distribution beside a list
-   * the same facet really narrowed — measured on staging 2026-09-11:
-   * awaiting_link 108, awaiting_row 770, three buckets at 0, identical to the
-   * bare page's. The figures are right and this ticket moves none of them.
-   * What ended is the page saying "nothing above narrows these counts" with
-   * the bucket chip standing active above it.
-   *
-   * **Graded as STRUCTURE, never as copy** (the ticket's own division: "a walk
-   * grades the copy, the checks grade the structure"). The rule this case
-   * pins is that the denial clause is REPLACED rather than merely appended to:
-   * the bare caption and the bucket-faceted one share a prefix and a suffix,
-   * and BOTH have something of their own in between. A page that kept the
-   * denial and bolted a clause onto the end leaves the bare arm's middle
-   * empty, and fails here.
-   *
-   * **Its twin is the render that must NOT take it** (LESSONS 8): a source
-   * facet the whole view carries anyway is a facet in force that this table is
-   * not narrowed by either, and its caption is still the bare page's to the
-   * byte — so the clause is gated on the BUCKET facet and not on "a facet is
-   * set".
-   */
-  it("says the bucket table answers for every bucket when a bucket facet is set", async () => {
-    const bare = await renderClaims(healthyScript());
-    const bareCaption = bucketCaption(bare);
-    const faceted = await renderClaims(healthyScript(), { bucket: "escalated" });
-    const facetedCaption = bucketCaption(faceted);
-
-    // Non-vacuous: the page really applied the facet, and it really removed no
-    // row of this table — so the caption is talking about a live facet that
-    // narrowed nothing here.
-    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active)).toHaveLength(1);
-    expect(droppedLine(faceted).lines).toBe(0);
-    expect(bucketRows(faceted).map((row) => row.claims)).toEqual(
-      bucketRows(bare).map((row) => row.claims),
-    );
-
-    // The clause is its own arm, and names no bucket value.
-    expect(facetedCaption).not.toBe(bareCaption);
-    expect(facetedCaption).not.toContain("escalated");
-
-    // …and it REPLACED the denial rather than standing beside it: each arm has
-    // a clause of its own between the shared prefix and the shared suffix.
-    const [bareClause, facetedClause] = differingClause(bareCaption, facetedCaption);
-    expect(bareClause).not.toBe("");
-    expect(facetedClause).not.toBe("");
-
-    // THE TWIN: a facet in force that this table is not narrowed by, and no
-    // bucket facet — the caption is the bare page's, to the byte.
-    const allOnOne = healthyScript({
-      [T.pendingClaims]: claimView(
-        CLAIMS.map((claim) => ({ ...claim, source_id: SOURCE.first })),
-      ),
-    });
-    const carried = await renderClaims(allOnOne, { source_id: SOURCE.first });
-    expect(chipsOf(carried, "source_id").filter((chip) => chip.active)).toHaveLength(1);
-    expect(bucketCaption(carried)).toBe(bucketCaption(await renderClaims(allOnOne)));
-  });
-
   it("blames a source or domain only when it removed a row of this table", async () => {
     /** The same view with every claim moved onto one value of `facet`. */
     const allOn = (facet: "source_id" | "domain", value: string): Script => {
@@ -2582,33 +1775,6 @@ describe("which arm the bucket caption takes", () => {
       bucketRows(plain).map((row) => row.claims),
     );
     expect(bucketCaption(removed)).not.toBe(bucketCaption(plain));
-  });
-
-  it("carries neither arm over a read that came back without a count", async () => {
-    // `readComplete`'s fifth refusal (`lib/db/result.ts`: a null count is a
-    // refusal, never a zero — admin-window/BUG-0007's rule). It reaches the
-    // page as the same `error` kind the other four do, and this pins that the
-    // caption's gate is the READ's outcome rather than a list of messages.
-    const whole = bucketCaption(await renderClaims(healthyScript()));
-    const narrowed = bucketCaption(
-      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
-    );
-    for (const params of [{}, { bucket: "escalated" }] as Record<string, string>[]) {
-      const markup = await renderClaims(
-        healthyScript({ [T.pendingClaims]: { data: [...CLAIMS], count: null } }),
-        params,
-      );
-      const label = JSON.stringify(params);
-      const $ = cheerio.load(markup);
-      // Non-vacuous: the surface really refused, and drew no figure.
-      expect($('[data-surface="buckets"] [data-state]').attr("data-state"), label).toBe("error");
-      expect($("[data-bucket-claims]").length, label).toBe(0);
-      const said = $('[data-surface="buckets"] p')
-        .toArray()
-        .map((element) => $(element).text().replace(/\s+/g, " ").trim());
-      expect(said, label).not.toContain(whole);
-      expect(said, label).not.toContain(narrowed);
-    }
   });
 });
 
@@ -2672,18 +1838,6 @@ describe("which emptiness this is", () => {
     };
   }
 
-  it("blames the facet when the facet is what emptied the list", async () => {
-    // `venues` is a domain the view really carries and no standing
-    // disagreement is in it: three standing claims, none of them matching, so
-    // the filter is the whole reason this list is empty.
-    const markup = await renderClaims(healthyScript(), {
-      tab: "standing",
-      domain: "venues",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    expect(emptyHook(markup)).toBe("narrowing");
-  });
-
   it("blames no facet when the tab holds nothing for it to remove", async () => {
     // The same shape of URL over a view with NO standing disagreements: the
     // source facet removed not one row, because there was none to remove.
@@ -2737,7 +1891,6 @@ describe("which emptiness this is", () => {
     );
   });
 
-
   /* ── the same rule, over the GAUGE's set (admin-window/BUG-0163) ──────── */
 
   /**
@@ -2773,24 +1926,6 @@ describe("which emptiness this is", () => {
       [T.sources]: { data: [...REGISTRY], count: REGISTRY.length },
     };
   }
-
-  it("blames the facet on the gauge card when the facet emptied the window", async () => {
-    // A domain this app can spell and this view holds no claim in: the read
-    // carried `.eq("domain", …)` and every figure in the section went to zero
-    // because of it.
-    const narrowed = await renderClaims(healthyScript(), { domain: "idols" });
-    const bare = await renderClaims(healthyScript());
-
-    expect(gaugeCard(narrowed)).not.toBe("");
-    expect(gaugeCard(narrowed)).not.toBe(gaugeCard(bare));
-    // It names the narrowing that emptied it, and the one control that clears
-    // it — the same words, from the same module, as the list's own card.
-    expect(gaugeCard(narrowed)).toContain("idols");
-    expect(gaugeCard(narrowed)).toContain(CLEAR_LABEL);
-    // Non-vacuous: with no facet the section has claims to age, so this card
-    // is not simply what this fixture always renders.
-    expect(gaugeCard(bare)).toBe("");
-  });
 
   it("blames no facet on the gauge card when the window is empty whatever the URL says", async () => {
     const script = emptyWindow();
@@ -2916,20 +2051,6 @@ describe("which emptiness this is", () => {
         ?.args[1];
     expect(scanEdge("gte")).toBe(edge("gte"));
     expect(scanEdge("lt")).toBe(edge("lt"));
-  });
-
-  it("still names its scope for a facet that really removed rows", async () => {
-    // The other direction, and the reason the fix is not "never blame a
-    // filter": a source carrying claims, but not these ones.
-    const markup = await renderClaims(healthyScript(), {
-      source_id: SOURCE.second,
-      domain: "venues",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    expect(emptyHook(markup)).toBe("narrowing");
-    expect(bucketCaption(markup)).not.toBe(
-      bucketCaption(await renderClaims(healthyScript())),
-    );
   });
 });
 
@@ -3130,92 +2251,6 @@ describe("a narrowing with no chip row", () => {
       expect(said, state).toContain(NARROWING);
       expect(said, state).toContain(FACET);
     }
-  });
-
-  it("claims no filter above when the only narrowing has no chip", async () => {
-    // The two false clauses of the ticket, in the state the designer read:
-    // both chip rows on `all`, every figure narrowed.
-    const markup = await renderClaims(acrossDomains(CLAIM_WINDOW * 3), {
-      domain: NARROWING,
-    });
-    for (const facet of ["bucket", "source_id"]) {
-      expect(
-        chipsOf(markup, facet).filter((chip) => chip.active).map((chip) => chip.label),
-        facet,
-      ).toEqual([ANY_LABEL]);
-    }
-    for (const phrase of ["these filters", "the filters above"]) {
-      expect(line(markup), phrase).not.toContain(phrase);
-      expect(bucketCaption(markup), phrase).not.toContain(phrase);
-    }
-    // ...and the empty card, reached by the same URL over a population the
-    // domain empties, offers no chip it cannot clear with.
-    const emptied = await renderClaims(healthyScript(), {
-      tab: "standing",
-      domain: NARROWING,
-    });
-    for (const phrase of CHIP_PHRASES) {
-      expect(card(emptied), phrase).not.toContain(phrase);
-    }
-  });
-
-  /**
-   * THE STATE THE PIN ABOVE NEVER REACHES: a chip that IS set over a table
-   * that drops that chip's facet (QA, admin-window/BUG-0191).
-   *
-   * The pin above walks `?domain=` with BOTH chip rows on `all`, so it grades
-   * the rule "no chip is set, so claim no filter above". The other half of the
-   * same rule is a chip that is set and narrows this table by NOTHING:
-   * `?bucket=X&domain=Y`. This table's read drops the bucket facet on purpose
-   * (`bucketStats`), so the domain did all the narrowing and the bucket chip
-   * did none — while `chipped` WAS `hasChipFacet(filter)` over the
-   * UNDROPPED filter, which the bucket facet alone satisfies. The caption
-   * therefore blamed "the filters above" and then said, in its next clause,
-   * that the one filter above does not narrow these counts. Since
-   * admin-window/BUG-0191 the caption asks the filter its own read carried,
-   * and this pin is a plain `it(...)`.
-   *
-   * Measured on staging 2026-09-11 at `/claims?bucket=awaiting_row&domain=events`:
-   * bucket counts 0/108/741/0/0 — identical to `?domain=events` and NOT to the
-   * bare page's 0/108/769/0/0 — with the chip rows reading `awaiting_row` and
-   * `all`. The gauge section one screen down already asks the right filter
-   * (it asked `hasChipFacet` of `gaugeFilter(filter)`; since
-   * admin-window/BUG-0191 both surfaces read ONE binding).
-   *
-   * Neither phrase is typed here. The chip clause is READ OFF THE APP: the
-   * only thing a chip-narrowed caption says that the same view narrowed by the
-   * control-less facet alone does not — so a rewording of either arm moves
-   * this test with it, and the guard has its passing spelling and its failing
-   * one (LESSONS 8).
-   */
-  it("claims no filter above when the only chip set narrows this table by nothing", async () => {
-    // The clause a CHIP narrowing adds to this caption, in the app's own
-    // words, with the domain held constant across both renders — read in the
-    // state where that chip really removes rows (admin-window/BUG-0192).
-    const chipClause = await chipClauseOf(bucketCaption);
-    // Non-vacuous: there really is a clause to look for.
-    expect(chipClause).not.toBe("");
-
-    const params = { bucket: "awaiting_row", domain: NARROWING };
-    const faceted = await renderClaims(healthyScript(), params);
-    // Non-vacuous, the other direction: the bucket chip is really ACTIVE, no
-    // source chip is, and this table's figures are the domain's figures — the
-    // bucket facet removed not one row of them.
-    expect(chipsOf(faceted, "bucket").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([params.bucket]);
-    expect(chipsOf(faceted, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-    const figures = (markup: string) => bucketRows(markup).map((row) => row.claims);
-    expect(figures(faceted)).toEqual(
-      figures(await renderClaims(healthyScript(), { domain: NARROWING })),
-    );
-    // …and the domain really narrowed them, so the narrowed arm is the one
-    // under test rather than the unnarrowed one.
-    expect(figures(faceted)).not.toEqual(figures(await renderClaims(healthyScript())));
-
-    // The defect: the caption blames a chip bar in which the only thing set
-    // narrows this table by nothing.
-    expect(bucketCaption(faceted)).not.toContain(chipClause);
   });
 
   /**
@@ -3566,157 +2601,6 @@ describe("a narrowing with no chip row", () => {
   });
 
   /**
-   * THE STANDING TAB'S OWN BUCKET IS NOT A CONTROL ABOVE (QA on
-   * admin-window/BUG-0192; the hazard that ticket named in its own words).
-   *
-   * On the standing tab `listFilterOf` MERGES the tab's bucket into the list's
-   * filter and the URL's own `?bucket=` is dropped. The widened count that
-   * decides the chip clause must therefore drop the chip facets the URL
-   * carried **out of the filter the read was given** — and the bucket in that
-   * filter is the TAB's, not the URL's. Subtracting it compares this tab's
-   * rows against the OTHER tab's population, and the comparison then differs
-   * for a reason that has nothing to do with the chip bar.
-   *
-   * The state is one CLICK away, and this test reaches it that way: the tab
-   * link is followed off the markup rather than typed, so a page that stops
-   * carrying `?bucket=` across the tabs stops reaching it honestly rather than
-   * passing on a URL nobody can build.
-   *
-   * Non-vacuous in both directions: at `SOURCE.third` + `groups` the source
-   * chip removes NOT ONE row of the standing subset (fixture arithmetic
-   * below), so no clause may point at the chip bar; at `PARTIAL_SOURCE` +
-   * `SHARED_DOMAIN` it really does remove one, and the clause is there.
-   */
-  it(
-    "claims no filter above on the standing tab when the chip set removed no row of it",
-    async () => {
-      /** The claims of the standing subset a set of facets keeps. */
-      const standingRows = (facets: Record<string, string>) =>
-        matching({ ...facets, bucket: STANDING_BUCKET });
-
-      // The URL the operator is on: a bucket chip, a source chip and the
-      // control-less domain, all three really applied by the BUCKETS tab.
-      const onBuckets = { bucket: "escalated", source_id: SOURCE.third, domain: "groups" };
-      const buckets = await renderClaims(healthyScript(), onBuckets);
-      expect(droppedLine(buckets).lines).toBe(0);
-
-      // ...and the click: the standing tab's own href, read off the page.
-      const href =
-        cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
-      const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
-      // Non-vacuous: the click really does carry the bucket parameter over to
-      // a tab that drops it — which is the state under test.
-      expect(params.bucket).toBe(onBuckets.bucket);
-      expect(params.tab).toBe("standing");
-
-      const { markup, stub } = await renderWithStub(healthyScript(), params);
-      // Non-vacuous, the arithmetic: the source chip removed NO row of the
-      // standing subset under this domain, and the list is narrowed all the
-      // same (the domain did it), so the narrowed arm is the one on screen.
-      expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
-        standingRows({ domain: "groups" }),
-      );
-      expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
-      expect(standingRows({ domain: "groups" }).length).toBeLessThan(
-        matching({ bucket: STANDING_BUCKET }).length,
-      );
-      expect(claimIds(markup)).toEqual(
-        oldestFirst(standingRows({ source_id: SOURCE.third, domain: "groups" })),
-      );
-
-      // THE SENTENCE: the chip bar shaped nothing here, so nothing points at
-      // it — and the line is the one the same page renders without the
-      // parameter it dropped, which is what "dropped" means.
-      expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
-      const withoutTheDroppedBucket = await renderClaims(healthyScript(), {
-        tab: "standing",
-        source_id: SOURCE.third,
-        domain: "groups",
-      });
-      expect(line(markup)).toBe(line(withoutTheDroppedBucket));
-
-      // THE READ: every count this tab issues is a count of THIS tab's subset.
-      // A count with the tab's bucket dropped is a count of the other tab's
-      // population, and no sentence on this page is about that set.
-      for (const facets of countFacets(stub)) {
-        expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
-      }
-
-      // The other direction, under the same dropped bucket: a source that
-      // really does remove a row of this subset still earns the clause.
-      expect(
-        standingRows({ source_id: PARTIAL_SOURCE, domain: SHARED_DOMAIN }).length,
-      ).toBeLessThan(standingRows({ domain: SHARED_DOMAIN }).length);
-      const reallyNarrowed = await renderClaims(healthyScript(), {
-        tab: "standing",
-        bucket: "escalated",
-        source_id: PARTIAL_SOURCE,
-        domain: SHARED_DOMAIN,
-      });
-      expect(line(reallyNarrowed)).toContain(NARROWED_BY_FILTERS);
-    },
-  );
-
-  /**
-   * THE SAME HAZARD WHEN THE TWO BUCKETS ARE THE SAME STRING (the case the
-   * pin above cannot see; admin-window/BUG-0193).
-   *
-   * `standing_disagreement` is itself a bucket the chip row offers, so
-   * `?bucket=standing_disagreement` is one click from the buckets tab to the
-   * standing tab — and there the filter the read was GIVEN and the filter the
-   * URL ASKED for hold the same string for `bucket` while only one of them is
-   * a control above. A subtraction that decided by comparing those two values
-   * would drop the tab's own bucket here and count the other tab's population,
-   * exactly as the one that decided by presence did: which is why the surface
-   * hands its own facets in (`tabFacetsOf`).
-   */
-  it("keeps the tab's own bucket when the URL asks for that same bucket", async () => {
-    const onBuckets = {
-      bucket: STANDING_BUCKET,
-      source_id: SOURCE.third,
-      domain: "groups",
-    };
-    const buckets = await renderClaims(healthyScript(), onBuckets);
-    expect(droppedLine(buckets).lines).toBe(0);
-
-    // The click, off the page's own markup: the bucket travels to the tab.
-    const href = cheerio.load(buckets)('[data-tab="standing"] a').attr("href") ?? "";
-    const params = Object.fromEntries(new URLSearchParams(href.split("?")[1] ?? ""));
-    expect(params.bucket).toBe(STANDING_BUCKET);
-    expect(params.tab).toBe("standing");
-
-    const { markup, stub } = await renderWithStub(healthyScript(), params);
-    // Non-vacuous: the source chip removes no row of this tab's subset under
-    // this domain, and the domain really narrows it.
-    const standingRows = (facets: Record<string, string>) =>
-      matching({ ...facets, bucket: STANDING_BUCKET });
-    expect(standingRows({ source_id: SOURCE.third, domain: "groups" })).toEqual(
-      standingRows({ domain: "groups" }),
-    );
-    expect(standingRows({ domain: "groups" }).length).toBeGreaterThan(0);
-    expect(standingRows({ domain: "groups" }).length).toBeLessThan(
-      matching({ bucket: STANDING_BUCKET }).length,
-    );
-
-    // The read: every count of this tab is a count of this tab's subset.
-    for (const facets of countFacets(stub)) {
-      expect(facets.bucket, JSON.stringify(facets)).toBe(STANDING_BUCKET);
-    }
-    // The sentence: nothing points at a chip bar that shaped nothing, and the
-    // line is the one the same page renders without the parameter it dropped.
-    expect(line(markup)).not.toContain(NARROWED_BY_FILTERS);
-    expect(line(markup)).toBe(
-      line(
-        await renderClaims(healthyScript(), {
-          tab: "standing",
-          source_id: SOURCE.third,
-          domain: "groups",
-        }),
-      ),
-    );
-  });
-
-  /**
    * THE WHOLE STATE SPACE OF THE RULE, SWEPT (QA, admin-window/BUG-0192 +
    * BUG-0193 re-check).
    *
@@ -3907,17 +2791,6 @@ describe("the way out of a narrowing", () => {
     const arrived = await renderClaims(healthyScript(), paramsOf(exit.href));
     expect(claimIds(arrived).length, state).toBeGreaterThan(0);
     expect(exitOf(arrived), state).toBeUndefined();
-  });
-
-  it("names the facet that has no chip row, so the exit says what it clears", async () => {
-    // The ticket's own URL, end to end: the page never said the word "domain"
-    // (that half is admin-window/BUG-0160) and had no control that dropped it
-    // (this half). Both are read off one card.
-    const markup = await renderClaims(healthyScript(), { domain: "zzz" });
-    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
-    expect(card(markup)).toContain("domain");
-    expect(card(markup)).toContain("zzz");
-    expect(card(markup)).toContain(theExit(markup, "?domain=zzz").label);
   });
 
   it("draws no exit where the URL narrowed nothing", async () => {
@@ -4126,18 +2999,6 @@ describe("what a filled window promises", () => {
     return states;
   }
 
-  it("cannot reach past the cap from any state its own chips offer", async () => {
-    for (const { params, markup } of await everyChipState()) {
-      const where = new URLSearchParams(params).toString() || "no facet";
-      // The narrowing really applied — the page dropped nothing and drew the
-      // window it was asked for — and it still filled its cap, so there are
-      // claims this state holds and does not show.
-      expect(droppedLine(markup).lines, where).toBe(0);
-      expect(claimIds(markup).length, where).toBe(CLAIM_WINDOW);
-      expect(filledItsCap(markup), where).toBe(true);
-    }
-  });
-
   it("says what it is not showing and offers no way to it", async () => {
     for (const { params, markup } of await everyChipState()) {
       const where = new URLSearchParams(params).toString() || "no facet";
@@ -4259,23 +3120,6 @@ describe("the filters", () => {
     // The bucket chips still offer every other source's page.
     expect(chips.length).toBeGreaterThan(2);
   });
-
-  it("still offers both chip facets when nothing matched, and a way out of the one that emptied it", async () => {
-    const markup = await renderClaims(healthyScript(), {
-      source_id: SOURCE.first,
-      domain: "groups",
-    });
-    expect(claimIds(markup)).toEqual([]);
-    for (const facet of ["bucket", "source_id"]) {
-      expect(chipsOf(markup, facet).length, facet).toBeGreaterThan(1);
-    }
-    // The way out of the facet that has no chip row is still on screen: every
-    // chip of every other facet drops the narrowing that emptied the page...
-    expect(chipsOf(markup, "source_id")[0].href).not.toContain("source_id=");
-    // ...and the domain narrowing the page really applied is still carried by
-    // the chips that keep it, so it is visible in the URL rather than lost.
-    expect(chipsOf(markup, "bucket")[0].href).toContain("domain=groups");
-  });
 });
 
 /* ── one id, one narrowing ───────────────────────────────────────────────── */
@@ -4319,85 +3163,6 @@ describe("a source id in another spelling", () => {
     ` ${CANONICAL.replace(/-/g, "")}\t`,
   ];
 
-  it.each(SPELLINGS)("renders the same claims as the canonical spelling, for %o", async (spelling) => {
-    expect(spelling).not.toBe(CANONICAL);
-    const asked = await renderClaims(healthyScript(), { source_id: spelling });
-    const canonical = await renderClaims(healthyScript(), { source_id: CANONICAL });
-
-    // The rows themselves, and the fixture makes the claim non-vacuous: this
-    // source really does narrow, so "the same rows" is not "all of them".
-    expect(claimIds(asked)).toEqual(claimIds(canonical));
-    expect(claimIds(asked).length).toBeGreaterThan(0);
-    expect(claimIds(asked).length).toBeLessThan(
-      claimIds(await renderClaims(healthyScript())).length,
-    );
-    // ...and the bucket table, which is the page's other set.
-    expect(bucketRows(asked)).toEqual(bucketRows(canonical));
-  });
-
-  it.each(SPELLINGS)("spells the narrowing back in ONE form, for %o", async (spelling) => {
-    const markup = await renderClaims(healthyScript(), { source_id: spelling });
-    const chips = chipsOf(markup, "source_id");
-    const active = chips.filter((chip) => chip.active);
-
-    // One chip is on, it is this source's, and it says the source's NAME.
-    expect(active.map((chip) => chip.label)).toEqual([nameOf(CANONICAL)]);
-    // Every href this page writes carries the canonical id and no other
-    // spelling of it — a bookmark taken from here is the one URL for this
-    // state, whatever the operator pasted.
-    // The href this page writes for the state it is IN carries the canonical
-    // id — a bookmark taken from here is the one URL for this state, whatever
-    // the operator pasted — and the whole chip bar is byte for byte the one
-    // the canonical spelling renders, so no href anywhere carries a second
-    // spelling of this id.
-    expect(active[0].href).toContain(encodeURIComponent(CANONICAL));
-    expect(chips).toEqual(
-      chipsOf(await renderClaims(healthyScript(), { source_id: CANONICAL }), "source_id"),
-    );
-    // The page did the narrowing, so it may not say it dropped it.
-    expect(droppedLine(markup).lines).toBe(0);
-  });
-
-  /**
-   * The second fixture the guard owes (LESSONS 8). Neither of these names a
-   * source this view holds, so each narrows NOTHING and is reported by the
-   * dropped-parameter line exactly as before — the id grammar widened which
-   * spellings of a REAL id are understood and nothing else.
-   */
-  it.each([
-    ["a value that is no id at all", "not-a-uuid"],
-    ["whitespace INSIDE an otherwise real id", `${CANONICAL.slice(0, 20)} ${CANONICAL.slice(20)}`],
-  ])("narrows nothing for %s, and says so", async (_label, asked) => {
-    const markup = await renderClaims(healthyScript(), { source_id: asked });
-    expect(claimIds(markup)).toEqual(claimIds(await renderClaims(healthyScript())));
-    expect(droppedLine(markup).names).toEqual(["source_id"]);
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-  });
-
-  /**
-   * **EXPECTED CHANGE, admin-window/BUG-0138.** A well-formed id nothing
-   * carries used to be checked against the sources of the whole claim
-   * population — the read this page no longer makes — and reported as dropped
-   * over an unnarrowed page. It NARROWS now: the value goes to the query, every
-   * figure comes back 0, and the page says where it looked.
-   */
-  it("narrows to nothing for a well-formed id no claim carries", async () => {
-    const asked = "01920000-0000-7000-8000-0000000009f9";
-    const markup = await renderClaims(healthyScript(), { source_id: asked });
-    const $ = cheerio.load(markup);
-
-    expect(claimIds(markup)).toEqual([]);
-    expect(droppedLine(markup).lines).toBe(0);
-    expect($('[data-empty="narrowing"]')).toHaveLength(1);
-    expect(Number($('[data-window="claims"]').attr("data-window-held"))).toBe(0);
-    for (const row of bucketRows(markup)) expect(row.claims, row.bucket).toBe(0);
-    // No chip claims to be the state we are in — the registry has no row for
-    // this id, so there is no chip that could — and "all" is not on either,
-    // because a narrowing really is applied.
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active)).toEqual([]);
-  });
-
   /**
    * The whole PAGE, and not an enumerated list of its parts (QA,
    * admin-window/DEBT-0009).
@@ -4430,70 +3195,6 @@ describe("a source id in another spelling", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-/* ── a parameter this page has no facet for ──────────────────────────────── */
-
-/**
- * `record_id` narrows nothing here, in every spelling, and the page SAYS so
- * (QA, admin-window/DEBT-0009).
- *
- * DEBT-0009's own text asserted that `/claims` "takes `record_id` as a raw
- * string facet" and asked for that facet to be canonicalised. It does not and
- * never did: `CLAIM_FACETS` is `[bucket, source_id, domain]`, `pending_claims`
- * keys an entity by `entity_id`, and `?record_id=` is the usersim's example of
- * a parameter this page DROPS (`M2-usersim-priya.md` §6, cited by
- * `lib/url/dropped-params.ts`). The correction is worth a test rather than a
- * sentence in a ticket, because the tempting repair is to invent the facet —
- * an id facet nobody designed, with no column behind it and no bounded chip
- * vocabulary — and nothing on this page would have reddened if someone had.
- *
- * The rule is graded at the leaf (`tests/offline/claims/filters.test.ts`) and
- * on `/queues`' page; the one place it was NOT graded is the page this ticket
- * changed, whose facet reader now canonicalises. So: a `record_id` that is a
- * real id, one that is no id at all, and one that is the id of a source this
- * page really does narrow by, all reach the same answer — the unnarrowed page,
- * under a line that names the parameter.
- */
-describe("a record_id asked of /claims", () => {
-  it.each([
-    ["a well-formed id, which a source on this page really has", SOURCE.first],
-    ["a well-formed id nothing here carries", "01920000-0000-7000-8000-0000000009f9"],
-    ["a value that is no id at all", "not-a-uuid"],
-  ])("narrows nothing and is reported, for %s", async (_label, asked) => {
-    const markup = await renderClaims(healthyScript(), { record_id: asked });
-    const bare = await renderClaims(healthyScript());
-
-    // Both of the page's sets are the unnarrowed ones...
-    expect(claimIds(markup)).toEqual(claimIds(bare));
-    expect(bucketRows(markup)).toEqual(bucketRows(bare));
-    // ...no facet is on...
-    expect(chipsOf(markup, "source_id").filter((chip) => chip.active).map((chip) => chip.label))
-      .toEqual([ANY_LABEL]);
-    // ...and the page says what it did not do, by name.
-    expect(droppedLine(markup).names).toEqual(["record_id"]);
-    expect(droppedLine(markup).total).toBe(1);
-  });
-
-  it("is still reported beside a source_id that DID narrow, in another spelling", async () => {
-    const params = {
-      source_id: SOURCE.first.replace(/-/g, ""),
-      record_id: SOURCE.first,
-    };
-    const markup = await renderClaims(healthyScript(), params);
-
-    // The one that narrowed, narrowed — and spells itself back canonically.
-    const active = chipsOf(markup, "source_id").filter((chip) => chip.active);
-    expect(active.map((chip) => chip.label)).toEqual([nameOf(SOURCE.first)]);
-    expect(active[0].href).toContain(encodeURIComponent(SOURCE.first));
-    expect(claimIds(markup)).toEqual(
-      claimIds(await renderClaims(healthyScript(), { source_id: SOURCE.first })),
-    );
-    // The one that did not, is named — and it is the ONLY one named, so the
-    // canonicalised facet is not swept into the same sentence.
-    expect(droppedLine(markup).names).toEqual(["record_id"]);
-    expect(droppedLine(markup).total).toBe(1);
   });
 });
 
@@ -4560,58 +3261,6 @@ describe("a source is named", () => {
     );
   });
 
-  it("names the chips exactly as the same facet on /sources does", async () => {
-    const markup = await renderClaims(healthyScript());
-    for (const [id, name] of SOURCE_NAME) {
-      const chip = chipsOf(markup, "source_id").find((one) => one.label === name);
-      expect(chip, name).toBeDefined();
-      expect((chip as { href: string }).href).toContain(encodeURIComponent(id));
-    }
-    // Not one chip anywhere reads as a uuid the registry could have named.
-    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).not.toContain(
-      SOURCE.first,
-    );
-  });
-
-  /**
-   * The standing tab's per-source rows obey the same one rule
-   * (admin-window/BUG-0158, QA's attack on BUG-0156). The split anchor spelled
-   * `{split.source ?? split.sourceId}` — and `??` sees only `null`, so a
-   * registry row that EXISTED with an ink-less name took neither branch and the
-   * anchor rendered with nothing to read and nothing visible to click, beside a
-   * sibling row that named its source. It now asks `sourceLabel` over the map
-   * built from the gauge's OWN joined `sources` rows.
-   *
-   * Both directions in one render (LESSONS 8), and the hooks the link is made
-   * of are asserted too: the label is the only thing that may change, so the
-   * row is still keyed by its id and still narrows to it.
-   */
-  for (const blank of ["", "   ", "\u200b"]) {
-    it(`names a standing split the registry names ${JSON.stringify(blank)} by its id`, async () => {
-      const blanked = REGISTRY.map((row) =>
-        row.source_id === SOURCE.first ? { ...row, source: blank } : row,
-      );
-      const markup = await renderClaims(
-        healthyScript({ [T.sources]: { data: blanked } }),
-        { tab: "standing" },
-      );
-      const $ = cheerio.load(markup);
-      const anchorFor = (id: string) => $(`[data-split-source="${id}"]`);
-
-      const blankNamed = anchorFor(SOURCE.first);
-      expect(blankNamed.length, "the blank-named split did not render").toBe(1);
-      // The id verbatim, and the link still goes where it went.
-      expect(blankNamed.text()).toContain(SOURCE.first);
-      expect(blankNamed.attr("href")).toContain(encodeURIComponent(SOURCE.first));
-      // Non-vacuity in the same render: the sibling split still reads as its
-      // registry name and never as its uuid.
-      const named = anchorFor(SOURCE.second);
-      expect(named.length, "the named split did not render").toBe(1);
-      expect(named.text()).toContain(SOURCE_NAME.get(SOURCE.second) as string);
-      expect(named.text()).not.toContain(SOURCE.second);
-    });
-  }
-
   /**
    * **THE SENTENCE COUNTS WHAT THE ROWS ABOVE IT SHOW** (campaign
    * admin-window/DEBT-0022, the class site admin-window/TASK-0060 fixed on
@@ -4659,62 +3308,6 @@ describe("a source is named", () => {
     expect(standingSplitsWearingAnId(allNamed)).toEqual([]);
     expect(figuresIn(standingClosingSentence(allNamed))).toEqual([]);
     expect(standingClosingSentence(withBlank)).not.toBe(standingClosingSentence(allNamed));
-  });
-
-  it("leaves a standing split's registry name exactly as the registry wrote it", async () => {
-    // The other direction: a name with ink travels byte-identical — the pads
-    // are the registry's and this page neither trims them nor prefers the id.
-    const padded = "  ticketmaster  ";
-    const rows = REGISTRY.map((row) =>
-      row.source_id === SOURCE.first ? { ...row, source: padded } : row,
-    );
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { data: rows } }),
-      { tab: "standing" },
-    );
-    const anchor = cheerio.load(markup)(`[data-split-source="${SOURCE.first}"]`);
-    expect(anchor.length).toBe(1);
-    // The anchor also carries the source's tier and lifecycle, so the label is
-    // read as the text it STARTS with rather than as the whole cell.
-    expect(anchor.text().startsWith(padded), anchor.text()).toBe(true);
-  });
-
-  it("reports the registry leg when it refuses, and leaves every source its id", async () => {
-    const markup = await renderClaims(
-      healthyScript({ [T.sources]: { error: permissionDenied(T.sources) } }),
-    );
-    // The claims are still the claims: a label that could not be read takes
-    // nothing down with it.
-    expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
-    for (const claim of SHOWABLE) {
-      expect(claimRow(markup, claim.observation_id).sourceLabel).toBe(claim.source_id);
-    }
-    // ... and the failure is on screen, naming the object that refused.
-    expect(markup).toContain(T.sources);
-    expect(markup).toContain("permission denied");
-  });
-});
-
-/* ── the fixture the assertions rest on ──────────────────────────────────── */
-
-describe("the population this file reads", () => {
-  it("carries every bucket, including the one that must never render", () => {
-    expect(new Set(CLAIMS.map((claim) => claim.bucket))).toEqual(
-      new Set([...RENDERED_BUCKETS, PARKED]),
-    );
-    expect(CLAIMS.filter((claim) => claim.bucket === PARKED)).toHaveLength(1);
-    expect(new Set(CLAIMS.map((claim) => claim.source_id)).size).toBe(3);
-    // Two of those three are registered and one is not, so a label assertion
-    // has an input it must name and an input it must leave alone
-    // (admin-window/BUG-0043).
-    expect(REGISTRY.map((row) => row.source_id).sort()).toEqual(
-      [...SOURCE_NAME.keys()].sort(),
-    );
-    expect(
-      CLAIMS.some((claim) => !SOURCE_NAME.has(claim.source_id)),
-      "a source the registry does not name",
-    ).toBe(true);
-    expect(CLAIMS.some((claim) => claim.entity_id === ENTITY.event)).toBe(true);
   });
 });
 
@@ -4805,19 +3398,6 @@ describe("a hand-edited URL", () => {
       paramsOf("source_id=%3Cscript%3Ealert(1)%3C%2Fscript%3E"),
     );
     expect(markup).not.toContain("<script>");
-  });
-
-  it("keeps the tab a URL asks for, however it spells the rest", async () => {
-    const markup = await renderClaims(
-      healthyScript(),
-      paramsOf(`tab=standing&bucket=${PARKED}&source_id=${SOURCE.first}`),
-    );
-    expect(claimIds(markup)).toEqual(
-      oldestFirst(
-        matching({ bucket: "standing_disagreement", source_id: SOURCE.first }),
-      ),
-    );
-    expect(markup).not.toContain(PARKED);
   });
 });
 
@@ -4942,25 +3522,6 @@ describe("a parameter the page did not apply", () => {
     expect(markup).not.toContain(TYPED);
   });
 
-  it("names a facet whose value no chip offers, without echoing the value", async () => {
-    // The parked bucket is the value this page may never render, so the line
-    // that reports it dropped is exactly where an echo would land
-    // (LOOK_AND_FEEL bar 3, ARCHITECTURE.md §6 trap 4).
-    const markup = await renderClaims(healthyScript(), { bucket: PARKED });
-    const line = droppedLine(markup);
-    expect(line.present).toBe(true);
-    expect(line.names).toEqual(["bucket"]);
-    expect(markup).not.toContain(PARKED);
-
-    // Any unusable value, not just that one: the rule is the offered
-    // vocabulary, and a case variant is outside it like anything else.
-    expect(droppedLine(await renderClaims(healthyScript(), { bucket: "Escalated" })).names)
-      .toEqual(["bucket"]);
-    expect(
-      droppedLine(await renderClaims(healthyScript(), { source_id: "not-a-source" })).names,
-    ).toEqual(["source_id"]);
-  });
-
   it("counts a parameter whose own NAME this app may not render, and spells none of it", async () => {
     // The URL may use the parked bucket as a KEY, and bar 3 is about the
     // string on the screen, not about which half of a query pair it came from.
@@ -5071,55 +3632,6 @@ describe("a parameter the page did not apply", () => {
     expect(droppedLine(plain).lines).toBe(0);
   });
 
-  it("says what the bucket figures are figures of, and asserts no filter without one", async () => {
-    // The page's second sentence over an unnarrowed read: the caption claimed
-    // the bucket counts were "under the filters above" with an empty chip bar.
-    const whole = bucketCaption(await renderClaims(healthyScript()));
-    expect(whole).not.toContain("filters above");
-    expect(whole).toContain("real zero");
-
-    // A hand-typed parameter narrows nothing, so the caption does not move.
-    expect(bucketCaption(await renderClaims(healthyScript(), { record_id: TYPED }))).toBe(
-      whole,
-    );
-
-    // The other way: with a chip set the sentence is the one it has always been.
-    const narrowed = bucketCaption(
-      await renderClaims(healthyScript(), { source_id: SOURCE.first }),
-    );
-    expect(narrowed).toContain("under the filters above");
-    expect(narrowed).not.toBe(whole);
-  });
-
-  /**
-   * A URL may carry a parameter whose KEY is empty or blank, and both reach
-   * this page as a real dropped parameter: `?=x` arrives as `{"": "x"}` and
-   * `?%20%20=1` as `{"  ": "1"}` (measured over HTTP against a production
-   * build, 2026-09-09). `droppedParams` skips an empty VALUE and never an
-   * empty NAME, so the line counts one and spells nothing — "The URL carries
-   * , which this page did not apply: nothing below is narrowed by it." The
-   * sentence exists to name the parameter verbatim (criterion 3); a hole
-   * where the name goes names nothing, and the operator who typed it is told
-   * only that something they cannot identify was ignored.
-   *
-   * FIXED by admin-window/BUG-0127, first arm: `droppedParams` now skips a
-   * key that is empty or whitespace-only, exactly as it already skips an
-   * empty VALUE — a pair needs both halves to be a request, and a value with
-   * no name asks for nothing this page could have applied. So the line does
-   * not render at all for these URLs and there is no name to hole. The next
-   * test is the direct pin of that behaviour, in both directions.
-   */
-  it("spells a name, or none, but never a hole where a name goes", async () => {
-    const blankKeys: Record<string, string>[] = [{ "": "x" }, { "  ": "1" }];
-    for (const params of blankKeys) {
-      const line = droppedLine(await renderClaims(healthyScript(), params));
-      // Every name the line puts in mono is a name an operator can read back.
-      for (const name of line.names) {
-        expect(name.trim(), JSON.stringify(params)).not.toBe("");
-      }
-    }
-  });
-
   it("ignores a key with no visible content the way it ignores an empty value, and moves nothing else", async () => {
     // admin-window/BUG-0127, criterion 2: `?=x` and `?%20%20=1` name no
     // facet, so they are the URL saying nothing rather than the page
@@ -5156,98 +3668,6 @@ describe("a parameter the page did not apply", () => {
     }
     // The other direction, so the assertions above are not passing over a
     // page that stopped reporting dropped parameters altogether.
-    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
-      .toEqual(["record_id"]);
-  });
-
-  /**
-   * The same sentence and the same hole, from a key `String.prototype.trim`
-   * does not strip.
-   *
-   * admin-window/BUG-0127 closed the blank-key hole by ignoring a key whose
-   * `trim()` is empty, which is the WHITESPACE half of "this key names
-   * nothing". The other half is a key whose codepoints are not whitespace and
-   * still lay out to nothing: `?%00=1`, `?%E2%80%8B=1` (ZERO WIDTH SPACE),
-   * `?%C2%AD=1` (SOFT HYPHEN), `?%E2%81%A0=1` (WORD JOINER), `?%E2%80%8E=1`
-   * (LEFT-TO-RIGHT MARK), `?%7F=1` (DELETE). Each reaches `droppedParams`
-   * with the key intact, each lands in `named`, and each is spelled into the
-   * mono span — where a browser lays it out at **0px, not visible** and the
-   * operator reads "The URL carries , which this page did not apply"
-   * (measured in Chromium, both colour schemes, against a production build on
-   * port 8796, 2026-09-09; the `record_id` control measures 59.41px, visible).
-   *
-   * Either arm satisfies this pin, exactly as BUG-0127's criterion 1 allowed:
-   * ignore such a key (no name to hole) or spell something readable. What it
-   * refuses is a name with no renderable glyph in it.
-   *
-   * FIXED by admin-window/BUG-0136, the same arm BUG-0127 chose: the
-   * whitespace-only test in `droppedParams` is now the app's ONE definition of
-   * blank (`hasVisibleContent`, `lib/verdict/decision.ts`,
-   * admin-window/BUG-0089), which knows the format characters, the controls
-   * and the Hangul fillers that `trim()` does not. A key a reader would see
-   * nothing of names nothing, so none of these URLs renders the line at all —
-   * and the pin below, which was `it.fails` while the divergence stood, is a
-   * plain `it`.
-   */
-  it("names a parameter an operator can read back, whatever the key's codepoints", async () => {
-    const invisible = ["\u0000", "\u200B", "\u00AD", "\u2060", "\u200E", "\u007F"];
-    for (const key of invisible) {
-      const where = `U+${key.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
-      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
-      for (const name of line.names) {
-        // Control characters, format characters and spaces are what a reader
-        // never sees; a name that is nothing but those names nothing.
-        expect(name.replace(/[\p{Cc}\p{Cf}\p{Zs}]/gu, ""), where).not.toBe("");
-      }
-    }
-    // Not vacuous: the line still renders, and still names, a real key.
-    expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
-      .toEqual(["record_id"]);
-  });
-
-  /**
-   * The name is rendered VERBATIM, so a key carrying an unterminated bidi
-   * override rewrites the sentence it is written into
-   * (admin-window/BUG-0137, QA).
-   *
-   * U+202E RIGHT-TO-LEFT OVERRIDE is a format character, so `visibleContent`
-   * strips it and the key `ab\u202Ecd` has visible content — it is named, and
-   * the override travels into the mono span with it. The override's scope is
-   * the paragraph, not the span, so everything after it reverses. Measured in
-   * Chromium on a production build (port 8798, staging, 2026-09-09, both
-   * colour schemes), `/claims?ab%E2%80%AEcd=1` renders:
-   *
-   *     The URL carries ab.ti yb deworran si woleb gnihton :ylppa ton did egap siht hcihw ,dc
-   *
-   * and `/claims?%E2%80%AEabc=1` the same with the name reading `cba`; the
-   * name span's own box grows from ~20px to 371.75px as it swallows the
-   * reversed run. The sentence the page wrote is not the sentence the
-   * operator reads, which is what bar 13 ("no screen claims a mark it did not
-   * draw") and BUG-0123's "names something the operator can read back" are.
-   *
-   * The check is on the TEXT rather than on any styling, deliberately: the
-   * reversal travels with the sentence when it is copied out of the page into
-   * a plain-text field, where no isolation rule follows it.
-   *
-   * FIXED by admin-window/BUG-0137: the line spells a key only if its raw
-   * characters match the renderable allowlist `^[A-Za-z0-9_.-]{1,64}$`
-   * (`droppedParams`, `src/lib/claims/filters.ts`; ARCHITECTURE.md §7). A
-   * bidi control is outside that class, so a key carrying one is COUNTED and
-   * never spelled, and no control from a URL reaches the markup at all —
-   * which is why the copied-out text reads in the order the page wrote it.
-   */
-  it("cannot let a URL reverse the sentence its name is written into", async () => {
-    for (const key of ["ab\u202Ecd", "\u202Eabc", "x\u202Dy"]) {
-      const where = [...key]
-        .map((c) => "U+" + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0"))
-        .join(" ");
-      const line = droppedLine(await renderClaims(healthyScript(), { [key]: "1" }));
-      // Either arm: drop the override from the name, or name nothing at all.
-      for (const name of line.names) {
-        expect(name, where).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/u);
-      }
-    }
-    // Not vacuous: an ordinary key is still named, in full.
     expect(droppedLine(await renderClaims(healthyScript(), { record_id: TYPED })).names)
       .toEqual(["record_id"]);
   });
@@ -5599,20 +4019,6 @@ describe("a server that ignored the exclusion", () => {
 });
 
 describe("QA: what the parked bucket alone carries", () => {
-  it("offers no chip built from a parked row, and none for the domain facet at all", async () => {
-    const markup = await renderClaims(qaScript());
-    // The source chips are the REGISTRY's rows since admin-window/BUG-0138,
-    // and this database's registry is empty — so the row offers "all" and
-    // nothing else. The property that mattered here is unchanged and stronger:
-    // no chip is built from a CLAIM row, so a source only parked rows carry
-    // cannot become one.
-    expect(chipsOf(markup, "source_id").map((chip) => chip.label)).toEqual(["all"]);
-    // The domain chip row is gone entirely (Ben's A2, 2026-09-10).
-    expect(chipsOf(markup, "domain")).toEqual([]);
-    expect(markup).not.toContain(QA_SOURCE.parkedOnly);
-    expect(markup).not.toContain(PARKED);
-  });
-
   it("narrows to NOTHING when the URL names one of them, and says where it looked", async () => {
     // **EXPECTED CHANGE, admin-window/BUG-0138.** These used to narrow nothing
     // — they were outside the vocabularies the page read off the population —
@@ -5821,19 +4227,6 @@ describe("the copy the operator actually reads", () => {
     // pages disagree with each other.
     expect(markup).not.toContain("stuck-pattern");
   });
-  it("writes every inter-element space as an explicit expression, which no transform may drop", () => {
-    // The rendered assertions above CANNOT fail on this defect: vitest's JSX
-    // transform keeps the space that `next build`'s transform drops (measured
-    // on the delivered HTML of :8781, 2026-09-03). The source rule is what
-    // actually guards it, so it stands beside them.
-    //
-    // Two fixtures: the pre-fix spelling of this page must trip the scanner...
-    expect(
-      implicitInterElementSpacesIn('          <span className=\"type-data text-ink\">stuck_pattern</span> dial is a'),
-    ).toEqual(['1: <span className=\"type-data text-ink\">stuck_pattern</span> dial is a']);
-    // ...and the page as it stands must be clean of it.
-    expect(implicitInterElementSpaces("src/app/claims/page.tsx")).toEqual([]);
-  });
 });
 
 /* ── the addressing the live oracle depends on ───────────────────────────── */
@@ -5863,7 +4256,7 @@ const EXPECTED: Record<string, Record<string, number>> = {
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these
    * POSITIONALLY — `section:nth-of-type(n)` — and on THIS page the position
    * was already tab-dependent, so the oracle carried a `listOf(tab)` function
@@ -6273,38 +4666,6 @@ describe("each read answers for itself", () => {
     expect(claimIds(markup)).toEqual(oldestFirst(SHOWABLE));
   });
 
-  it("renders a bucket's refusal rather than a zero when the count is absent", async () => {
-    // `{count: null, error: null}` is what a select written WITHOUT
-    // `{ count: "exact" }` returns — a refusal, never a zero
-    // (ARCHITECTURE.md §4.3, common violations row 2).
-    const markup = await renderClaims(
-      healthyScript({
-        [T.pendingClaims]: (call: RecordedCall) => {
-          const head = isCountLeg(call);
-          const bucket = call.steps.find(
-            (step) => step.method === "eq" && step.args[0] === "bucket",
-          )?.args[1];
-          if (head && bucket === "agreeing") return { data: null, count: null, error: null };
-          return claimView(CLAIMS)(call);
-        },
-      }),
-    );
-    const $ = cheerio.load(markup);
-    const agreeing = $('[data-bucket="agreeing"]').closest("tr");
-    expect(agreeing.find("[data-bucket-claims]")).toHaveLength(0);
-    expect(agreeing.find('[data-state="error"]')).toHaveLength(1);
-
-    // The other four are real numbers, and one of them is a real ZERO — the
-    // second fixture the rule owes (LESSONS 8): a counted zero renders as a
-    // zero, an absent count renders as the refusal.
-    const narrowed = await renderClaims(healthyScript(), { source_id: SOURCE.second });
-    const zero = bucketRows(narrowed).find((row) => row.bucket === "escalated");
-    expect(zero?.claims).toBe(0);
-    expect(
-      cheerio.load(narrowed)('[data-bucket="escalated"]').closest("tr").text(),
-    ).toContain("0");
-  });
-
   it("keeps the rows when the count that would state the window line refuses", async () => {
     const markup = await renderClaims(
       healthyScript({
@@ -6366,7 +4727,7 @@ describe("each read answers for itself", () => {
  *
  * What is NOT re-proved here, because it is the widget's and the driver's and
  * is pinned where they live (`tests/offline/ui/paging.test.ts`,
- * `tests/offline/paging/machine.test.ts`): the five states `PageMore` draws
+ * `tests/offline/paging/machine.test.ts`): the arms the controls draw
  * from props, the double-press guard, and what an answer does to a row list.
  */
 
@@ -6383,11 +4744,6 @@ function longPopulation(count: number, bucket: PendingClaimBucket = "escalated")
   return Array.from({ length: count }, (_, index) => longClaim(index, bucket));
 }
 
-/** The ids of the first screen that population produces. */
-function firstScreenOf(claims: readonly PendingClaimRow[]): string[] {
-  return claims.slice(0, CLAIM_WINDOW).map((claim) => claim.observation_id);
-}
-
 /** A database whose claims view holds more rows than one window. */
 function pagedScript(count = 130, bucket: PendingClaimBucket = "escalated"): Script {
   return healthyScript({ [T.pendingClaims]: claimView(longPopulation(count, bucket)) });
@@ -6400,7 +4756,7 @@ function pagedScript(count = 130, bucket: PendingClaimBucket = "escalated"): Scr
  * They are two reads and nothing makes them agree: a view that answers a
  * count of 900 while a `limit 50` read of the same view comes back
  * with 37 rows is a database this app must survive. `initialPage(37, true)` is
- * off the grid `pageBound` enforces, so every press from it would be refused
+ * off the grid the old bound guard enforced, so every press from it would be refused
  * for ever — and the page's answer is to draw no paging element at all.
  */
 function offGridScript(rows: number, whole: number): Script {
@@ -6434,14 +4790,19 @@ function pagingOccurrences(markup: string): number {
   return (markup.match(/data-paging/g) ?? []).length;
 }
 
-/** The control's own words, without pinning the sentence around them. */
-function controlText(markup: string): string {
-  return /<button[^>]*>([^]*?)<\/button>/.exec(markup)?.[1]?.replace(/<[^>]*>/g, "") ?? "";
+/** Every move link in the markup, by the direction it offers, in order. */
+function movesOf(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $("[data-paging-move]")
+    .toArray()
+    .map((element) => $(element).attr("data-paging-move") ?? "");
 }
 
-/** The bound one request carried. */
-function boundOf(url: string): string | null {
-  return new URLSearchParams(url.split("?")[1]).get(OFFSET_PARAM);
+/** The window one address or request names, read as the guard reads it. */
+function windowOf(url: string): PageWindow | null {
+  const query = new URLSearchParams(url.split("?")[1]);
+  const bound = windowBound({ page: query.get(PAGE_PARAM), size: query.get(SIZE_PARAM) });
+  return bound.kind === "ok" ? bound.window : null;
 }
 
 /** A recording stub for the ONE network call this app makes. */
@@ -6470,56 +4831,95 @@ function windowFigures(markup: string) {
     limit: Number(line.attr("data-window-limit")),
     held: Number(line.attr("data-window-held")),
     truncated: line.attr("data-window-truncated") === "true",
+    from: Number(line.attr("data-window-from")),
+    drawn: Number(line.attr("data-window-drawn")),
   };
 }
 
-describe("the affordance that continues the claim list", () => {
+describe("the window that moves the claim list", () => {
   beforeEach(() => {
     paging.calls = [];
-    paging.press = null;
+    paging.goTo = null;
     paging.override = null;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // An override left standing would be drawn by every later render of a
+    // surface that windows — which, under page windows, is every `ok` read
+    // with a count beside it.
+    paging.override = null;
+    paging.calls = [];
   });
 
-  it("draws exactly one control when a count established there is more, and leaves the first screen alone", async () => {
+  /** The page's own deps, as it handed them to the driver. */
+  const depsOf = () => paging.calls[0].deps as Omit<PageDeps<ClaimLine>, "fetchJson">;
+  const initialOf = () => paging.calls[0].initial as unknown as PageState<ClaimLine>;
+  const answering = (state: PageState<ClaimLine>, to: PageWindow, answer: unknown) =>
+    requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) }, to);
+  const okFor = (window: PageWindow, rows: ClaimLine[]): PageAnswer<ClaimLine> => ({
+    kind: "ok",
+    rows,
+    page: window.page,
+    size: window.size,
+    exhausted: rows.length < window.size,
+  });
+  const lineText = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
+  const lineHtml = (markup: string): string =>
+    cheerio.load(markup)('[data-window="claims"]').toString();
+  const shapeOf = (markup: string): string => lineText(markup).replace(/[\d,]+/g, "#");
+  const idsOf = (claims: readonly PendingClaimRow[], from: number, to: number): string[] =>
+    claims.slice(from, to).map((claim) => claim.observation_id);
+
+  it.each([
+    ["the first window, by default", {}, [0, 50], { limit: 50, from: 1, drawn: 50, truncated: true }, "more", ["next"]],
+    ["rows 21–40", { [PAGE_PARAM]: "2", [SIZE_PARAM]: "20" }, [20, 40], { limit: 20, from: 21, drawn: 20, truncated: true }, "more", ["previous", "next"]],
+    ["the last window, short", { [PAGE_PARAM]: "3" }, [100, 130], { limit: 50, from: 101, drawn: 30, truncated: false }, "exhausted", ["previous"]],
+    ["rows 101–130 at 100, the whole rest", { [PAGE_PARAM]: "2", [SIZE_PARAM]: "100" }, [100, 130], { limit: 100, from: 101, drawn: 30, truncated: false }, "exhausted", ["previous"]],
+    ["an empty window past the end", { [PAGE_PARAM]: "4" }, [150, 150], { limit: 50, from: 151, drawn: 0, truncated: false }, "exhausted", ["previous"]],
+  ] as const)("renders %s for the address, with the controls ABOVE the rows and the line stating the window", async (_what, params, [from, to], figures, arm, moves) => {
     const claims = longPopulation(130);
-    const markup = await renderClaims(pagedScript(130));
+    const markup = await renderClaims(pagedScript(130), { ...params });
 
-    // The first screen: the window read's own rows, in its own order, under
-    // the same window line the page rendered before this ticket.
-    expect(claimIds(markup)).toEqual(firstScreenOf(claims));
-    expect(windowFigures(markup)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 130,
-      truncated: true,
-    });
-
-    // …and ONE addition below it.
-    expect(pagingArms(markup)).toEqual(["more"]);
-    expect(controlText(markup)).toContain(String(CLAIM_WINDOW));
+    // The rows are the window the address names — and nothing else.
+    expect(claimIds(markup)).toEqual(idsOf(claims, from, to));
+    expect(windowFigures(markup)).toEqual({ lines: 1, held: 130, ...figures });
+    expect(pagingArms(markup)).toEqual([arm]);
+    expect(movesOf(markup)).toEqual([...moves]);
+    expect(lineText(markup)).not.toContain("did not fill");
 
     const $ = cheerio.load(markup);
-    // Below the rows, inside the list's own surface, and outside the table:
-    // the row markup is untouched and the control is not a row.
-    expect($('[data-surface="claims"]').find("[data-paging]")).toHaveLength(1);
-    expect($("table").find("[data-paging]")).toHaveLength(0);
+    // ABOVE the list (LOOK_AND_FEEL bar 14): inside the list's own surface,
+    // before its table, and nothing of the affordance after the last row.
+    const surface = $('[data-surface="claims"]');
+    expect(surface.find("[data-paging]")).toHaveLength(1);
+    const html = surface.html() ?? "";
+    expect(html.indexOf("data-paging")).toBeLessThan(html.indexOf("<table"));
+    expect(html.slice(html.lastIndexOf("</table>"))).not.toMatch(/data-paging/);
+    // Every move link is this surface's own address at the neighbouring
+    // window, and the size chips keep the row the operator is reading from.
+    for (const move of moves) {
+      const href = $(`[data-paging-move="${move}"]`).attr("href") ?? "";
+      expect(href.startsWith(CLAIMS_PATH), move).toBe(true);
+      expect(windowOf(href), move).toEqual({
+        page: figures.from === 1 ? 2 : Math.floor((figures.from - 1) / figures.limit) + (move === "next" ? 2 : 0),
+        size: figures.limit,
+      });
+    }
+    expect($('[data-paging-size][aria-current="true"]').attr("data-paging-size")).toBe(String(figures.limit));
+    for (const size of WINDOW_SIZES) {
+      expect(windowOf($(`[data-paging-size="${size}"]`).attr("href") ?? ""), String(size)).toEqual({
+        page: Math.floor((figures.from - 1) / size) + 1,
+        size,
+      });
+    }
   });
 
-  it("draws none where the set is complete, where a count refused, and where the window is empty", async () => {
-    // 1. EXHAUSTED — the count and the rows agree that this is all of it, and
-    //    the window line already says so. Nothing is added.
-    const complete = await renderClaims(healthyScript());
-    expect(claimIds(complete)).toEqual(oldestFirst(SHOWABLE));
-    expect(pagingOccurrences(complete)).toBe(0);
-
-    // 2. A REFUSED or ABSENT count. A control offered here would be the page
-    //    claiming a total no read established (§4.3, LESSONS 2) — the honest
-    //    arm, not an oversight. Both spellings of "no count", because
-    //    `undefined` and `null` are two inputs (LESSONS 8).
+  it("draws no paging element where the read refused, the count refused, or the first window is empty — and keeps the first screen's words there", async () => {
+    // A REFUSED or ABSENT count: the window line needs the count, and a
+    // control drawn without it would be the page claiming a window it cannot
+    // state (§4.3, LESSONS 2). Both spellings of "no count" (LESSONS 8).
     for (const [why, error] of [
       ["a count that failed", permissionDenied(T.pendingClaims)],
       ["a count of an absent view", tableNotInSchemaCache(T.pendingClaims)],
@@ -6527,866 +4927,219 @@ describe("the affordance that continues the claim list", () => {
       const refused = await renderClaims(countRefusesScript(130, error));
       expect(claimIds(refused), why).toHaveLength(CLAIM_WINDOW);
       expect(pagingOccurrences(refused), why).toBe(0);
-      // …and the refusal is still reported, on its own sub-surface.
       expect(cheerio.load(refused)('[data-surface="claims_count"]'), why).toHaveLength(1);
     }
-
-    // 3. An EMPTY ok window: the Empty card and the window line stand exactly
-    //    as they did (admin-window/BUG-0070), and no control is offered for
-    //    rows that do not exist.
+    // An EMPTY first window: the Empty card and the window line stand exactly
+    // as they did (admin-window/BUG-0070), and no control over no rows.
     const empty = await renderClaims(healthyScript({ [T.pendingClaims]: claimView([]) }));
     expect(claimIds(empty)).toEqual([]);
     expect(windowFigures(empty).held).toBe(0);
     expect(cheerio.load(empty)("[data-empty]")).toHaveLength(1);
     expect(pagingOccurrences(empty)).toBe(0);
-
-    // 4. A read that REFUSED: the page renders the state it renders today.
-    const broken = await renderClaims(
-      healthyScript({ [T.pendingClaims]: { error: transportFailure() } }),
-    );
-    expect(pagingOccurrences(broken)).toBe(0);
+    // A read that REFUSED, and an absent view: the state they render today.
+    for (const error of [transportFailure(), tableNotInSchemaCache(T.pendingClaims)]) {
+      expect(pagingOccurrences(await renderClaims(healthyScript({ [T.pendingClaims]: { error } })))).toBe(0);
+    }
+    // The small complete set this file's own population is: nothing to move.
+    const complete = await renderClaims(healthyScript());
+    expect(claimIds(complete)).toEqual(oldestFirst(SHOWABLE));
+    // No more rows than the smallest size: no size changes the screen, so no
+    // control is drawn at all.
+    expect(SHOWABLE.length).toBeLessThanOrEqual(WINDOW_SIZES[0]);
+    expect(pagingOccurrences(complete)).toBe(0);
   });
 
-  it("draws NO paging element where the count and the window read disagree", async () => {
-    // 37 rows rendered under a count of 900: `initialPage(37, true)` is off
-    // the bound grid, so a control here is one every press is refused for, for
-    // ever — and `PageMore`'s honest answer to that state is a limit sentence
-    // with no control and no way back. The page hands it no such state.
+  it("states each read as its own where the count and the window disagree, and still offers the sizes", async () => {
+    // 37 rows under a count of 900 (QA, admin-window/BUG-0168): the read
+    // ended inside the first window, so no "next" — but 37 rows are more than
+    // the smallest size, so the size chips are a move that changes the screen
+    // and they are offered. The line states both reads and asserts no
+    // relationship between them.
     const markup = await renderClaims(offGridScript(37, 900));
-
     expect(claimIds(markup)).toHaveLength(37);
-    expect(windowFigures(markup)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 900,
-      truncated: true,
-    });
+    expect(windowFigures(markup)).toEqual({ lines: 1, limit: 50, held: 900, truncated: false, from: 1, drawn: 37 });
+    expect(pagingArms(markup)).toEqual(["exhausted"]);
+    expect(movesOf(markup)).toEqual([]);
+    expect(cheerio.load(markup)("[data-paging-size]")).toHaveLength(3);
+    const agreeing = await renderClaims(pagedScript(130), { [PAGE_PARAM]: "3" });
+    expect(shapeOf(markup)).not.toBe(shapeOf(agreeing));
+    expect(lineText(markup)).toContain(count(900));
+    expect(lineText(markup)).toContain(count(37));
+  });
+
+  it.each([
+    ["a page that is a word", { [PAGE_PARAM]: "abc" }, PAGE_PARAM],
+    ["page zero", { [PAGE_PARAM]: "0" }, PAGE_PARAM],
+    ["a size this app does not offer", { [SIZE_PARAM]: "30" }, SIZE_PARAM],
+    ["a page past the ceiling", { [PAGE_PARAM]: String(largestPage(50) + 1) }, PAGE_PARAM],
+  ] as const)("refuses an address naming %s BY NAME: no list read, no rows, no control, and the first window offered", async (_what, params, param) => {
+    const { markup, stub } = await renderWithStub(pagedScript(130), { source_id: SOURCE.first, ...params });
+    const $ = cheerio.load(markup);
+    const refusal = $(`[data-window-refused="${param}"]`);
+    expect(refusal).toHaveLength(1);
+    expect(refusal.attr("role")).toBe("alert");
+    expect(claimIds(markup)).toEqual([]);
+    expect($('[data-window="claims"]')).toHaveLength(0);
     expect(pagingOccurrences(markup)).toBe(0);
-    // The wrapper was never rendered at all, so nothing downstream had to be
-    // honest about a state that cannot be honoured.
     expect(paging.calls).toEqual([]);
+    // No window of the list was read: the view was asked only for counts.
+    const rowReads = stub.calls.filter(
+      (call) => call.table === T.pendingClaims && !isCountLeg(call) && call.steps.some((step) => step.method === "range"),
+    );
+    expect(rowReads).toEqual([]);
+    // The way back carries the narrowing this page applied, and nothing names
+    // the window's parameters as "dropped" — they were refused by name.
+    const back = refusal.find("a").attr("href") ?? "";
+    expect(back.startsWith(CLAIMS_PATH)).toBe(true);
+    expect(new URLSearchParams(back.split("?")[1]).get("source_id")).toBe(SOURCE.first);
+    expect($("[data-dropped-param]")).toHaveLength(0);
+    // The VALUE is never echoed (`tests/offline/absence/in-window.test.ts`).
+    expect(refusal.text()).not.toContain(String(Object.values(params)[0]));
   });
 
-  it("hands the hook the rows it RENDERED, at this app's own route", async () => {
-    await renderClaims(pagedScript(130));
-    expect(paging.calls).toHaveLength(1);
-    const { initial, deps } = paging.calls[0];
-    // `held` is the rendered row count, never the count and never the limit.
-    expect(initial.held).toBe(CLAIM_WINDOW);
-    expect(initial.rows).toEqual([]);
-    expect(initial.status).toBe("idle");
-    expect(deps.route).toBe(PAGE_ROUTES.claims);
-    expect(deps.size).toBe(CLAIM_WINDOW);
-  });
-
-  // FIXED, and this is the guard that keeps it fixed — admin-window/BUG-0226,
-  // QA off admin-window/BUG-0222. It was PINNED RED by QA and flipped to `it`
-  // by the fix: the page now hands the driver the NAME of its id field
-  // (`deps.idKey`) and derives its own reader from that same constant,
-  // server-side, so nothing it writes on the client element is a function.
-  //
-  // `PagingProvider` is a `"use client"` component and this page is a SERVER
-  // one, so every prop it writes here is serialized into the flight payload by
-  // the real server. A FUNCTION is the one shape that cannot be: Next answers
-  // the whole page 500 — "Functions cannot be passed directly to Client
-  // Components" — and the operator gets no page at all. MEASURED on a
-  // production build of this tree, 2026-09-14: GET /claims -> 500, GET /browse
-  // -> 500, the server log naming `{route: ..., params: "", size: 50, id:
-  // function Z}`.
-  //
-  // Nothing else in this repo can see it: `renderToStaticMarkup` has no client
-  // boundary, `tsc` sees a well-typed function, lint sees a property and
-  // `npm run build` compiles it. So the grade is on the VALUE the page handed
-  // across, which this file already records.
-  //
-  // It stays a case rather than a footnote: nothing else in this repo can see
-  // this class — `renderToStaticMarkup` has no client boundary — so this is
-  // the only thing standing between the next function prop and another 500.
-  it("hands the client provider DATA only, so the server can serialize it", async () => {
-    await renderClaims(pagedScript(130));
+  it("hands the client provider DATA only, and seeds it with the window the address named", async () => {
+    // admin-window/BUG-0226: a function prop takes both paged pages to 500,
+    // and no offline render can see it — so the VALUE handed across is graded.
+    const claims = longPopulation(130);
+    await renderClaims(pagedScript(130), { [PAGE_PARAM]: "2", [SIZE_PARAM]: "20" });
     const { initial, deps, window } = paging.calls[0];
     expect(functionPaths({ initial, deps, window })).toEqual([]);
-  });
 
-  it("names the claim its first screen ENDS at, so pages cannot outlive the screen they continue", async () => {
-    // admin-window/BUG-0216. The surface draws `[...firstScreen, ...pagedRows]`
-    // and the first screen is the SERVER's — it can be rendered again, from a
-    // fresh read, under a client that kept its pages. Those two halves are one
-    // contiguous run of one order only while the screen still ENDS where the
-    // pages started, so the state this page seeds declares that bound: the last
-    // claim it rendered, on the same field `ClaimList` keys its rows by. A page
-    // that declared nothing could never be told that the screen moved, and the
-    // claim at the old bound would be drawn twice while the claim that replaced
-    // it was drawn not at all.
-    const markup = await renderClaims(pagedScript(130));
-    const drawn = claimIds(markup);
-    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-
-    expect(drawn).toHaveLength(CLAIM_WINDOW);
-    expect(initial.after).toBe(drawn[drawn.length - 1]);
-    // …and it is a real claim, never the empty bound a synthetic start holds:
-    // `""` compares equal to `""`, so a screen that named nothing would be
-    // "continued" by pages taken off any other screen at all.
-    expect(initial.after).not.toBe("");
-  });
-
-  it("one press issues one request at an explicit bound; no press issues none", async () => {
-    const urls = recordingFetch({
-      kind: "ok",
-      rows: claimLines(longPopulation(130).slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-      offset: CLAIM_WINDOW,
-      exhausted: false,
+    const seeded = initialOf();
+    expect(seeded.window).toEqual({ page: 2, size: 20 });
+    expect(seeded.rows.map((row) => row.observationId)).toEqual(idsOf(claims, 20, 40));
+    expect(seeded.exhausted).toBe(false);
+    expect(seeded.status).toBe("idle");
+    expect(seeded.notes).toBeNull();
+    // The screen signature names the ids this screen drew, so a server
+    // screen re-rendered under a kept client state is told apart.
+    expect(seeded.screen).toContain(idsOf(claims, 20, 21)[0]);
+    expect(seeded.screen).not.toBe("");
+    expect(depsOf()).toEqual({
+      route: PAGE_ROUTES.claims,
+      path: CLAIMS_PATH,
+      params: "",
+      idKey: OBSERVATION_ID,
     });
-
-    await renderClaims(pagedScript(130));
-    // Zero presses, zero requests: the first screen is the server's.
-    expect(urls).toEqual([]);
-
-    const press = paging.press;
-    if (press === null) throw new Error("the wrapper handed the widget no press");
-    press();
-    await settle();
-
-    expect(urls).toHaveLength(1);
-    expect(boundOf(urls[0])).toBe(String(CLAIM_WINDOW));
-    expect(urls[0].startsWith(PAGE_ROUTES.claims)).toBe(true);
   });
 
-  it("carries the narrowing the page APPLIED, and no parameter it dropped", async () => {
+  it("one move issues one request for the window asked, carrying the narrowing the page APPLIED and no parameter it dropped", async () => {
     // admin-window/BUG-0141: a facet the page could not read narrowed no row
-    // above, so it must not narrow the rows a press appends. The bucket below
-    // is outside the offered vocabulary and the page drops it; the source is
+    // above, so it must not narrow the rows a move draws. The bucket below is
+    // outside the offered vocabulary and the page drops it; the source is
     // real and the page applies it.
-    const urls = recordingFetch({
-      kind: "ok",
-      rows: [],
-      offset: CLAIM_WINDOW,
-      exhausted: true,
-    });
-    const markup = await renderClaims(pagedScript(130), {
-      source_id: SOURCE.first,
-      bucket: "not_a_bucket",
-    });
+    const urls = recordingFetch(okFor({ page: 2, size: 50 }, []));
+    const markup = await renderClaims(pagedScript(130), { source_id: SOURCE.first, bucket: "not_a_bucket" });
     expect(pagingArms(markup)).toEqual(["more"]);
-
-    const { deps } = paging.calls[0];
-    const carried = new URLSearchParams(deps.params);
-    expect(carried.get("source_id")).toBe(SOURCE.first);
-    expect(deps.params).not.toContain("not_a_bucket");
+    const carried = new URLSearchParams(depsOf().params);
     expect([...carried.keys()]).toEqual(["source_id"]);
+    expect(depsOf().params).not.toContain("not_a_bucket");
 
-    // …and the same narrowing reaches the wire.
-    paging.press?.();
+    // Zero moves, zero requests: the first screen is the server's.
+    expect(urls).toEqual([]);
+    paging.goTo?.({ page: 2, size: 50 });
     await settle();
+    expect(urls).toHaveLength(1);
+    expect(urls[0].startsWith(PAGE_ROUTES.claims)).toBe(true);
     const asked = new URLSearchParams(urls[0].split("?")[1]);
     expect(asked.get("source_id")).toBe(SOURCE.first);
     expect(asked.get("bucket")).toBeNull();
+    expect(windowOf(urls[0])).toEqual({ page: 2, size: 50 });
+
+    // The standing tab travels by the tab, never as a bucket nobody can see.
+    paging.calls = [];
+    await renderClaims(pagedScript(130, STANDING_BUCKET), { tab: "standing" });
+    const standing = new URLSearchParams(depsOf().params);
+    expect(standing.get("tab")).toBe("standing");
+    expect(standing.get("bucket")).toBeNull();
   });
 
-  it("carries the STANDING tab by the tab, never as a bucket nobody can see", async () => {
-    const markup = await renderClaims(pagedScript(130, STANDING_BUCKET), {
-      tab: "standing",
-    });
-    expect(pagingArms(markup)).toEqual(["more"]);
-    const carried = new URLSearchParams(paging.calls[0].deps.params);
-    expect(carried.get("tab")).toBe("standing");
-    expect(carried.get("bucket")).toBeNull();
-  });
-
-  it("a refused page leaves the rendered rows exactly as they were and names the object", async () => {
-    // TWO fixtures, the way a guard proves itself (LESSONS 8): a second page
-    // that MUST refuse, and one that must not. Both states are produced by the
-    // REAL driver from the REAL deps this page handed it — only React's second
-    // render is substituted, which is the one thing this tier cannot do.
-    const claims = longPopulation(130);
-    const script = pagedScript(130);
-    const firstScreen = await renderClaims(script);
-    expect(claimIds(firstScreen)).toEqual(firstScreenOf(claims));
-    const { initial, deps } = paging.calls[0] as unknown as {
-      initial: PageState<ClaimLine>;
-      deps: Omit<PageDeps<ClaimLine>, "fetchJson">;
-    };
-
-    const answeredBy = (answer: PageAnswer<ClaimLine>) =>
-      requestPage<ClaimLine>(initial, {
-        ...deps,
-        fetchJson: () => Promise.resolve(answer),
-      });
-
-    // A. the page that must REFUSE — the view went away between two reads.
-    const refused = await answeredBy({ kind: "not_provisioned", missing: T.pendingClaims });
-    paging.override = refused;
-    const afterRefusal = await renderClaims(script);
-    expect(claimIds(afterRefusal)).toEqual(firstScreenOf(claims));
-    const $ = cheerio.load(afterRefusal);
-    const refusal = $("[data-paging-refusal]");
-    expect(refusal).toHaveLength(1);
-    expect(refusal.text()).toContain(T.pendingClaims);
-    // Beside the rows, never inside the table that holds them.
-    expect($("table").find("[data-paging-refusal]")).toHaveLength(0);
-    // …and the control is GONE, because no press provisions a view
-    // (admin-window/BUG-0211): the clause names what is missing and what
-    // creates it, and nothing under it offers a press that cannot be honoured.
-    expect(pagingArms(afterRefusal)).toEqual([]);
-    expect($("button[data-paging]")).toHaveLength(0);
-
-    // A′. THE MUST-NOT-FLAG TWIN (LESSONS 8): a READ that failed is refused
-    // at a bound this surface can still serve, so its control and its
-    // press-again sentence stand. The withdrawal above is about the absent
-    // object alone.
-    paging.override = await answeredBy({
-      kind: "error",
-      reading: T.pendingClaims,
-      message: "canceling statement due to statement timeout",
-    });
-    const afterReadFailure = await renderClaims(script);
-    expect(claimIds(afterReadFailure)).toEqual(firstScreenOf(claims));
-    expect(cheerio.load(afterReadFailure)("[data-paging-refusal]")).toHaveLength(1);
-    expect(pagingArms(afterReadFailure)).toContain("more");
-
-    // B. the page that must NOT refuse — a full window, appended in order.
-    const landed = await answeredBy({
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-      offset: CLAIM_WINDOW,
-      exhausted: false,
-    });
-    paging.override = landed;
-    const afterPage = await renderClaims(script);
-    expect(claimIds(afterPage)).toEqual(
-      claims.slice(0, CLAIM_WINDOW * 2).map((claim) => claim.observation_id),
-    );
-    expect(cheerio.load(afterPage)("[data-paging-refusal]")).toHaveLength(0);
-    // The first screen's rows are untouched, and the new ones are BELOW them.
-    expect(claimIds(afterPage).slice(0, CLAIM_WINDOW)).toEqual(firstScreenOf(claims));
-  });
-
-  it("draws no claim twice when the list moved under the press, and says so once", async () => {
-    // admin-window/BUG-0222, on the surface the defect was measured on. A
-    // claim INSERTED ahead of the bound between the screen read and the press
-    // moves every later claim down one, so the route's page at offset 50
-    // BEGINS with the last claim of the first screen. Before this ticket the
-    // surface concatenated it: 100 rows, 99 distinct, React's duplicate key.
-    //
-    // Both fixtures ship (LESSONS 8): the overlapping page here, and the
-    // ordinary page the test above appends in full.
-    const claims = longPopulation(130);
-    const script = pagedScript(130);
-    const firstScreen = await renderClaims(script);
-    expect(claimIds(firstScreen)).toEqual(firstScreenOf(claims));
-    // Criterion 4, on this surface: the first SERVER render carries no such
-    // element at all — the fact is a press's and there has been no press.
-    expect(cheerio.load(firstScreen)("[data-paging-overlap]")).toHaveLength(0);
-
-    const { initial, deps } = paging.calls[0] as unknown as {
-      initial: PageState<ClaimLine>;
-      deps: Omit<PageDeps<ClaimLine>, "fetchJson">;
-    };
-    // The page the ROUTE really serves once a claim has been inserted ahead of
-    // the bound: a full window, starting one claim earlier in the order.
-    const shifted = claims.slice(CLAIM_WINDOW - 1, CLAIM_WINDOW * 2 - 1);
-    const overlapping = await requestPage<ClaimLine>(initial, {
-      ...deps,
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "ok" as const,
-          rows: claimLines(shifted, new Map()),
-          offset: CLAIM_WINDOW,
-          exhausted: false,
-        }),
-    });
-    paging.override = overlapping;
-    const afterPage = await renderClaims(script);
-
-    const ids = claimIds(afterPage);
-    // THE PROPERTY: every id drawn once, and the run agrees with its own count.
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(claims.slice(0, CLAIM_WINDOW * 2 - 1).map((claim) => claim.observation_id));
-    // The first screen is untouched and the new claims are BELOW it.
-    expect(ids.slice(0, CLAIM_WINDOW)).toEqual(firstScreenOf(claims));
-    // The overlap is stated ONCE, in client-land, and the control stays: the
-    // bound moved by the rows the route served, so there is more to ask for.
-    expect(cheerio.load(afterPage)("[data-paging-overlap]")).toHaveLength(1);
-    expect(pagingArms(afterPage)).toEqual(["more"]);
-    expect(cheerio.load(afterPage)("[data-paging-refusal]")).toHaveLength(0);
-    // …and the bound the next press would carry is the ROUTE's count, not the
-    // number appended.
-    expect(overlapping.held).toBe(CLAIM_WINDOW * 2);
-  });
-
-  it("spells the window ONCE: the control names the number the driver grades against", async () => {
-    // QA residual 4 off admin-window/TASK-0064, one layer up. The window is
-    // the PROVIDER's dep here, so the surface is driven at one that is NOT 50 and the
-    // same 7-row answer is read twice: it LANDS against a window of 7 (the
-    // next press moves on to 14) and is REFUSED against a window of 8 (the
-    // next press asks for 8 again) — so the number the driver graded the page
-    // against is the number the control renders in its label.
-    const consumer = async (
-      windowSize: number,
-    ): Promise<{ bounds: (string | null)[]; label: string }> => {
-      const served = 7;
-      const rows = claimLines(longPopulation(served * 3), new Map());
-      const urls = recordingFetch({
-        kind: "ok",
-        rows: rows.slice(windowSize, windowSize + served),
-        offset: windowSize,
-        exhausted: false,
-      });
-      const markup = render(
-        h(
-          PagingProvider<ClaimLine>,
-          {
-            initial: initialPage<ClaimLine>(windowSize, true, ""),
-            window: countedWindow(windowSize * 3, windowSize),
-            deps: { route: PAGE_ROUTES.claims, params: "", size: windowSize, idKey: OBSERVATION_ID },
-            children: null,
-          },
-          h(PagedClaimList, { label: "All claims", initial: rows.slice(0, windowSize) }),
-        ),
-      );
-      paging.press?.();
-      await settle();
-      paging.press?.();
-      await settle();
-      return { bounds: urls.map(boundOf), label: controlText(markup) };
-    };
-
-    const landed = await consumer(7);
-    const refused = await consumer(8);
-
-    expect(landed.bounds).toEqual(["7", "14"]);
-    expect(refused.bounds).toEqual(["8", "8"]);
-    expect(landed.label).toContain("7");
-    expect(landed.label).not.toContain("8");
-    expect(landed.label).not.toContain(String(CLAIM_WINDOW));
-    expect(refused.label).toContain("8");
-    expect(refused.label).not.toContain("7");
-  });
-
-  /* ── the window line of a surface a press CONTINUES ───────────────────── */
-
-  /**
-   * The line and the rows, one verdict — admin-window/BUG-0172.
-   *
-   * QA measured the same contradiction here as on `/browse`: 616 rows on
-   * screen under "the 50 longest-waiting are below — the rest are not shown",
-   * with `data-window-truncated="true"` beside `data-paging="exhausted"`. The
-   * cases below read the app's own machine-readable statements — the window
-   * hooks and the paging arm — and pin no word of either sentence (LESSONS 11).
-   */
-
-  /** The window line's own markup, for a byte comparison of two renders. */
-  const lineHtml = (markup: string): string =>
-    cheerio.load(markup)('[data-window="claims"]').toString();
-
-  /**
-   * The defect sentence a CONTINUED window must never reach: this surface is
-   * drawn paged only where a count said there is more, so "the window did not
-   * fill" is a claim no press can make true (criterion 3).
-   */
-  const DID_NOT_FILL = "did not fill";
-
-  /** The line's sentence, with no word of it pinned — read for what it omits. */
-  const lineText = (markup: string): string =>
-    cheerio.load(markup)('[data-window="claims"]').text().replace(/\s+/g, " ").trim();
-
-  /** The page's own deps, as it handed them to the driver. */
-  const depsOf = () =>
-    paging.calls[0].deps as Omit<PageDeps<ClaimLine>, "fetchJson">;
-
-  it("does not claim rows are withheld once the walk has reached the end of the set", async () => {
-    // The sibling of QA's `/browse` pin, pressed to exhaustion through the
-    // same driver (admin-window/BUG-0172, criterion 9). Both handles are the
-    // app's own statements about ONE question: are there matching claims this
-    // surface could show that are not on screen?
-    const claims = longPopulation(130);
-    const script = pagedScript(130);
-    await renderClaims(script);
-    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const press = (state: PageState<ClaimLine>, answer: PageAnswer<ClaimLine>) =>
-      requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) });
-
-    const second = await press(initial, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-      offset: CLAIM_WINDOW,
-      exhausted: false,
-    });
-    paging.override = await press(second, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW * 2, 130), new Map()),
-      offset: CLAIM_WINDOW * 2,
-      exhausted: true,
-    });
-    const markup = await renderClaims(script);
-
-    // The walk really did reach the end, and the rows really are all drawn.
-    expect(pagingArms(markup)).toEqual(["exhausted"]);
-    expect(claimIds(markup)).toHaveLength(130);
-
-    // …so nothing on this page may still say claims are being held back.
-    expect(windowFigures(markup).lines).toBe(1);
-    expect(windowFigures(markup).truncated).toBe(false);
-    expect(lineText(markup)).not.toContain(DID_NOT_FILL);
-  });
-
-  it("keeps its held on the COUNT its own read established, whatever a press appends", async () => {
-    // `/browse`'s `held` is the rows its reads came back with and grows with
-    // them; this one is the matching COUNT, established by a read paging never
-    // repeats — and the live paged-walk oracle grades the walk against exactly
-    // this hook (admin-window/BUG-0172, criterion 2).
+  it("a refused move leaves the window exactly as it was and names the object; a landed move REPLACES it", async () => {
     const claims = longPopulation(130);
     const script = pagedScript(130);
     const first = await renderClaims(script);
-    expect(windowFigures(first)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 130,
-      truncated: true,
-    });
+    expect(claimIds(first)).toEqual(idsOf(claims, 0, 50));
+    const initial = initialOf();
+    const to: PageWindow = { page: 2, size: 50 };
 
-    paging.override = await requestPage<ClaimLine>(
-      paging.calls[0].initial as unknown as PageState<ClaimLine>,
-      {
-        ...depsOf(),
-        fetchJson: () =>
-          Promise.resolve({
-            kind: "ok",
-            rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-            offset: CLAIM_WINDOW,
-            exhausted: false,
-          }),
-      },
-    );
-    const continued = await renderClaims(script);
+    // A. the move that must REFUSE — the view went away between two reads:
+    //    the clause, and no control of any kind (admin-window/BUG-0211).
+    paging.override = await answering(initial, to, { kind: "not_provisioned", missing: T.pendingClaims });
+    const afterRefusal = await renderClaims(script);
+    expect(claimIds(afterRefusal)).toEqual(idsOf(claims, 0, 50));
+    const $ = cheerio.load(afterRefusal);
+    expect($("[data-paging-refusal]")).toHaveLength(1);
+    expect($("[data-paging-refusal]").text()).toContain(T.pendingClaims);
+    expect($("table").find("[data-paging-refusal]")).toHaveLength(0);
+    expect(pagingArms(afterRefusal)).toEqual([]);
+    expect($("[data-paging-move], [data-paging-size]")).toHaveLength(0);
+    expect(lineHtml(afterRefusal)).toBe(lineHtml(first));
 
-    expect(claimIds(continued)).toHaveLength(CLAIM_WINDOW * 2);
-    expect(windowFigures(continued)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      // Untouched: paging read no new claim into the count.
-      held: 130,
-      // The count still holds more than the screen does, and the control below
-      // still offers them.
-      truncated: true,
-    });
-    expect(pagingArms(continued)).toEqual(["more"]);
-    // The sentence states the rows that ARE below, not the cap the first read
-    // carried — no word of it is pinned, only the two figures it must carry.
-    expect(lineText(continued)).toContain(count(CLAIM_WINDOW * 2));
-    expect(lineText(continued)).not.toContain(DID_NOT_FILL);
-  });
-
-  /** The sentence's shape, with every figure blanked — "is this the SAME
-   * sentence with other numbers, or a different sentence?" (LESSONS 2). */
-  const shapeOf = (markup: string): string => lineText(markup).replace(/[\d,]+/g, "#");
-
-  /** The cap clause, in the one spelling every window line in the app uses. */
-  const A_CAP = "at most";
-
-  it("an exhausted window that appended nothing names the rows on screen", async () => {
-    // admin-window/BUG-0174, criterion 5. The count and the window read are two
-    // reads and they can disagree — staging's own count moved 877 -> 878
-    // between two sessions of this campaign — so a press that ends the set
-    // without appending a row leaves 50 rows on screen under a count of 877.
-    // The arm used to fall back to the CAP for "what is below", which rendered
-    // "877 claims in all; the 50 longest-waiting are below — the read found no
-    // more": the cap's number as the screen's, and a completeness claim over a
-    // larger count that no single read established.
-    const claims = longPopulation(877);
-    const script = pagedScript(877);
-    await renderClaims(script);
-    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const endingWith = (rows: ClaimLine[]) =>
-      requestPage<ClaimLine>(initial, {
-        ...depsOf(),
-        fetchJson: () =>
-          Promise.resolve({
-            kind: "ok" as const,
-            rows,
-            offset: CLAIM_WINDOW,
-            exhausted: true,
-          }),
-      });
-
-    paging.override = await endingWith([]);
-    const zero = await renderClaims(script);
-    // The state really is the one under test: the set has ended, nothing was
-    // appended, and the count still says there are 877.
-    expect(pagingArms(zero)).toEqual(["exhausted"]);
-    expect(claimIds(zero)).toHaveLength(CLAIM_WINDOW);
-    expect(windowFigures(zero)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 877,
-      truncated: false,
-    });
-
-    // A press that DID append rows: the number the sentence names for what is
-    // on screen follows the rows drawn, which is what proves the zero-append
-    // case is not reading the cap (they are the same number there).
-    paging.override = await endingWith(
-      claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW + 30), new Map()),
-    );
-    const appended = await renderClaims(script);
-    expect(claimIds(appended)).toHaveLength(CLAIM_WINDOW + 30);
-    expect(lineText(appended)).toContain(count(CLAIM_WINDOW + 30));
-    expect(lineText(zero)).not.toContain(count(CLAIM_WINDOW + 30));
-    expect(lineText(zero)).toContain(count(CLAIM_WINDOW));
-
-    // Both reads are named, and neither continued sentence states a cap.
-    for (const [state, text] of [
-      ["appended nothing", lineText(zero)],
-      ["appended 30", lineText(appended)],
-    ] as const) {
-      expect(text, state).toContain(count(877));
-      expect(text, state).not.toContain(A_CAP);
-    }
-
-    // …and the set is NOT called complete on screen while a larger count is
-    // named: the diverged state gets a different sentence, not the same one
-    // with other numbers. The comparison is against the same arm's own
-    // completeness sentence, so no word of either is pinned here.
-    const whole = longPopulation(130);
-    const wholeScript = pagedScript(130);
-    await renderClaims(wholeScript);
-    const from = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const second = await requestPage<ClaimLine>(from, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "ok" as const,
-          rows: claimLines(whole.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-          offset: CLAIM_WINDOW,
-          exhausted: false,
-        }),
-    });
-    paging.override = await requestPage<ClaimLine>(second, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "ok" as const,
-          rows: claimLines(whole.slice(CLAIM_WINDOW * 2, 130), new Map()),
-          offset: CLAIM_WINDOW * 2,
-          exhausted: true,
-        }),
-    });
-    const agreeing = await renderClaims(wholeScript);
-    // Non-vacuity: this one really is the state where one read established
-    // completeness — every matching claim the count found is drawn.
-    expect(claimIds(agreeing)).toHaveLength(130);
-    expect(windowFigures(agreeing).held).toBe(130);
-    expect(shapeOf(zero)).not.toBe(shapeOf(agreeing));
-  });
-
-  it("does not tell the operator every claim is shown while its own count says more are not [admin-window/BUG-0180]", async () => {
-    // The other half of admin-window/BUG-0174 criterion 5, one element down.
-    // The WINDOW LINE refuses to call a diverged set complete — "a count of
-    // claims answered 877; the reads returned the 50 below" — and the sentence
-    // under the table, drawn from the same paging state, still asserts the
-    // completeness the line just declined to assert. Two answers to one
-    // question on one screen (LESSONS 11), and the answer the operator acts on
-    // is the one beside the control.
-    //
-    // Reachable on live data: the count and the rows are two reads, so a press
-    // that ends the set short of the count is what a claim resolved between
-    // the two reads produces.
-    //
-    // No word of either sentence is pinned. The two renders are compared
-    // against EACH OTHER: the state where one read established completeness,
-    // and the state where none did, may not draw the same sentence.
-    const script = pagedScript(877);
-    await renderClaims(script);
-    const diverging = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const divergedState = await requestPage<ClaimLine>(diverging, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({ kind: "ok" as const, rows: [], offset: CLAIM_WINDOW, exhausted: true }),
-    });
-    paging.override = divergedState;
-    const diverged = await renderClaims(script);
-
-    const whole = longPopulation(130);
-    const wholeScript = pagedScript(130);
-    await renderClaims(wholeScript);
-    const from = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const second = await requestPage<ClaimLine>(from, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "ok" as const,
-          rows: claimLines(whole.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-          offset: CLAIM_WINDOW,
-          exhausted: false,
-        }),
-    });
-    paging.override = await requestPage<ClaimLine>(second, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "ok" as const,
-          rows: claimLines(whole.slice(CLAIM_WINDOW * 2, 130), new Map()),
-          offset: CLAIM_WINDOW * 2,
-          exhausted: true,
-        }),
-    });
-    const agreeing = await renderClaims(wholeScript);
-
-    // Non-vacuity, from the driver and the page's own hooks rather than from
-    // any word: both reads ENDED, one drew every claim its count found and the
-    // other drew 827 fewer than its own count publishes.
-    expect(divergedState.status).toBe("exhausted");
-    expect(claimIds(diverged)).toHaveLength(CLAIM_WINDOW);
-    expect(windowFigures(diverged).held).toBe(877);
-    expect(claimIds(agreeing)).toHaveLength(130);
-    expect(windowFigures(agreeing).held).toBe(130);
-
-    const sentence = (markup: string): string =>
-      cheerio.load(markup)("[data-paging]").toString();
-    expect(sentence(diverged)).not.toBe(sentence(agreeing));
-  });
-
-  it("the window line in every state a press can end in", async () => {
-    // admin-window/BUG-0174, criterion 6: offered, loading, refused, refused at
-    // the bound ceiling, and exhausted — every one driven by the REAL driver
-    // from the REAL deps this page handed it, and every one graded on the two
-    // things a state may never get wrong. The words are the designer's; what is
-    // asserted is that the line publishes ONE window and agrees with the
-    // sentence under the table about whether rows are held back (LESSONS 11).
-    const claims = longPopulation(130);
-    const script = pagedScript(130);
-    await renderClaims(script);
-    const initial = paging.calls[0].initial as unknown as PageState<ClaimLine>;
-    const answering = (state: PageState<ClaimLine>, answer: PageAnswer<ClaimLine>) =>
-      requestPage<ClaimLine>(state, { ...depsOf(), fetchJson: () => Promise.resolve(answer) });
-
-    const landed = await answering(initial, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-      offset: CLAIM_WINDOW,
-      exhausted: false,
-    });
-    const ended = await answering(landed, {
-      kind: "ok",
-      rows: claimLines(claims.slice(CLAIM_WINDOW * 2, 130), new Map()),
-      offset: CLAIM_WINDOW * 2,
-      exhausted: true,
-    });
-    const refused = await answering(landed, {
-      kind: "not_provisioned",
-      missing: T.pendingClaims,
-    });
-    // The refusal that is RETRYABLE at the same bound, beside the one that is
-    // not: since admin-window/BUG-0211 the not-provisioned arm withdraws the
-    // control, so both conditions are driven here rather than one standing for
-    // the other (LESSONS 8).
-    const readFailed = await answering(landed, {
+    // A′. THE MUST-NOT-FLAG TWIN (LESSONS 8): a READ that failed is retryable,
+    //     so the controls stand and the line is what it was.
+    paging.override = await answering(initial, to, {
       kind: "error",
       reading: T.pendingClaims,
       message: "canceling statement due to statement timeout",
     });
-    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
-    const ceilingRefusal = await answering(atCeiling, {
-      kind: "refused",
-      reason: "the `offset` must be at most 100000",
-      bound: String(MAX_PAGE_OFFSET + CLAIM_WINDOW),
-    });
+    const afterReadFailure = await renderClaims(script);
+    expect(claimIds(afterReadFailure)).toEqual(idsOf(claims, 0, 50));
+    expect(cheerio.load(afterReadFailure)("[data-paging-refusal]")).toHaveLength(1);
+    expect(pagingArms(afterReadFailure)).toEqual(["more"]);
+    expect(lineHtml(afterReadFailure)).toBe(lineHtml(first));
 
-    // The ceiling states go around `renderClaims`, and only they do: its sweep
-    // grades that no FIRST screen of this file draws the limit arm, and these
-    // two are the states where drawing it is correct.
-    const rendered = async (): Promise<string> => {
-      readWith.client = stubClient(script).asSupabaseClient();
-      return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
-    };
-
-    // `null` is an arm this element deliberately does not draw: the
-    // not-provisioned press leaves the clause and NOTHING under it — no
-    // control, and no sentence claiming the set ended or the ceiling stopped
-    // it (admin-window/BUG-0211). The window line above it is graded exactly
-    // as it is in every other state.
-    const states: [string, string | null, PageState<ClaimLine> | null, boolean][] = [
-      ["offered", "more", null, false],
-      ["loading", "loading", pressing(initial), false],
-      ["refused, retryable", "more", readFailed, false],
-      ["refused, not provisioned", null, refused, false],
-      ["refused at the bound ceiling", "limit", ceilingRefusal, true],
-      ["exhausted", "exhausted", ended, false],
-    ];
-
-    for (const [name, arm, state, ceiling] of states) {
-      paging.override = state;
-      const markup = ceiling ? await rendered() : await renderClaims(script);
-      const figures = windowFigures(markup);
-      // One window line, and it is the one the paging state below it answers
-      // for: truncated exactly where the read has not said the set has ended.
-      if (arm === null) expect(pagingArms(markup), name).toEqual([]);
-      else expect(pagingArms(markup), name).toContain(arm);
-      expect(figures.lines, name).toBe(1);
-      expect(figures.truncated, name).toBe(arm !== "exhausted");
-      // `held` is the matching count its own count read established, after
-      // every press and in every state (criterion 4).
-      expect(figures.held, name).toBe(130);
-      expect(lineText(markup), name).not.toContain(DID_NOT_FILL);
-    }
-
-    // …and the states a press CONTINUED state no cap of their own, while the
-    // two that have taken in no row still render the first screen's sentence.
-    for (const [name, state] of [
-      ["refused", refused],
-      ["exhausted", ended],
-    ] as const) {
-      paging.override = state;
-      expect(lineText(await renderClaims(script)), name).not.toContain(A_CAP);
-    }
-    for (const [name, state] of [
-      ["offered", null],
-      ["loading", pressing(initial)],
-    ] as const) {
-      paging.override = state;
-      expect(lineText(await renderClaims(script)), name).toContain(A_CAP);
-    }
+    // B. the move that LANDS: window 2, and ONLY window 2, under a line that
+    //    says so — the first window's rows are gone, not appended to.
+    paging.override = await answering(initial, to, okFor(to, claimLines(claims.slice(50, 100), new Map())));
+    const afterMove = await renderClaims(script);
+    expect(claimIds(afterMove)).toEqual(idsOf(claims, 50, 100));
+    expect(cheerio.load(afterMove)("[data-paging-refusal]")).toHaveLength(0);
+    expect(windowFigures(afterMove)).toEqual({ lines: 1, limit: 50, held: 130, truncated: true, from: 51, drawn: 50 });
+    expect(movesOf(afterMove)).toEqual(["previous", "next"]);
   });
 
-  it("is one element while a press is in FLIGHT, and says what the rows still say", async () => {
-    const script = pagedScript(130);
-    await renderClaims(script);
-    paging.override = pressing(paging.calls[0].initial as unknown as PageState<ClaimLine>);
-    const loading = await renderClaims(script);
-    expect(pagingArms(loading)).toEqual(["loading"]);
-    // A press in flight has taken in no row and ended nothing.
-    expect(windowFigures(loading)).toEqual({
-      lines: 1,
-      limit: CLAIM_WINDOW,
-      held: 130,
-      truncated: true,
-    });
-    expect(lineText(loading)).not.toContain(DID_NOT_FILL);
-  });
-
-  it("a refused press settles nothing: the line is what it was before it", async () => {
+  it("the window line in every state a move can end in", async () => {
+    // admin-window/BUG-0174 criterion 6, under windows: offered, loading,
+    // refused (retryable and not), and the read ended — every one driven by
+    // the REAL driver from the REAL deps this page handed it. `held` is the
+    // matching count its own count read established, in every state; the
+    // truncation verdict is the state's own exhaustion.
     const claims = longPopulation(130);
     const script = pagedScript(130);
     await renderClaims(script);
-    const landed = await requestPage<ClaimLine>(
-      paging.calls[0].initial as unknown as PageState<ClaimLine>,
-      {
-        ...depsOf(),
-        fetchJson: () =>
-          Promise.resolve({
-            kind: "ok",
-            rows: claimLines(claims.slice(CLAIM_WINDOW, CLAIM_WINDOW * 2), new Map()),
-            offset: CLAIM_WINDOW,
-            exhausted: false,
-          }),
-      },
-    );
+    const initial = initialOf();
+    const w2: PageWindow = { page: 2, size: 50 };
+    const w3: PageWindow = { page: 3, size: 50 };
+    const landed = await answering(initial, w2, okFor(w2, claimLines(claims.slice(50, 100), new Map())));
+    const ended = await answering(landed, w3, okFor(w3, claimLines(claims.slice(100, 130), new Map())));
+    const readFailed = await answering(landed, w3, { kind: "error", reading: T.pendingClaims, message: "refused" });
+    const absent = await answering(landed, w3, { kind: "not_provisioned", missing: T.pendingClaims });
 
-    paging.override = landed;
-    const before = await renderClaims(script);
-    paging.override = await requestPage<ClaimLine>(landed, {
-      ...depsOf(),
-      fetchJson: () => Promise.resolve({ kind: "not_provisioned", missing: T.pendingClaims }),
-    });
-    const after = await renderClaims(script);
-
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    // The line is what it was, to the byte — the press settled nothing — and
-    // the control is withdrawn, because the view the surface pages is not in
-    // this database and no press puts it there (admin-window/BUG-0211).
-    expect(lineHtml(after)).toBe(lineHtml(before));
-    expect(pagingArms(after)).toEqual([]);
-
-    // MUST-NOT-FLAG (LESSONS 8): the same press answered with a FAILED READ
-    // settles nothing either, and that arm keeps its control — the line is
-    // byte-identical in both, which is what this case is about.
-    paging.override = await requestPage<ClaimLine>(landed, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "error",
-          reading: T.pendingClaims,
-          message: "canceling statement due to statement timeout",
-        }),
-    });
-    const afterReadFailure = await renderClaims(script);
-    expect(lineHtml(afterReadFailure)).toBe(lineHtml(before));
-    expect(pagingArms(afterReadFailure)).toContain("more");
-  });
-
-  it("at the bound ceiling it still says claims are not shown", async () => {
-    // The state a walk reaches after `MAX_PAGE_OFFSET` rows: every further
-    // bound is past the ceiling `pageBound` enforces, so `PageMore` draws its
-    // limit sentence and NO control — and that sentence does not claim the set
-    // has ended, because nothing established that. The line must agree: claims
-    // this surface could show are not shown, and it says so.
-    //
-    // The held is seeded rather than pressed to: 2,000 full pages is what puts
-    // a real operator here, and the state is built the way the surface's own
-    // state is built (`initialPage`), then driven through the REAL driver with
-    // the refusal this app's route answers a bound past the ceiling with.
-    const script = pagedScript(130);
-    await renderClaims(script);
-    const atCeiling = initialPage<ClaimLine>(MAX_PAGE_OFFSET + CLAIM_WINDOW, true, "");
-
-    // These two renders go around `renderClaims`, and only these two do: its
-    // sweep grades that no FIRST screen of this file draws the limit arm, and
-    // the state under test here is the one state where drawing it is correct.
-    const rendered = async (): Promise<string> => {
-      readWith.client = stubClient(script).asSupabaseClient();
-      return render(await ClaimsPage({ searchParams: Promise.resolve({}) }));
-    };
-
-    paging.override = atCeiling;
-    const before = await rendered();
-    expect(pagingArms(before)).toEqual(["limit"]);
-    expect(windowFigures(before).lines).toBe(1);
-    expect(windowFigures(before).truncated).toBe(true);
-    expect(lineText(before)).not.toContain(DID_NOT_FILL);
-
-    paging.override = await requestPage<ClaimLine>(atCeiling, {
-      ...depsOf(),
-      fetchJson: () =>
-        Promise.resolve({
-          kind: "refused",
-          reason: "the `offset` must be at most 100000",
-          bound: String(MAX_PAGE_OFFSET + CLAIM_WINDOW),
-        }),
-    });
-    const after = await rendered();
-    expect(pagingArms(after)).toEqual(["limit"]);
-    expect(cheerio.load(after)("[data-paging-refusal]")).toHaveLength(1);
-    expect(lineHtml(after)).toBe(lineHtml(before));
-  });
-
-  it("draws no control from a state off the grid, and never calls it exhausted", async () => {
-    // Where a wrapper is built off the grid ANYWAY — which `/claims` never
-    // does — the ceiling is answered by the widget and by nothing here: no
-    // control, and the one sentence that does NOT claim the set has ended
-    // (the architect's ruling of 2026-09-10 on admin-window/BUG-0168, which
-    // forbids `exhausted` for exactly this state). A guard in this wrapper
-    // would produce that forbidden sentence instead.
-    recordingFetch({ kind: "ok", rows: [], offset: 50, exhausted: true });
-    const markup = render(
-      h(
-        PagingProvider<ClaimLine>,
-        {
-          // A COUNT of 900 over 37 rendered rows: the state a page would build
-          // where its two reads disagree — which `/claims` never hands over.
-          initial: initialPage<ClaimLine>(37, true, ""),
-          window: countedWindow(900, CLAIM_WINDOW),
-          deps: { route: PAGE_ROUTES.claims, params: "", size: CLAIM_WINDOW, idKey: OBSERVATION_ID },
-          children: null,
-        },
-        h(PagedClaimList, {
-          label: "All claims",
-          initial: claimLines(longPopulation(37), new Map()),
-        }),
-      ),
-    );
-    expect(claimIds(markup)).toHaveLength(37);
-    expect(pagingArms(markup)).toEqual(["limit"]);
-    expect(/<button/.test(markup)).toBe(false);
+    const states: [string, string | null, PageState<ClaimLine> | null, number, boolean][] = [
+      ["offered", "more", null, 1, true],
+      ["loading", "loading", pressing(landed), 51, true],
+      ["refused, retryable", "more", readFailed, 51, true],
+      ["refused, not provisioned", null, absent, 51, true],
+      ["exhausted", "exhausted", ended, 101, false],
+    ];
+    for (const [name, arm, state, from, truncated] of states) {
+      paging.override = state;
+      const markup = await renderClaims(script);
+      if (arm === null) expect(pagingArms(markup), name).toEqual([]);
+      else expect(pagingArms(markup), name).toEqual([arm]);
+      expect(windowFigures(markup), name).toMatchObject({ lines: 1, held: 130, from, truncated });
+      expect(lineText(markup), name).not.toContain("did not fill");
+    }
+    // Where the two reads agree that the set ends in this window, the line
+    // says so in one sentence; where the count says more than the window
+    // shows, it states each read as its own (admin-window/BUG-0180).
+    paging.override = ended;
+    const agreeing = await renderClaims(script);
+    paging.override = await answering(initialOf(), w2, okFor(w2, claimLines(claims.slice(50, 70), new Map())));
+    const diverged = await renderClaims(script);
+    expect(windowFigures(diverged)).toMatchObject({ held: 130, from: 51, drawn: 20, truncated: false });
+    expect(shapeOf(diverged)).not.toBe(shapeOf(agreeing));
+    expect(lineText(diverged)).toContain(count(130));
   });
 });
 

@@ -674,10 +674,10 @@ export function eventListingRow(
 
 /* ── verdicts ─────────────────────────────────────────────────────────────
  * The table M2's handoff migration installs
- * (`contracts/admin-observability.md` §7). It does NOT exist on staging or in
- * production yet, so every fixture below describes the row the settlement
- * function will return once it does — and the ABSENT case, which is the
- * normal one for the whole of M2, needs no fixture at all: it is
+ * (`contracts/admin-observability.md` §7). Every fixture below describes the
+ * row the settlement function returns in the world where it is installed
+ * (which databases are in that world is ARCHITECTURE.md §9.2's to say) — and
+ * the ABSENT world needs no fixture at all: it is
  * `tableNotInSchemaCache("verdicts")` / `functionNotInSchemaCache(...)` from
  * `tests/fixtures/stub-client.ts`.
  */

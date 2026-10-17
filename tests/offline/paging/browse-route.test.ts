@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -12,7 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * PROMISES the client (ARCHITECTURE.md §4.3 read kind 3):
  *
  *  - the GATE runs first and a refused gate issues NO read;
- *  - the BOUND reaches nothing but `pageBound`, and a refused bound reaches no
+ *  - the WINDOW reaches nothing but `windowBound`, and a refused window reaches no
  *    read at all — the recorder stays empty over the whole refusal table,
  *    while the one canonical bound in that same table IS served, so the table
  *    cannot pass by refusing everything;
@@ -66,10 +64,13 @@ import { RECENT_EVENTS } from "@/lib/browse/views";
 import type { BrowseLegNotes } from "@/lib/db/browse";
 import { T } from "@/lib/db/tables";
 import {
-  MAX_PAGE_OFFSET,
-  OFFSET_PARAM,
+  DEFAULT_WINDOW_SIZE,
   PAGE_ANSWER_CACHE_CONTROL,
+  PAGE_PARAM,
   PAGE_ROUTES,
+  SIZE_PARAM,
+  WINDOW_SIZES,
+  largestPage,
   isPageAnswer,
   type NotedPageAnswer,
 } from "@/lib/paging/bounds";
@@ -81,7 +82,6 @@ import {
   sourceRow,
   type EventRow,
 } from "../../fixtures/rows";
-import { codeText } from "../source-tree";
 import {
   permissionDenied,
   stubClient,
@@ -96,6 +96,9 @@ import {
 const ADMIN = { user: { email: "paging-suite@example.invalid" } };
 
 const view = RECENT_EVENTS;
+
+/** The window size every query below that names none pages by. */
+const SIZE = DEFAULT_WINDOW_SIZE;
 
 /**
  * A catalog deep enough to page through, and DELIBERATELY not a multiple of
@@ -218,17 +221,6 @@ function accepted(body: unknown): NotedPageAnswer<BrowseRow, BrowseLegNotes> {
   return body as NotedPageAnswer<BrowseRow, BrowseLegNotes>;
 }
 
-/** The route, repo-relative — the spelling `codeText` reads. */
-const ROUTE_FILE = "src/app/api/admin/browse/rows/route.ts";
-
-/** The route file, whole, as the structural assertions read it. */
-function routeSource(): string {
-  return fs.readFileSync(
-    path.join(import.meta.dirname, "..", "..", "..", ROUTE_FILE),
-    "utf8",
-  );
-}
-
 beforeEach(() => {
   gate.answer = ADMIN;
   gate.calls = 0;
@@ -240,7 +232,7 @@ describe("the gate, first and always", () => {
     const stub = database(script());
     gate.answer = { error: Response.json({ error: "Forbidden" }, { status: 403 }) };
 
-    const response = await GET(request(`?${OFFSET_PARAM}=50`));
+    const response = await GET(request(`?${PAGE_PARAM}=2`));
 
     expect(response.status).toBe(403);
     expect(gate.calls).toBe(1);
@@ -253,17 +245,10 @@ describe("the gate, first and always", () => {
     gate.answer = { error: Response.json({ error: "Unauthorized" }, { status: 401 }) };
 
     // A bound the handler would refuse 400 if it ever looked at it.
-    const response = await GET(request(`?${OFFSET_PARAM}=abc`));
+    const response = await GET(request(`?${PAGE_PARAM}=abc`));
 
     expect(response.status).toBe(401);
     expect(stub.calls).toEqual([]);
-  });
-
-  it("is the first statement of the handler body", () => {
-    const source = routeSource();
-    const body = source.slice(source.indexOf("export async function GET"));
-    const firstStatement = body.slice(body.indexOf("{") + 1).trim().split("\n")[0];
-    expect(firstStatement).toMatch(/requireAdmin\(\)/);
   });
 });
 
@@ -278,27 +263,28 @@ describe("the gate, first and always", () => {
  * reason and the bound AS SENT, the gated cache directives, and a recorder
  * that stayed EMPTY.
  */
-const REFUSED: ReadonlyArray<readonly [string, string, string]> = [
-  ["no offset parameter at all", "", ""],
-  ["an empty offset", `?${OFFSET_PARAM}=`, ""],
-  ["a word", `?${OFFSET_PARAM}=abc`, "abc"],
-  ["a leading space", `?${OFFSET_PARAM}=%2050`, " 50"],
-  ["an explicit sign", `?${OFFSET_PARAM}=%2B50`, "+50"],
-  ["a leading zero", `?${OFFSET_PARAM}=050`, "050"],
-  ["a decimal point", `?${OFFSET_PARAM}=50.0`, "50.0"],
-  ["an exponent", `?${OFFSET_PARAM}=1e2`, "1e2"],
-  ["a negative bound", `?${OFFSET_PARAM}=-50`, "-50"],
-  ["a bound below the window", `?${OFFSET_PARAM}=49`, "49"],
-  ["a bound off the window's grid", `?${OFFSET_PARAM}=51`, "51"],
+const REFUSED: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["an empty page", `?${PAGE_PARAM}=`, PAGE_PARAM, ""],
+  ["a page that is a word", `?${PAGE_PARAM}=abc`, PAGE_PARAM, "abc"],
+  ["a page with a leading space", `?${PAGE_PARAM}=%202`, PAGE_PARAM, " 2"],
+  ["a page with an explicit sign", `?${PAGE_PARAM}=%2B2`, PAGE_PARAM, "+2"],
+  ["a page with a leading zero", `?${PAGE_PARAM}=02`, PAGE_PARAM, "02"],
+  ["a page with a decimal point", `?${PAGE_PARAM}=2.0`, PAGE_PARAM, "2.0"],
+  ["a page with an exponent", `?${PAGE_PARAM}=1e1`, PAGE_PARAM, "1e1"],
+  ["a negative page", `?${PAGE_PARAM}=-1`, PAGE_PARAM, "-1"],
+  ["page zero", `?${PAGE_PARAM}=0`, PAGE_PARAM, "0"],
+  ["an empty size", `?${SIZE_PARAM}=`, SIZE_PARAM, ""],
+  ["a size this app does not offer", `?${SIZE_PARAM}=30`, SIZE_PARAM, "30"],
   [
-    "a bound past the ceiling",
-    `?${OFFSET_PARAM}=${MAX_PAGE_OFFSET + view.window}`,
-    String(MAX_PAGE_OFFSET + view.window),
+    "a page past the ceiling",
+    `?${PAGE_PARAM}=${largestPage(SIZE) + 1}`,
+    PAGE_PARAM,
+    String(largestPage(SIZE) + 1),
   ],
 ];
 
-describe("the bound reaches nothing but pageBound", () => {
-  it.each(REFUSED)("refuses %s with 400, naming it, and reads nothing", async (_what, query, sent) => {
+describe("the window reaches nothing but windowBound", () => {
+  it.each(REFUSED)("refuses %s with 400, naming it, and reads nothing", async (_what, query, param, sent) => {
     const stub = database(script());
 
     const { status, body, cacheControl } = await ask(query);
@@ -307,7 +293,9 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(status).toBe(400);
     expect(answer.kind).toBe("refused");
     if (answer.kind !== "refused") return;
-    // The bound AS SENT — never a trimmed, repaired or clamped spelling of it.
+    // The parameter by NAME and its value AS SENT — never a trimmed, repaired
+    // or clamped spelling of it.
+    expect(answer.param).toBe(param);
     expect(answer.bound).toBe(sent);
     expect(answer.reason.length).toBeGreaterThan(0);
     expect(cacheControl).toBe(PAGE_ANSWER_CACHE_CONTROL);
@@ -315,48 +303,13 @@ describe("the bound reaches nothing but pageBound", () => {
     expect(stub.calls, `${sent} reached a read`).toEqual([]);
   });
 
-  it("serves the one canonical bound in that same table, so the table cannot pass by refusing everything", async () => {
+  it("takes the FIRST value of a repeated parameter, as URLSearchParams.get would", async () => {
     const stub = database(script());
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
+    const { status } = await ask(`?${PAGE_PARAM}=2&${PAGE_PARAM}=9&${SIZE_PARAM}=20&${SIZE_PARAM}=100`);
 
     expect(status).toBe(200);
-    expect(answer.kind).toBe("ok");
-    // Exactly ONE read of the events window, and it is the window the bound
-    // named — `.range(offset, offset + window - 1)`, never a NaN range.
-    expect(windowReads(stub).length).toBe(1);
-    expect(rangeOf(windowReads(stub)[0])).toEqual([view.window, view.window * 2 - 1]);
-  });
-
-  it("takes the FIRST value of a repeated offset, as URLSearchParams.get would", async () => {
-    const stub = database(script());
-
-    const { status } = await ask(`?${OFFSET_PARAM}=50&${OFFSET_PARAM}=60`);
-
-    expect(status).toBe(200);
-    expect(rangeOf(windowReads(stub)[0])[0]).toBe(50);
-  });
-
-  it("refuses on the FIRST value of a repeated offset too", async () => {
-    const stub = database(script());
-
-    const { status, body } = await ask(`?${OFFSET_PARAM}=abc&${OFFSET_PARAM}=50`);
-    const answer = accepted(body);
-
-    expect(status).toBe(400);
-    if (answer.kind !== "refused") throw new Error(`expected a refusal, got ${answer.kind}`);
-    expect(answer.bound).toBe("abc");
-    expect(stub.calls).toEqual([]);
-  });
-
-  it("does its own arithmetic on the raw parameter nowhere", () => {
-    const source = routeSource();
-    // The route ASKS the shared guard…
-    expect(source).toContain("pageBound(");
-    // …and never coerces the parameter itself. `pageBound` owns every spelling
-    // question, so a second reader here is a second answer to it.
-    expect(source).not.toMatch(/parseInt|parseFloat|Number\(/);
+    expect(rangeOf(windowReads(stub)[0])).toEqual([20, 39]);
   });
 });
 
@@ -364,114 +317,80 @@ describe("full-or-exhausted, the route's half of the contract", () => {
   it("answers a FULL window that continues", async () => {
     const stub = database(script());
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { status, body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     expect(status).toBe(200);
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
+    expect(answer.rows.length).toBe(SIZE);
     expect(answer.exhausted).toBe(false);
     expect(answer.rows.map((row) => row.event_id)).toEqual(
-      CATALOG.slice(view.window, view.window * 2).map((row) => row.event_id),
+      CATALOG.slice(SIZE, SIZE * 2).map((row) => row.event_id),
     );
-    // The bound the REQUEST carried, echoed — never the read's own idea of it,
+    // The window the REQUEST named, echoed — never the read's own idea of it,
     // and never a number recomputed from `rows.length`.
-    expect(answer.offset).toBe(view.window);
-    expect(rangeOf(windowReads(stub)[0])[0]).toBe(answer.offset);
+    expect(answer.page).toBe(2);
+    expect(answer.size).toBe(SIZE);
+    expect(rangeOf(windowReads(stub)[0])[0]).toBe((answer.page - 1) * answer.size);
   });
 
   it("answers a SHORT page as exhausted, with the rows it really read", async () => {
     database(script());
 
-    const { body } = await ask(`?${OFFSET_PARAM}=100`);
+    const { body } = await ask(`?${PAGE_PARAM}=3`);
     const answer = accepted(body);
 
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    // 137 events: the page at 100 holds 37 of them.
+    // 137 events: window 3 at 50 holds 37 of them.
     expect(answer.rows.length).toBe(DEPTH - 100);
-    expect(answer.rows.length).toBeLessThan(view.window);
+    expect(answer.rows.length).toBeLessThan(SIZE);
     expect(answer.exhausted).toBe(true);
-    expect(answer.offset).toBe(100);
+    expect(answer.page).toBe(3);
   });
 
-  it("answers a page past the end with zero rows and calls the set exhausted", async () => {
-    database(script());
+  it("never reports a row count the read did not return, at any window of any size", async () => {
+    for (const size of WINDOW_SIZES) {
+      for (let page = 1; (page - 1) * size <= 200; page += 1) {
+        const stub = database(script());
+        const { body } = await ask(`?${PAGE_PARAM}=${page}&${SIZE_PARAM}=${size}`);
+        const answer = accepted(body);
+        if (answer.kind !== "ok") throw new Error(`expected an ok window, got ${answer.kind}`);
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=200`);
-    const answer = accepted(body);
-
-    expect(status).toBe(200);
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows).toEqual([]);
-    expect(answer.exhausted).toBe(true);
-    expect(answer.offset).toBe(200);
-  });
-
-  it("never reports a row count the read did not return, at any bound on the grid", async () => {
-    for (let offset = view.window; offset <= 200; offset += view.window) {
-      const stub = database(script());
-      const { body } = await ask(`?${OFFSET_PARAM}=${offset}`);
-      const answer = accepted(body);
-      if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-
-      const [from, to] = rangeOf(windowReads(stub)[0]);
-      const read = CATALOG.slice(from, to + 1);
-      expect(answer.rows.length, `offset ${offset}`).toBe(read.length);
-      // The biconditional itself, at every bound: exhausted IS the short page.
-      expect(answer.exhausted, `offset ${offset}`).toBe(read.length < view.window);
-      // Never longer than the window.
-      expect(answer.rows.length).toBeLessThanOrEqual(view.window);
+        const [from, to] = rangeOf(windowReads(stub)[0]);
+        const read = CATALOG.slice(from, to + 1);
+        const where = `page ${page} at ${size}`;
+        expect(from, where).toBe((page - 1) * size);
+        expect(answer.rows.length, where).toBe(read.length);
+        expect(answer.exhausted, where).toBe(read.length < size);
+        expect(answer.rows.length, where).toBeLessThanOrEqual(size);
+      }
     }
   });
 
-  /**
-   * A leg that renders no row of its own may not decide the surface's state
-   * (common violations row 14), and nothing removes a row between `.range()`
-   * and the answer (§4.3). A page shortened in code would answer `exhausted`
-   * with rows still behind it and end the operator's paging early.
-   */
-  it("answers a FULL continuing page when every leg returns nothing at all", async () => {
-    const stub = database(
-      script({
-        [T.eventListings]: { data: [], count: 0 },
-        [T.fieldProvenance]: { data: [], count: 0 },
-        [T.sources]: { data: [], count: 0 },
-      }),
-    );
-
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
-    expect(answer.exhausted).toBe(false);
-    expect(answer.rows.every((row) => row.venue_name === null)).toBe(true);
-    expect(answer.rows.every((row) => row.sources.length === 0)).toBe(true);
-    // The legs answered; they simply held no row for these ids.
-    expect(answer.notes).toEqual({ venues: null, provenance: null });
-    expect(rangeOf(windowReads(stub)[0])).toEqual([view.window, view.window * 2 - 1]);
-  });
-
-  it("answers a FULL continuing page when every row shares one venue and names no source", async () => {
-    database(
-      script({
-        [T.eventListings]: (call: RecordedCall) => ({
-          data: askedIds(call).map((id) =>
-            eventListingRow({ event_id: id, venue_name: "The Forum" }),
-          ),
-          count: askedIds(call).length,
-        }),
-        [T.fieldProvenance]: { data: [], count: 0 },
-      }),
-    );
-
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
-    const answer = accepted(body);
-
-    if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
-    expect(answer.exhausted).toBe(false);
-    expect(answer.rows.every((row) => row.venue_name === "The Forum")).toBe(true);
+  it("draws every id exactly once across all windows, at each of the three sizes", async () => {
+    // THE WINDOW INVARIANT, pinned offline over a fixture this file owns
+    // (README "Testing", rules 1 and 3): walking page 1, 2, … until the route
+    // says the set ended yields the catalog — every id once, in arrival order,
+    // no duplicate at any seam and no skip. 137 is a multiple of none of the
+    // sizes, so every walk ends on a SHORT window.
+    for (const size of WINDOW_SIZES) {
+      const drawn: string[] = [];
+      let page = 1;
+      let exhausted = false;
+      while (!exhausted) {
+        database(script());
+        const { body } = await ask(`?${PAGE_PARAM}=${page}&${SIZE_PARAM}=${size}`);
+        const answer = accepted(body);
+        if (answer.kind !== "ok") throw new Error(`expected an ok window, got ${answer.kind}`);
+        drawn.push(...answer.rows.map((row) => row.event_id));
+        exhausted = answer.exhausted;
+        page += 1;
+        if (page > 20) throw new Error(`the walk at ${size} never ended`);
+      }
+      expect(new Set(drawn).size, `size ${size}`).toBe(drawn.length);
+      expect(drawn, `size ${size}`).toEqual(CATALOG.map((row) => row.event_id));
+      expect(page - 1, `size ${size}`).toBe(Math.ceil(DEPTH / size));
+    }
   });
 });
 
@@ -479,12 +398,12 @@ describe("the legs travel with the answer or not at all", () => {
   it("carries a refused VENUE leg in the ok answer, rows and all", async () => {
     database(script({ [T.eventListings]: { error: permissionDenied(T.eventListings) } }));
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { status, body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     expect(status).toBe(200);
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
+    expect(answer.rows.length).toBe(SIZE);
     // The same object `StateOf` renders above the table on the first screen:
     // the leg's own arm, naming the object it was reading.
     expect(answer.notes.venues?.kind).toBe("error");
@@ -503,11 +422,11 @@ describe("the legs travel with the answer or not at all", () => {
       }),
     );
 
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.rows.length).toBe(view.window);
+    expect(answer.rows.length).toBe(SIZE);
     // Every row's Sources column is empty — and the answer says WHY, instead
     // of letting the client render it as "no sources behind this row".
     expect(answer.rows.every((row) => row.sources.length === 0)).toBe(true);
@@ -520,7 +439,7 @@ describe("the legs travel with the answer or not at all", () => {
   it("carries both notes as null when both legs answered", async () => {
     database(script());
 
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
@@ -530,26 +449,13 @@ describe("the legs travel with the answer or not at all", () => {
     expect(answer.rows.every((row) => row.venue_name === "The Forum")).toBe(true);
     expect(answer.rows.every((row) => row.sources[0] === "ticketmaster")).toBe(true);
   });
-
-  it("runs the legs over exactly THIS page's ids", async () => {
-    const stub = database(script());
-
-    await ask(`?${OFFSET_PARAM}=${view.window}`);
-
-    const ids = CATALOG.slice(view.window, view.window * 2).map((row) => row.event_id);
-    for (const table of [T.eventListings, T.fieldProvenance] as const) {
-      const call = stub.calls.find((one) => one.table === table);
-      expect(call, table).toBeDefined();
-      expect(askedIds(call as RecordedCall), table).toEqual(ids);
-    }
-  });
 });
 
 describe("the refusals a read can carry", () => {
   it("answers a database with no events by NAMING it, not by erroring", async () => {
     database(script({ [T.events]: { error: tableNotInSchemaCache(T.events) } }));
 
-    const { status, body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { status, body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     // Absence is a normal answer: the PAGE decides what a not-provisioned
@@ -561,7 +467,7 @@ describe("the refusals a read can carry", () => {
   it("carries the database's own message on a failed read", async () => {
     database(script({ [T.events]: { error: permissionDenied(T.events) } }));
 
-    const { body } = await ask(`?${OFFSET_PARAM}=${view.window}`);
+    const { body } = await ask(`?${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     if (answer.kind !== "error") throw new Error(`expected an error answer, got ${answer.kind}`);
@@ -577,17 +483,17 @@ describe("the refusals a read can carry", () => {
 
 describe("the route owns the shape of what it serves", () => {
   const ARMS: Array<{ what: string; script: Script; query: string }> = [
-    { what: "ok", script: script(), query: `?${OFFSET_PARAM}=50` },
-    { what: "refused", script: script(), query: `?${OFFSET_PARAM}=abc` },
+    { what: "ok", script: script(), query: `?${PAGE_PARAM}=2` },
+    { what: "refused", script: script(), query: `?${PAGE_PARAM}=abc` },
     {
       what: "not_provisioned",
       script: script({ [T.events]: { error: tableNotInSchemaCache(T.events) } }),
-      query: `?${OFFSET_PARAM}=50`,
+      query: `?${PAGE_PARAM}=2`,
     },
     {
       what: "error",
       script: script({ [T.events]: { error: permissionDenied(T.events) } }),
-      query: `?${OFFSET_PARAM}=50`,
+      query: `?${PAGE_PARAM}=2`,
     },
   ];
 
@@ -619,20 +525,9 @@ describe("the route owns the shape of what it serves", () => {
     }
   });
 
-  it("spells those directives nowhere but the shared constant", () => {
-    // The value is `lib/paging/bounds.ts`' to own; a second string typed into
-    // a route is how the two routes drift (LESSONS 5). Read over CODE lines
-    // only — the docstring above the handler explains the directives and that
-    // is documentation, not a second spelling.
-    const code = codeText(ROUTE_FILE);
-    expect(code).toContain("PAGE_ANSWER_CACHE_CONTROL");
-    expect(code).not.toContain("no-store");
-    expect(code).not.toContain("must-revalidate");
-  });
-
   it("answers JSON", async () => {
     database(script());
-    const response = await GET(request(`?${OFFSET_PARAM}=50`));
+    const response = await GET(request(`?${PAGE_PARAM}=2`));
     expect(response.headers.get("content-type")).toMatch(/application\/json/);
   });
 
@@ -655,7 +550,7 @@ describe("the route reads no view, table or column off the URL", () => {
     const stub = database(script());
 
     await ask(
-      `?view=all-events&table=venues&cols=secret_column&sort=starts_at&q=drop&${OFFSET_PARAM}=50`,
+      `?view=all-events&table=venues&cols=secret_column&sort=starts_at&q=drop&${PAGE_PARAM}=2`,
     );
 
     // The four objects Browse's own read names through `tables.ts`, and no
@@ -675,9 +570,9 @@ describe("the route reads no view, table or column off the URL", () => {
 
   it("serves the same page whatever the URL says about columns", async () => {
     database(script());
-    const plain = accepted((await ask(`?${OFFSET_PARAM}=50`)).body);
+    const plain = accepted((await ask(`?${PAGE_PARAM}=2`)).body);
     database(script());
-    const narrowed = accepted((await ask(`?cols=title&${OFFSET_PARAM}=50`)).body);
+    const narrowed = accepted((await ask(`?cols=title&${PAGE_PARAM}=2`)).body);
 
     // `cols` decides which columns RENDER and never which rows are READ
     // (admin-window/BUG-0114); the rows carry every column the view carries.
@@ -692,12 +587,12 @@ describe("the route reads no view, table or column off the URL", () => {
     // never reads — and it is not a bound (admin-window/TASK-0068).
     const stub = database(script());
 
-    const { status, body } = await ask(`?__proto__=x&${OFFSET_PARAM}=50`);
+    const { status, body } = await ask(`?__proto__=x&${PAGE_PARAM}=2`);
     const answer = accepted(body);
 
     expect(status).toBe(200);
     if (answer.kind !== "ok") throw new Error(`expected an ok page, got ${answer.kind}`);
-    expect(answer.offset).toBe(50);
-    expect(rangeOf(windowReads(stub)[0])).toEqual([50, 50 + view.window - 1]);
+    expect(answer.page).toBe(2);
+    expect(rangeOf(windowReads(stub)[0])).toEqual([50, 50 + SIZE - 1]);
   });
 });

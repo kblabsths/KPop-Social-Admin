@@ -33,8 +33,9 @@ import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
  * row, which is the honest half of that bar.
  *
  * It re-derives nothing: rows arrive narrowed and ordered BY THE DATABASE —
- * `readClaimWindow` (`src/lib/db/claims.ts`) asks for the longest-waiting
- * `CLAIM_WINDOW` of them and this component neither filters, sorts nor pages
+ * `readClaimWindow` (`src/lib/db/claims.ts`) asks for ONE WINDOW of the
+ * longest-waiting ones — the window the URL names (`lib/paging/bounds.ts`,
+ * page windows since 2026-10-16) — and this component neither filters, sorts nor pages
  * what it is handed. Machine identifiers render verbatim, in the table's mono
  * `data` cells.
  *
@@ -50,37 +51,6 @@ import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
  */
 export type { ClaimLine };
 
-/**
- * The list's BOUND — campaign admin-window/BUG-0041.
- *
- * Rendering every row the view holds made the page a function of the backlog:
- * 877 claims on staging rendered a 30,079px page with the pending-claims
- * gauge's heading at y=29,486, so the gauge's position moved by tens of
- * thousands of pixels as the resolver drained the queue — the operator
- * relearnt where it sat every morning (LOOK_AND_FEEL, Interaction, "Repeat
- * use").
- *
- * So the LIST is a window, in the app's existing idiom (`/cycles`, `/browse`,
- * the four gauges): at most this many rows, the longest-waiting ones, with the
- * cap and the number held stated on screen. **It bounds only what is drawn** —
- * nothing above it re-derives a count from these rows, and the bucket table
- * still counts the whole view under the current filters, so no figure on the
- * page becomes a window aggregate wearing a total's clothes.
- *
- * 50, the same bound `/browse` puts on a list of records: at the ~33px per row
- * this table measures, a full window is ~1,650px of list, so every section
- * heading keeps a position the backlog cannot move by thousands of pixels.
- *
- * **Since admin-window/BUG-0138 it is also the `.limit()` the QUERY carries.**
- * It used to be a slice taken in TypeScript off a complete read of the view,
- * beside a `held` counted from the array that read returned; the read is a
- * window now and `held` is a count read of its own — `readClaimCount`
- * (`src/lib/db/claims.ts`) through `countRead`, which is `{ count: "exact" }`
- * over `limit 0` and never a `head` request (`src/lib/db/result.ts`) — so this
- * number is spelled ONCE — here — and the page hands it to the read and to the
- * window line from this one declaration.
- */
-export const CLAIM_WINDOW = 50;
 
 export function ClaimList({
   rows,

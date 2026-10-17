@@ -459,41 +459,72 @@ Observable behavior:
   the parity check for this surface asserts the not-provisioned state, which is
   the honest oracle.
 
-## F14 — Paging past the window, on Claims and on Browse *(M3, added 2026-09-10)*
+## F14 — Page windows on Claims and on Browse *(M3, added 2026-09-10; rewritten for page windows 2026-10-16)*
 
 Ben, 2026-09-10: *"not being able to load all claims if I want to is a huge
-oversight."* This extends F5 and F7; it contradicts nothing they say.
+oversight."* Ben, 2026-09-11: *"I don't want to be scrolling down a long ass
+list like this. We should have pagination e.g. only show items 1-50 or 51-100
+at a time (adjustable as 20, 50, and 100)."* This extends F5 and F7; it
+contradicts nothing they say. The 2026-09-10 shape — a "show the next 50"
+control that APPENDED rows to a growing list — is retired; the list shows ONE
+window at a time.
 
-- The **first screen does not change**: it is the same server-rendered window,
-  with the same window line, the same figures and the same not-provisioned
-  behavior it has today. Paging is what the operator can do *after* that screen
-  exists, never a change to what arrives first.
-- **Asking for more is a client request against a route handler**, on demand.
-  Not a full server round trip per page, not a re-render of the page, and not an
-  unbounded read: each request is one bounded page, and the request states what
-  it asked for.
-- The affordance is offered **only when there is more**, and never claims a
-  total the read did not establish. When the set is exhausted the surface says
-  so; when a page refuses, it refuses the way every other read in this app
-  refuses — naming the object, never half-filling the list.
+- **The list shows one window of rows**: 1–50, 51–100, …, at a size the
+  operator chooses from **20, 50 or 100**. The operator moves between
+  windows; the rows on screen are REPLACED, never grown. There is no "load
+  everything".
+- **The window lives in the URL**: `?page=` and `?size=`. A reload, the Back
+  button and a shared link land on the same window (LOOK_AND_FEEL bar 11). An
+  address that names neither is the first window at 50.
+- **The first screen is the window the address names**, server-rendered with
+  the same window line, the same figures and the same not-provisioned
+  behaviour the first screen has today. The server screen for a given address
+  is exactly what the client would draw for it — the same bounded read — and
+  that, not byte-identity across addresses, is what the suite pins.
+- **Moving is a client request against a route handler**, on demand. Not a
+  full server round trip per window, not a re-render of the page, and not an
+  unbounded read: each request is one bounded window, and the request states
+  which window it asked for (page and size). The control pushes the window's
+  address first, so the address and the rows never disagree for longer than
+  one request; Back and Forward move the window the same way.
+- **The controls sit ABOVE the list** (bar 14): previous, next, and the size
+  selector, before the first row — never after the last. Every control is a
+  real link to the window's own address.
+- **A size change mid-walk keeps the row the operator was reading from**: the
+  new window is the one at the new size that holds the current window's first
+  row. On rows 51–100 at 50, choosing 20 shows rows 41–60; choosing 100 shows
+  rows 1–100.
+- **An address naming a window this app does not serve is refused by name,
+  never clamped**: a page that is not a whole number from 1, a size that is
+  not one of the three, or a window starting past the seek ceiling renders a
+  refusal naming the parameter, reads nothing, draws no rows and no control,
+  and offers the first window. The value typed is never echoed. A page past
+  the END of the data is not a refusal: the read happens, the window is
+  empty, and the surface says so and offers the way back.
+- **The affordance claims no total the read did not establish.** "Next" is
+  offered while the set has not ended with the window on screen — the read's
+  own short answer ends it, and on Claims the count ends it where the last row
+  on screen reaches the count; where the read and the count disagree the
+  window line states each as its own fact and no control claims the other.
+  When a move refuses, it refuses the way every other read in this app refuses
+  — naming the object, leaving the window on screen exactly as it was, and
+  offering to ask for the same window again.
 - **Absent the tables**, the surface renders its not-provisioned state and no
   paging affordance is offered at all: a control that cannot be honoured is
-  never drawn (F10's rule, applied here).
+  never drawn (F10's rule, applied here). Nor is one drawn where no move could
+  change the screen.
 - Claims and Browse **only**. No third surface gains paging on the team's
-  initiative, and no page gains a "load everything" control — the operator asks
-  for more, a bounded page at a time.
-- The route handler is gated exactly as the pages are: unauthenticated requests
-  never reach it, and no service-role material crosses to the client.
+  initiative, and no page gains a "load everything" control.
+- The route handler is gated exactly as the pages are: unauthenticated
+  requests never reach it, and no service-role material crosses to the client.
 - **Paging is not whole-table browsing and does not reopen it.** M2's
   out-of-scope list still stands in full: Browse keeps its one curated view
-  (recent events) and its column selector, and paging lets the operator walk
-  further down *that* view. A second view, a table picker, a SQL runner and a
-  search box all remain out.
-- **ARCHITECTURE §4.3 forbids paging today** (*"Paging is not the answer to a
-  cap and none is built"*), and §4/§5 forbid a component fetching. Those
-  contracts are the **architect's** to amend at the start of M3, before any page
-  is touched. A builder that finds the contract in its way files, it does not
-  interpret.
+  (recent events) and its column selector, and the window moves down *that*
+  view. A second view, a table picker, a SQL runner and a search box all
+  remain out.
+- **ARCHITECTURE §4.3 read kind 3 is the contract** (amended 2026-10-16 for
+  page windows). A builder that finds the contract in its way files, it does
+  not interpret.
 
 ## F15 — Every windowed figure is true about the read that produced it *(M3, added 2026-09-10)*
 

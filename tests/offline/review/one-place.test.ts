@@ -172,10 +172,10 @@ describe("the M2 close settles in exactly one place", () => {
   });
 
   it("reads verdicts from the registry and the seam, and nowhere else", () => {
-    // admin-window/TASK-0002 named `verdicts` in `T` before it existed, so a
-    // read of it classifies as not_provisioned against today's database
-    // (ARCHITECTURE.md §4.1) — and it still does not exist on staging or in
-    // production. INVERTED 2026-09-08 (admin-window/TASK-0048): M2 adds the
+    // admin-window/TASK-0002 named `verdicts` in `T` before any database held
+    // it, so a read of it classifies as not_provisioned against one without
+    // it (ARCHITECTURE.md §4.1; which databases hold it is §9.2's to say).
+    // INVERTED 2026-09-08 (admin-window/TASK-0048): M2 adds the
     // one READ of it, `readSettlementReadiness`, which is how every surface
     // learns whether it may offer a settlement at all (DECISIONS 2026-09-08 —
     // PostgREST cannot introspect a function without calling it, so the

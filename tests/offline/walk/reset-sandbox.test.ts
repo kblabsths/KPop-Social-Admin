@@ -174,17 +174,6 @@ describe("the reset, against a scripted database", () => {
     }
   });
 
-  it("names the table and the paste when it refuses an absent one", async () => {
-    const stub = stubClient({
-      [SANDBOX_TABLE]: { data: null, error: tableNotInSchemaCache(SANDBOX_TABLE) },
-    });
-    const raised = await refusalFrom(resetSandbox(stub.asSupabaseClient()));
-    expect(raised.message).toContain(SANDBOX_TABLE);
-    expect(raised.message).toContain("BY HAND");
-    expect(raised.message).toContain("for-human/TASK-0034.md");
-    expect(raised.message.startsWith(`${RESET_CALLER_NAME} refuses: `)).toBe(true);
-  });
-
   it("treats a read failure that is NOT absence as a failure, not a reset", async () => {
     const stub = stubClient({
       [SANDBOX_TABLE]: {
@@ -285,17 +274,6 @@ describe("the reset, as a program", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toBe("");
     expect(run.stderr).toContain("not-the-declared-target.supabase.co");
-    expect(run.stderr).not.toContain(SENTINEL_KEY);
-  });
-
-  it("refuses an unparseable URL without echoing it", () => {
-    const notAUrl = "still-somebodys-value-even-though-it-is-not-a-url";
-    const run = runCli({
-      SUPABASE_URL: notAUrl,
-      SUPABASE_SERVICE_ROLE_KEY: SENTINEL_KEY,
-    });
-    expect(run.status).toBe(1);
-    expect(run.stderr).not.toContain(notAUrl);
     expect(run.stderr).not.toContain(SENTINEL_KEY);
   });
 

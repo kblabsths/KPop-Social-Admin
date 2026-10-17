@@ -71,13 +71,6 @@ describe("the facet vocabulary", () => {
     // the ticket rather than left to be discovered.
     expect([...REVIEW_QUEUES]).toEqual([...QUEUES]);
   });
-
-  it("covers every field of the filter the data layer takes", () => {
-    // A facet that existed here but not on `ReviewItemFilter` would not narrow
-    // anything; one that existed there but not here would be unreachable.
-    const asFilterKeys: (keyof ReviewItemFilter)[] = [...FACETS];
-    expect(asFilterKeys.sort()).toEqual(["kind", "queue", "shape", "status"]);
-  });
 });
 
 describe("reading the URL", () => {
@@ -171,21 +164,6 @@ describe("what narrows ONE surface, not the whole URL", () => {
     }
   });
 
-  it("counts every OTHER facet beside the one the surface applies", () => {
-    const within: ReviewItemFilter = { kind: "decision" };
-    for (const facet of FACETS.filter((candidate) => candidate !== "kind")) {
-      const value = (FACET_VALUES[facet] as readonly string[])[0];
-      expect(
-        isNarrowedBeyond(filterFrom({ [facet]: value }), within),
-        facet,
-      ).toBe(true);
-      expect(
-        isNarrowedBeyond(filterFrom({ kind: "decision", [facet]: value }), within),
-        `kind + ${facet}`,
-      ).toBe(true);
-    }
-  });
-
   it("answers the whole-URL question when the surface narrows nothing itself", () => {
     // A surface with no narrowing of its own says so, at the call: `{}` is the
     // whole-URL question spelled out (admin-window/DEBT-0010). It used to be
@@ -194,28 +172,6 @@ describe("what narrows ONE surface, not the whole URL", () => {
     expect(isNarrowedBeyond({}, {})).toBe(false);
     expect(isNarrowedBeyond({ kind: "signal" }, {})).toBe(true);
     expect(isNarrowedBeyond({}, { kind: "signal" })).toBe(false);
-  });
-
-  it("takes its second argument from the caller, always", () => {
-    // Two pins for admin-window/DEBT-0010's second half — the arity that used
-    // to answer a second question.
-    //
-    // Runtime: `Function.length` counts the parameters BEFORE the first one
-    // carrying a default, so `within: ReviewItemFilter = {}` would make this
-    // 1. It is 2.
-    expect(isNarrowedBeyond.length).toBe(2);
-
-    // Compile time, graded by `tsc --noEmit` (which reads `tests/**` — see
-    // `tsconfig.json`'s include) rather than by anything this file asserts:
-    // `@ts-expect-error` is ITSELF an error when the line under it
-    // type-checks, so putting the default back reddens the type check here.
-    // Never called: with `within` undefined the body would throw, which is
-    // the other half of why one argument is not a question this predicate
-    // answers.
-    const oneArgument = () =>
-      // @ts-expect-error one argument is not a question this predicate answers
-      isNarrowedBeyond({ kind: "signal" });
-    expect(typeof oneArgument).toBe("function");
   });
 });
 
@@ -253,25 +209,6 @@ describe("the narrowing a KIND implies", () => {
     // nothing beyond its own kind — `?shape=data_conflict_fact` and
     // `?queue=data_conflict` really do remove rows from it.
     expect(narrowingOfKind("decision")).toEqual(IMPLIED.decision);
-  });
-
-  it("never implies a status: that is a row's own state, not its kind's", () => {
-    for (const kind of KINDS) {
-      expect(narrowingOfKind(kind).status, kind).toBeUndefined();
-    }
-  });
-
-  it("SELECTS exactly the kind's rows — an implied value removes none of them", () => {
-    // The soundness half, on rows rather than on the mapping: the derived
-    // narrowing and the bare `{ kind }` pick the same items out of a
-    // population that holds all three shapes, both statuses, and the rows the
-    // schema permits but the happy path never produces.
-    for (const kind of KINDS) {
-      const implied = selectItems(POPULATION, narrowingOfKind(kind));
-      const byKind = selectItems(POPULATION, { kind });
-      expect(implied.length, kind).toBeGreaterThan(0);
-      expect(implied, kind).toEqual(byKind);
-    }
   });
 
   it("discounts a URL facet exactly when the kind implies its value", () => {
@@ -497,22 +434,6 @@ describe("the chips a page renders", () => {
     }
   });
 
-  it("marks 'all' active while that facet narrows nothing", () => {
-    const chips = facetChips(PATH, {}, "shape");
-    expect(chips.choices.filter((choice) => choice.active)).toHaveLength(1);
-    expect(chips.choices[0].active).toBe(true);
-  });
-
-  it("marks exactly the chosen value active, and links 'all' back out", () => {
-    const filter = filterFrom({ shape: SHAPES[1] });
-    const chips = facetChips(PATH, filter, "shape");
-    const active = chips.choices.filter((choice) => choice.active);
-
-    expect(active).toHaveLength(1);
-    expect(active[0].label).toBe(SHAPES[1]);
-    expect(paramsOf(chips.choices[0].href)).toEqual({});
-  });
-
   it("keeps every other facet when one chip is followed", () => {
     const filter = filterFrom({ kind: "decision", status: "open" });
     for (const choice of facetChips(PATH, filter, "queue").choices) {
@@ -535,10 +456,6 @@ describe("the chips a page renders", () => {
         }
       }
     }
-  });
-
-  it("renders one group per facet", () => {
-    expect(filterBar(PATH, {}).map((group) => group.facet)).toEqual([...FACETS]);
   });
 });
 

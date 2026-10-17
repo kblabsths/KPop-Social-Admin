@@ -58,16 +58,6 @@ export interface BrowseView {
   readonly defaultColumns: readonly BrowseColumnKey[];
   /** The default sort — Browse has no sortable headers; this is the view. */
   readonly sort: BrowseSort;
-  /**
-   * How many rows the window holds. Browse is a WINDOW read
-   * (ARCHITECTURE.md §4.3): the page names the window it shows rather than
-   * claiming to show every event, because `events` is a growing catalog and a
-   * complete read of it would refuse the day it passes the platform row cap.
-   *
-   * It also bounds the `.in(...)` id sets the provenance and venue legs build,
-   * which is why it stays at or below `ID_CHUNK` (100) in `lib/db/gauges.ts`.
-   */
-  readonly window: number;
 }
 
 /**
@@ -106,7 +96,6 @@ export const RECENT_EVENTS: BrowseView = {
     "arrived",
   ],
   sort: { field: "created_at", direction: "desc" },
-  window: 50,
 } as const;
 
 /**

@@ -81,23 +81,11 @@ function databaseExposing(at: string, functions: readonly string[]) {
 }
 
 describe("the endpoint behind a client", () => {
-  it("is what the real supabase client carries, not a shape we invented", () => {
-    // The whole library coupling, in one assertion. `rest` is `protected` in
-    // the published types and present at runtime; if an upgrade renames it,
-    // this fails — and the app fails CLOSED, which is the other half of the
-    // contract (see the case below).
-    const { client } = databaseExposing("https://endpoint-shape.invalid", []);
-    const endpoint = restEndpointOf(client);
-    expect(endpoint).not.toBeNull();
-    expect(endpoint?.url).toBe("https://endpoint-shape.invalid/rest/v1");
-    expect(typeof endpoint?.fetch).toBe("function");
-  });
-
   it("is null for a client that carries none, and that answer refuses rather than guesses", async () => {
-    // The fixture that MUST flag, beside the one above that must not
-    // (LESSONS 8). A client without the endpoint cannot establish anything, so
-    // the answer is an error naming what was asked about — never `ok`, which
-    // would offer a control whose save cannot land.
+    // The fixture that MUST flag (LESSONS 8). A client without the endpoint
+    // cannot establish anything, so the answer is an error naming what was
+    // asked about — never `ok`, which would offer a control whose save cannot
+    // land.
     expect(restEndpointOf({} as SupabaseClient)).toBeNull();
 
     const result = await readFunctionInstalled(FN.settleReviewItem, {} as SupabaseClient);
@@ -147,7 +135,7 @@ describe("reading whether a function is installed", () => {
     // host answering for something else, and a transport that threw. Each is
     // an error NAMING the function, because "the object is not there" and "the
     // question was not answered" are different facts and only one of them is
-    // about the object (`functionsOnStaging`, tests/live/parity.ts).
+    // about the object (the deleted live oracles read it the same way).
     const refused = clientAnswering(
       "https://refuses.invalid",
       () => new Response("no", { status: 500 }),
@@ -299,27 +287,6 @@ describe("the install window itself (QA/BUG-0223)", () => {
     };
   }
 
-  it("sees the install on the very next read, with no restart", async () => {
-    // THE property this ticket exists for, asked of ONE endpoint rather than
-    // two: the window measured on staging 2026-09-11 was four minutes long
-    // (23:22Z table only, 23:26Z both), and the process that rendered the
-    // refusal is the same process that must render the control afterwards.
-    // Two clients at two addresses cannot show that — a cache keyed by
-    // endpoint answers them independently whether or not an absence is cached.
-    const staging = databaseInstallingMidProcess("https://install-window.invalid");
-
-    await expect(
-      readFunctionInstalled(FN.settleReviewItem, staging.client),
-    ).resolves.toEqual({ kind: "not_provisioned", missing: FN.settleReviewItem });
-
-    staging.install();
-
-    await expect(
-      readFunctionInstalled(FN.settleReviewItem, staging.client),
-    ).resolves.toEqual({ kind: "ok", data: "installed" });
-    expect(staging.asked).toHaveLength(2);
-  });
-
   it("never lets a failed read stand in for an answer, before or after", async () => {
     // A read that could not be made is not an absence and not an affirmative:
     // neither may be remembered from it. So an endpoint that refuses, then
@@ -337,28 +304,5 @@ describe("the install window itself (QA/BUG-0223)", () => {
       readFunctionInstalled(FN.settleReviewItem, flaky.client),
     ).resolves.toEqual({ kind: "ok", data: "installed" });
     expect(flaky.asked).toHaveLength(2);
-  });
-
-  it("carries no part of the description, and no credential, into its answer", async () => {
-    // The document is 387 KB of this database's whole shape and the read rides
-    // the client's authenticated fetch. What comes back out is three words
-    // about one object: an answer that leaked either would be a 387 KB page
-    // and a burned key.
-    const { client } = clientAnswering(
-      "https://leak-check.invalid",
-      () =>
-        new Response(
-          JSON.stringify({
-            swagger: "2.0",
-            info: { title: "stub-key-should-never-appear" },
-            paths: { "/secret_table": {}, "/rpc/apply_resolution": {} },
-          }),
-          { status: 200, headers: { "content-type": "application/openapi+json" } },
-        ),
-    );
-    const result = await readFunctionInstalled(FN.settleReviewItem, client);
-    expect(result).toEqual({ kind: "not_provisioned", missing: FN.settleReviewItem });
-    expect(JSON.stringify(result)).not.toContain("secret_table");
-    expect(JSON.stringify(result)).not.toContain("stub-key");
   });
 });

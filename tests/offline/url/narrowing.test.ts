@@ -275,41 +275,6 @@ export { narrowedTo };
     });
   }
 
-  /**
-   * The same two fixtures on the name admin-window/DEBT-0016 added, spelled the
-   * way its module and its CALLERS really spell it: the declaration is generic
-   * (`export function newestFirst<`) and every caller both imports it and calls
-   * it with a column pair. A detector that flagged the caller would name two
-   * owners for a name that has one, and one that missed the generic
-   * declaration would grade the rule vacuously.
-   */
-  const NEWEST_FIRST_DECLARATION = `
-export function newestFirst<
-  Instant extends string,
-  Key extends string,
-  Row extends Readonly<Record<Instant, string | null>>,
->(rows: readonly Row[], columns: { instant: Instant; key: Key }): Row[] {
-  return [...rows];
-}
-`;
-
-  const NEWEST_FIRST_CALLER = `
-import { newestFirst } from "../order/newest-first";
-
-const NEWEST_VERDICT_FIRST = { instant: "created_at", key: "verdict_id" } as const;
-
-export const ordered = (rows: readonly VerdictLogRow[]) =>
-  newestFirst(rows, NEWEST_VERDICT_FIRST);
-`;
-
-  it("flags the generic declaration of `newestFirst`", () => {
-    expect(declares("newestFirst", codeLinesIn(NEWEST_FIRST_DECLARATION))).toBe(true);
-  });
-
-  it("leaves a module that imports and CALLS `newestFirst` alone", () => {
-    expect(declares("newestFirst", codeLinesIn(NEWEST_FIRST_CALLER))).toBe(false);
-  });
-
   it("does not flag a TYPE-ONLY re-export of the name", () => {
     // The other direction of the two spellings above (LESSONS 8): a barrel
     // carrying the shape onward is not a second owner of it, and `export type

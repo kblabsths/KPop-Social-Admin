@@ -24,14 +24,13 @@ import { dispositionActions } from "./signal-actions";
  * called to find out (ARCHITECTURE.md §9.2, DECISIONS 2026-09-08 as amended by
  * admin-window/BUG-0223).
  *
- * **The absent answer is the NORMAL one and is graded first.** Neither that
- * table nor `settle_review_item` exists on staging or in production, and
- * neither will until Ben installs M2's handoff migrations — that is the
- * database `main` deploys against for the whole milestone. So the first branch
- * below is the one that runs today: the not-provisioned card, naming the
- * object the read named, with **no control of any kind** — no disabled button,
- * no form, no note field standing in for one. A control that would call a
- * missing function is exactly what this branch exists to not offer.
+ * **The absent answer is a graded one and is drawn first.** Against a
+ * database lacking either object — which databases those are is stated in
+ * ARCHITECTURE.md §9.2, not here — the first branch below is the one that
+ * runs: the not-provisioned card, naming the object the read named, with
+ * **no control of any kind** — no disabled button, no form, no note field
+ * standing in for one. A control that would call a missing function is
+ * exactly what this branch exists to not offer.
  *
  * **There is no Admin-side workaround for the absent function** (spec §10's
  * one forbidden move): no queued write, no pending-overrides table, no retry

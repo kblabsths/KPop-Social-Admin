@@ -10,7 +10,7 @@ import {
   type ScriptedAnswer,
 } from "../../fixtures/stub-client";
 import { eventListingRow, eventRow, pendingClaimRow } from "../../fixtures/rows";
-import { RECENT_EVENTS } from "@/lib/browse/views";
+import { DEFAULT_WINDOW_SIZE } from "@/lib/paging/bounds";
 import { claimView } from "../claims/population";
 
 /**
@@ -626,8 +626,9 @@ describe("a window line describes a window the page read", () => {
  * happen. This is the same rule about the other half of a surface: a page may
  * not offer an ACTION whose read did not happen either. M2's close slot is the
  * first surface where the two come apart — its controls are backed by a read
- * of the verdict log, which is absent on staging and in production for the
- * whole milestone — and the edit surface is the second. A per-page assertion
+ * of the verdict log, which this sweep's fixture withholds (the absent world;
+ * ARCHITECTURE.md §9.2 says which databases are in it) — and the edit surface
+ * is the second. A per-page assertion
  * would leave the third to whoever remembers, which is precisely how the
  * window-line class reached three bugs (admin-window/BUG-0063/0067/0070).
  *
@@ -964,7 +965,7 @@ describe("an empty surface is explained from two facts", () => {
  * where the read behind it answered" counts CONTROLS — `button`, `form`,
  * `textarea` — so it already forbids a paging button over an absent table, and
  * it is the stronger rule for that one arm. It cannot see the other three:
- * `PageMore` answers an exhausted set and a state past the bound ceiling with
+ * The controls answer an exhausted set and a window at the bound ceiling with
  * a SENTENCE and no control at all, and a refusal is a paragraph. Those are
  * claims about a set too, and against a database that answered nothing they
  * are claims made off no read, so they are graded here by the hook rather than
@@ -1026,7 +1027,7 @@ function countDisagrees(): ScriptedAnswer {
  * `/browse` half of the leg below could not fail.
  */
 function fullEventWindow(): ScriptedAnswer {
-  const events = Array.from({ length: RECENT_EVENTS.window }, (_, index) =>
+  const events = Array.from({ length: DEFAULT_WINDOW_SIZE }, (_, index) =>
     eventRow({
       event_id: `01920000-0000-7000-8000-0000000e${String(index).padStart(4, "0")}`,
       title: `arrival ${index}`,
@@ -1038,7 +1039,7 @@ function fullEventWindow(): ScriptedAnswer {
 
 /** The listings the window above joins to, so every row has a venue name. */
 function listingsForFullWindow(): ScriptedAnswer {
-  const rows = Array.from({ length: RECENT_EVENTS.window }, (_, index) =>
+  const rows = Array.from({ length: DEFAULT_WINDOW_SIZE }, (_, index) =>
     eventListingRow({
       event_id: `01920000-0000-7000-8000-0000000e${String(index).padStart(4, "0")}`,
       venue_name: "Crypto.com Arena",
@@ -1082,17 +1083,18 @@ describe("a paging affordance is only drawn where it can be honoured", () => {
       }
     }
 
-    // …and on the one fixture that can actually produce the state: a count and
-    // a window read that disagree. Without this the leg above would be a check
-    // that cannot fail on this tree — every database it builds holds fewer
-    // claims than one window.
+    // …and on the one fixture that used to produce the state: a count and a
+    // window read that disagree. Under page windows the read ended inside the
+    // first window, so the set ends there — no "next", no limit arm — and the
+    // 37 rows still offer the size chips, which change the screen.
     const claims = SURFACES.find((surface) => surface.route === "/claims");
     if (claims === undefined) throw new Error("no /claims surface");
     scriptDatabase({ ...populatedScript(claims), [T.pendingClaims]: countDisagrees() });
     const markup = await renderSurface(claims);
     expect(cheerio.load(markup)("[data-claim]")).toHaveLength(37);
     expect(markup.includes('data-paging="limit"')).toBe(false);
-    expect(pagingOccurrences(markup)).toBe(0);
+    expect(pagingArms(markup)).toEqual(["exhausted"]);
+    expect(cheerio.load(markup)("[data-paging-move]")).toHaveLength(0);
   });
 
   it("/claims says not_provisioned instead, and draws the control when the read answers", async () => {
@@ -1140,8 +1142,9 @@ describe("a paging affordance is only drawn where it can be honoured", () => {
     const answered = await renderSurface(browse);
     expect(pagingArms(answered)).toEqual(["more"]);
 
-    // A SHORT window is the honest no-control state, and it is the one
-    // `populatedScript` already builds: one event against a window of fifty.
+    // A SHORT first window no size could change is the honest no-control
+    // state, and it is the one `populatedScript` already builds: one event
+    // against a window of fifty.
     scriptDatabase(populatedScript(browse));
     expect(pagingOccurrences(await renderSurface(browse))).toBe(0);
   });

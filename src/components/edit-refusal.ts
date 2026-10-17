@@ -375,8 +375,8 @@ export function refusalFix(refusal: string): string {
   // LAST, and only for a message that opens with neither Postgres shape: a
   // database object that has not arrived is not a value problem, and telling
   // the operator to correct the value would send them round a loop no retype
-  // can leave. It is the normal answer on the override path for the whole of
-  // M2 (the route's own 503, `api/admin/records/[table]/[id]/route.ts`). Its
+  // can leave. It is the override path's answer in the absent world (the
+  // route's own 503, `api/admin/records/[table]/[id]/route.ts`). Its
   // sentence is the only one here that tells the operator to STOP, so it is
   // reached only by a refusal that is this app's own sentence and nothing
   // else — never by one merely carrying those words.

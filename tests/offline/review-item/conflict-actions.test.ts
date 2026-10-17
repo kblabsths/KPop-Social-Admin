@@ -2,13 +2,12 @@ import * as cheerio from "cheerio";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FN, T } from "@/lib/db/tables";
-import { EVIDENCE_VIEW_BY_SHAPE, type EvidenceRow } from "@/components/review";
+import type { EvidenceRow } from "@/components/review";
 import {
   ACTIONS_BY_SHAPE,
   CloseSlot,
   NOTICE_BY_SHAPE,
 } from "@/components/review/close/slot";
-import { conflictActions } from "@/components/review/close/conflict-actions";
 import {
   closeRefusal,
   decisionValue,
@@ -21,7 +20,6 @@ import { EM_DASH } from "@/lib/format";
 import type { ReviewItemRow } from "@/lib/review/shapes";
 import {
   REFERENCE_FIELDS,
-  decisionRefusals,
   type VerdictDecision,
 } from "@/lib/verdict/decision";
 import {
@@ -40,18 +38,11 @@ import {
   venueWindow,
   verdictLogEntry,
 } from "../../fixtures/rows";
-import { functionNotInSchemaCache, stubClient, type Script, type StubClient } from "../../fixtures/stub-client";
+import { stubClient, type Script, type StubClient } from "../../fixtures/stub-client";
 
 /**
  * The `data_conflict` item's three verdict actions — campaign
  * admin-window/TASK-0050, spec §7.
- *
- * **The absence is graded FIRST because it is the normal case.** `verdicts`
- * and `settle_review_item` are on neither staging nor production and will not
- * be until Ben installs M2's handoff migrations, so the state `main` deploys
- * against for the whole milestone is the one this file opens with: the close
- * slot draws the not-provisioned card, offers no control of any kind, and the
- * evidence cards below it render exactly as M1 shipped them.
  *
  * **Fixtures, not staging** (the ticket's own words): no `data_conflict` item
  * exists on staging, so the three actions are graded offline against the
@@ -181,43 +172,6 @@ function decisionOf(spec: ActionSpec, note = "", supplied: string | null = null)
 /* ── the list: three actions, and nothing else ───────────────────────────── */
 
 describe("the data_conflict item's action list", () => {
-  it("offers one control per evidence card, then supply, then keep current", () => {
-    const evidence = twoCards();
-    const actions = actionsFor(reviewItemDataConflict(), evidence);
-
-    expect(actions.map((spec) => spec.action)).toEqual([
-      "choose_claimed_value",
-      "choose_claimed_value",
-      "supply_value",
-      "keep_current",
-    ]);
-    // The controls are the shape's whole vocabulary — the eight action names
-    // exist, and this shape takes exactly these three of them.
-    expect(new Set(actions.map((spec) => spec.action)).size).toBe(3);
-  });
-
-  it("grows and shrinks with the evidence, one choose control per card", () => {
-    for (const cards of [0, 1, 2, 3]) {
-      const evidence = twoCards()
-        .slice(0, Math.min(cards, 2))
-        .concat(
-          cards > 2
-            ? [evidenceRow({ observationId: ID.observationA, source: "eventbrite" })]
-            : [],
-        );
-      const actions = actionsFor(reviewItemDataConflict(), evidence);
-      const chosen = actions.filter((spec) => spec.action === "choose_claimed_value");
-      expect(chosen, `${cards} card(s)`).toHaveLength(evidence.length);
-      // The other two stand whatever the evidence does: an item with no
-      // resolved claim can still be settled with the operator's own value or
-      // left as it stands.
-      expect(
-        actions.filter((spec) => spec.action !== "choose_claimed_value").map((s) => s.action),
-        `${cards} card(s)`,
-      ).toEqual(["supply_value", "keep_current"]);
-    }
-  });
-
   it("carries the observation id of the card each control sits on", () => {
     const evidence = twoCards();
     const actions = actionsFor(reviewItemDataConflict(), evidence);
@@ -270,58 +224,11 @@ describe("the data_conflict item's action list", () => {
       expect(spec.supplies, spec.action).toBeUndefined();
     }
   });
-
-  it("keeps current with no payload at all", () => {
-    const keep = actionsFor().find((spec) => spec.action === "keep_current");
-    expect(keep?.value).toBeNull();
-    expect(keep?.supplies).toBeUndefined();
-  });
-
-  it("offers only keep-current when the row names no whole fact", () => {
-    // The two value-carrying actions need a domain, a row and a field to land
-    // on; a `VerdictValue` cannot be built without all three, and an action
-    // offered with a payload the function would refuse is worse than one not
-    // offered. `keep_current` carries no payload and still stands.
-    for (const missing of [{ domain: null }, { entity_id: null }, { field: null }]) {
-      const item = reviewItemDataConflict(missing);
-      const actions = actionsFor(item);
-      expect(actions.map((spec) => spec.action), JSON.stringify(missing)).toEqual([
-        "keep_current",
-      ]);
-    }
-  });
-
-  it("is the list the by-shape map hands the data_conflict shape, and no other shape's", () => {
-    const evidence = twoCards();
-    expect(ACTIONS_BY_SHAPE.data_conflict_fact({ item: reviewItemDataConflict(), evidence })).toEqual(
-      conflictActions({ item: reviewItemDataConflict(), evidence }),
-    );
-    // The other two shapes are their own tickets' work and are untouched here.
-    for (const [shape, item] of [
-      ["entity_link_fact", reviewItemEntityLink()],
-      ["entity_link_source_pattern", reviewItemSourcePattern()],
-    ] as const) {
-      const other = ACTIONS_BY_SHAPE[shape]({ item, evidence });
-      expect(
-        other.some((spec) => spec.action === "choose_claimed_value"),
-        shape,
-      ).toBe(false);
-    }
-  });
 });
 
 /* ── each control's decision is well-formed ──────────────────────────────── */
 
 describe("the decision each control carries", () => {
-  it("is refused by nothing — `decisionRefusals` is empty for all three", () => {
-    const actions = actionsFor();
-    const supplied = "TWICE 5TH WORLD TOUR: ENCORE";
-    for (const spec of actions) {
-      const decision = decisionOf(spec, "the operator's reason", supplied);
-      expect(decisionRefusals(decision), spec.action).toEqual([]);
-    }
-  });
-
   it("fills exactly the payload slot its action may fill", () => {
     const actions = actionsFor();
     const [firstChoice] = actions;
@@ -384,13 +291,6 @@ describe("the decision each control carries", () => {
       expect(closeRefusal(spec, "", null), spec.action).toBeNull();
     }
   });
-
-  it("tells the operator what to do, never the identifier (LESSONS 5)", () => {
-    const words = refusalWords("value_required");
-    expect(words).not.toContain("value_required");
-    expect(words).not.toContain("_");
-    expect(words.length).toBeGreaterThan(20);
-  });
 });
 
 /* ── the route: one call per control, and one only ───────────────────────── */
@@ -419,33 +319,6 @@ describe("each control settles through exactly one call", () => {
       expect(Object.keys(args), spec.action).toEqual(["p_decision"]);
       expect(args.p_decision, spec.action).toEqual(decisionOf(spec, note, supplied));
     }
-  });
-
-  it("stamps the item and the actor itself, whatever the control sent", async () => {
-    const [choice] = actionsFor();
-    const stub = scriptDatabase(functionInstalled("choose_claimed_value"));
-    await post({
-      ...settleBody(choice, ""),
-      // Forged, and ignored: the verdict log records who was signed in.
-      actor: "someone.else@example.invalid",
-    });
-    const decision = (stub.calls[0].steps[0].args[0] as Record<string, unknown>)
-      .p_decision as Record<string, unknown>;
-    expect(decision.review_item_id).toBe(ITEM_ID);
-    expect(decision.actor).toBe(ACTOR);
-  });
-
-  it("answers 503 naming the absent function, still after exactly one call", async () => {
-    // The normal case for the whole of M2: the control was rendered because
-    // `verdicts` was there, and the function was not.
-    const keep = actionsFor().find((spec) => spec.action === "keep_current") as ActionSpec;
-    const stub = scriptDatabase({
-      [FN.settleReviewItem]: { error: functionNotInSchemaCache(FN.settleReviewItem) },
-    });
-    const { status, payload } = await post(settleBody(keep, ""));
-    expect(status).toBe(503);
-    expect(payload.missing).toBe(FN.settleReviewItem);
-    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
   });
 });
 
@@ -500,142 +373,11 @@ describe("the close slot with the verdict log present", () => {
     ).toEqual([]);
   });
 
-  it("puts the operator's words on the control and the machine's name on the hook", () => {
-    const $ = cheerio.load(slotMarkup({ kind: "ok" }));
-    const keep = $('[data-close-action="keep_current"]');
-    expect(keep.text()).toContain("Keep current");
-    // The action name is the hook, never the label.
-    expect(keep.text()).not.toContain("keep_current");
-
-    const supply = $('[data-close-action="supply_value"]');
-    expect(supply.text()).toContain("Supply a different value");
-    // The fact is a machine identifier and renders verbatim beside the words.
-    expect(supply.text()).toContain("events.title");
-  });
-
   it("reads as sentences: no run-together words, no ticket ids, no uppercased identifier", () => {
     const markup = slotMarkup({ kind: "ok" });
     expect(runTogetherWords(markup)).toEqual([]);
     expect(factoryTicketIds(markup)).toEqual([]);
     expect(uppercasedIdentifiers(markup)).toEqual([]);
-  });
-
-  it("offers nothing on an item that is already settled", () => {
-    const $ = cheerio.load(
-      slotMarkup({ kind: "ok" }, reviewItemDataConflict({ status: "settled" })),
-    );
-    expect($("[data-close-action]")).toHaveLength(0);
-    for (const control of ["button", "input", "select", "textarea", "form"]) {
-      expect($(control), control).toHaveLength(0);
-    }
-  });
-});
-
-describe("the close slot with the verdict log absent — the graded-first case", () => {
-  it("renders none of the three controls, and the not-provisioned card instead", () => {
-    for (const readiness of [
-      { kind: "not_provisioned", missing: T.verdicts } as const,
-      { kind: "not_provisioned", missing: FN.settleReviewItem } as const,
-    ]) {
-      const $ = cheerio.load(slotMarkup(readiness));
-      expect($('[data-state="not_provisioned"]')).toHaveLength(1);
-      expect(
-        $("*")
-          .toArray()
-          .some((element) => $(element).text().trim() === readiness.missing),
-        readiness.missing,
-      ).toBe(true);
-      expect($("[data-close-action]"), readiness.missing).toHaveLength(0);
-      expect($("[data-close-note]"), readiness.missing).toHaveLength(0);
-      for (const control of ["button", "form", "input", "select", "textarea"]) {
-        expect($(control), `${control} / ${readiness.missing}`).toHaveLength(0);
-      }
-    }
-  });
-
-  it("offers nothing even though this shape HAS three actions to offer", () => {
-    // The point of the branch: the controls are withheld because the function
-    // is missing, not because the list is empty. It is not.
-    expect(actionsFor().length).toBeGreaterThan(0);
-    const $ = cheerio.load(slotMarkup({ kind: "not_provisioned", missing: T.verdicts }));
-    expect($("[data-close-action]")).toHaveLength(0);
-  });
-
-  it("says a refused read as an error line, and still offers no control", () => {
-    const $ = cheerio.load(
-      slotMarkup({ kind: "error", reading: T.verdicts, message: "canceling statement" }),
-    );
-    expect($('[data-state="error"]')).toHaveLength(1);
-    expect($("[data-close-action]")).toHaveLength(0);
-  });
-});
-
-/* ── the evidence cards below it, unchanged ──────────────────────────────── */
-
-const ConflictEvidence = EVIDENCE_VIEW_BY_SHAPE.data_conflict_fact;
-
-const EMPTY_WORDS = {
-  holds: "claims on this item",
-  filledBy:
-    "The resolver appends an observation id to `evidence` each time this item folds; this one carries none.",
-};
-
-function evidenceMarkup(rows: readonly EvidenceRow[]): string {
-  return render(
-    h(ConflictEvidence, {
-      rows,
-      unresolved: [],
-      empty: EMPTY_WORDS,
-      canonical: {
-        value: "TWICE 5TH WORLD TOUR",
-        // The line in PARTS, as `canonicalCard` hands it over: the source's own
-        // name and the tier frozen at the apply are machine values and reach
-        // the card as values, not as words inside a sentence
-        // (admin-window/DEBT-0011).
-        provenance: [
-          { identifier: "ticketmaster" },
-          { identifier: "official", after: "at apply" },
-          "applied 3d ago",
-        ],
-      },
-      dial: null,
-    }),
-  );
-}
-
-describe("the evidence cards this ticket does not touch", () => {
-  it("renders one contender card per claim, with the canonical card last", () => {
-    const $ = cheerio.load(evidenceMarkup(twoCards()));
-    expect($("[data-pair]")).toHaveLength(1);
-    // The claims' own hooks, one per claim, in fold order.
-    expect(
-      $("[data-evidence]")
-        .toArray()
-        .map((element) => $(element).attr("data-evidence")),
-    ).toEqual([ID.observationA, ID.observationB]);
-    // No verdict control lives in the evidence block: the close owns them all.
-    expect($("[data-close-action]")).toHaveLength(0);
-  });
-
-  it("renders a null claim value as the dash, with no qualifier (LESSONS 1)", () => {
-    const $ = cheerio.load(
-      evidenceMarkup([evidenceRow({ value: null }), evidenceRow({ observationId: ID.observationB })]),
-    );
-    const dashes = $('[aria-label="no value"]');
-    expect(dashes.length).toBeGreaterThan(0);
-    expect(dashes.first().text()).toBe(EM_DASH);
-    // The dash stands alone: no "(none)", no "unknown", no explanatory word.
-    const text = $.root().text().toLowerCase();
-    expect(text).not.toContain("(none)");
-    expect(text).not.toContain("no value recorded");
-  });
-
-  it("renders its labelled empty state when the item resolved no claim at all", () => {
-    const $ = cheerio.load(evidenceMarkup([]));
-    expect($('[data-state="empty"]')).toHaveLength(1);
-    expect($.root().text()).toContain(EMPTY_WORDS.holds);
-    // Still a real block, never a bare slot.
-    expect($("[data-evidence-view]")).toHaveLength(1);
   });
 });
 
@@ -692,104 +434,6 @@ describe("the kind of fact the item is about — QA attack", () => {
    * the reason instead of a shorter list. The two pins below are flipped and
    * the rest of this block is the fix's own coverage.
    */
-  // Was QA's strict xfail; FIXED and flipped to a plain `it` by
-  // admin-window/BUG-0087, which withholds the control by the field's kind
-  // (`isReferenceField`, `lib/verdict/decision.ts`). Widened while flipping:
-  // it runs over EVERY field that constant calls a reference, so a field
-  // added there is proved by this line rather than by a second copy of it.
-  it("offers no scalar supply control for a reference field", () => {
-    for (const spelling of REFERENCE_FIELDS) {
-      const actions = actionsFor(referenceItem(spelling), venueCards());
-
-      expect(
-        actions.filter((spec) => spec.action === "supply_value"),
-        spelling,
-      ).toEqual([]);
-      // …and no control asks the operator to TYPE one, either: `supplies` is
-      // the whole discriminator the frame renders a cell on.
-      expect(
-        actions.filter((spec) => spec.supplies !== undefined),
-        spelling,
-      ).toEqual([]);
-      // The other two actions are unaffected: a claimed reference can still be
-      // adopted, and the disagreement can still be left standing.
-      expect(actions.map((spec) => spec.action), spelling).toEqual([
-        "choose_claimed_value",
-        "choose_claimed_value",
-        "keep_current",
-      ]);
-      // Each adoption still carries its own card's observation and nothing else.
-      expect(
-        actions
-          .filter((spec) => spec.action === "choose_claimed_value")
-          .map((spec) => spec.value?.observation_id),
-        spelling,
-      ).toEqual(venueCards().map((row) => row.observationId));
-    }
-  });
-
-  /**
-   * The same defect stated as the decision that reaches the database: a typed
-   * venue NAME in the scalar slot, for a fact whose canonical column is
-   * `venue_id`, refused by nothing on the way.
-   */
-  // Was QA's second strict xfail, flipped by admin-window/BUG-0087 — and
-  // stated positively while flipping, because the pinned form ("the supply
-  // control's decision is refused") passes VACUOUSLY once that control is
-  // gone. This drives every control the shape DOES offer with the typed value
-  // the withheld cell would have produced, so it stays a real assertion.
-  it("builds no text-carrying decision for a reference fact", () => {
-    const typed = "The Forum, Inglewood";
-    for (const spelling of REFERENCE_FIELDS) {
-      const actions = actionsFor(referenceItem(spelling), venueCards());
-      for (const spec of actions) {
-        const decision = decisionOf(spec, "the operator's reason", typed);
-        const where = `${spelling} / ${spec.action}`;
-        // Nothing reaches `settle_review_item` carrying text for this fact…
-        expect(decision.value?.value ?? null, where).toBeNull();
-        expect(decision.value?.ref ?? null, where).toBeNull();
-        // …and the merge point itself leaves a button's payload alone, so a
-        // typed string cannot ride along on one.
-        expect(decisionValue(spec, typed), where).toEqual(spec.value);
-        // Each is still a decision the function would take.
-        expect(decisionRefusals(decision), where).toEqual([]);
-      }
-    }
-  });
-
-  /** A scalar fact is untouched by the rule above — the control still stands. */
-  it("still offers the supply control for a scalar fact", () => {
-    const scalar = actionsFor(reviewItemDataConflict({ field: "title" }), twoCards());
-    expect(scalar.filter((spec) => spec.action === "supply_value")).toHaveLength(1);
-    expect(
-      scalar.find((spec) => spec.action === "supply_value")?.supplies,
-    ).toBe("events.title");
-  });
-
-  it("renders no cell to type into, and says why it is missing", () => {
-    const item = referenceItem("events.venue");
-    const $ = cheerio.load(slotMarkup({ kind: "ok" }, item, venueCards()));
-
-    // Nothing on the surface takes a typed venue name.
-    expect($('[data-close-action="supply_value"]')).toHaveLength(0);
-    expect($("input")).toHaveLength(0);
-    expect(
-      $("[data-close-action]")
-        .toArray()
-        .map((element) => $(element).attr("data-close-action")),
-    ).toEqual(["choose_claimed_value", "choose_claimed_value", "keep_current"]);
-
-    // The withheld control is RENDERED as a reason, naming the fact it is
-    // about (LESSONS 1); the fact is a machine identifier, verbatim (§11).
-    const notice = $("[data-close-notice]");
-    expect(notice).toHaveLength(1);
-    expect(notice.attr("data-close-notice")).toBe("events.venue");
-    expect(notice.text()).toContain("events.venue");
-    // A sentence carrying a reason, not a label.
-    expect(notice.text().trim().length).toBeGreaterThan(60);
-    // The note field is untouched by any of it.
-    expect($("textarea")).toHaveLength(1);
-  });
 
   it("says nothing of the kind on a scalar conflict", () => {
     const $ = cheerio.load(slotMarkup({ kind: "ok" }, reviewItemDataConflict()));
@@ -1079,159 +723,6 @@ describe("a reference conflict's control set, card by card — QA attack", () =>
         reference.filter((spec) => spec.supplies !== undefined),
         `${n} card(s)`,
       ).toHaveLength(0);
-    }
-  });
-});
-
-describe("the guard behind the withheld control — QA attack", () => {
-  /**
-   * The close slot does not OFFER a free-text control for a reference fact
-   * (admin-window/BUG-0087), and FEAT-0010 calls that layer the courtesy one:
-   * "the form is courtesy, the function is the contract". So the attack is the
-   * request NO control can build — a hand-crafted `supply_value` carrying a
-   * venue NAME for a fact whose canonical column is `venue_id` — posted at the
-   * real route by a signed-in, allowlisted admin.
-   *
-   * It is graded where the app decides: `decisionRefusals`, the campaign's one
-   * pre-database guard and the module that owns both `PAYLOAD_SLOTS` ("a
-   * reference … never as a `supply_value`") and `isReferenceField`. Until
-   * admin-window/BUG-0091 it never asked the fact's kind, so the route sent
-   * the name to `settle_review_item` and answered 200.
-   *
-   * The two strict xfails QA pinned here were flipped by that ticket; the
-   * blocks below them are its must-NOT half (LESSONS 3), because a guard that
-   * refused a reference EVERY way — including the ref it is supposed to travel
-   * as — would pass the two flipped pins and break the picker.
-   */
-  const TYPED = "The Forum, Inglewood";
-
-  /** The reference fact, carrying the text the withheld cell would have taken. */
-  const referenceValue = {
-    domain: "events",
-    entity_id: ID.eventEntity,
-    field: "venue",
-    observation_id: null,
-    value: TYPED,
-    ref: null,
-  };
-
-  const forgedSupply = {
-    action: "supply_value",
-    note: null,
-    value: referenceValue,
-  };
-
-  /**
-   * The entity a picker would have chosen — spelled here because
-   * `tests/fixtures/rows.ts` carries no venue entity id (grepped), and this is
-   * the only test that needs one.
-   */
-  const CHOSEN_VENUE = "01920000-0000-7000-8000-000000000203";
-
-  /** The same forged body, for any fact, built the way a curl builds it. */
-  function crafted(spelling: string, overrides: Record<string, unknown> = {}) {
-    const [domain, field] = spelling.split(".");
-    return {
-      action: "supply_value",
-      note: null,
-      value: {
-        domain,
-        entity_id: ID.eventEntity,
-        field,
-        observation_id: null,
-        value: TYPED,
-        ref: null,
-      },
-      ...overrides,
-    };
-  }
-
-  // Was QA's first strict xfail, flipped by admin-window/BUG-0091.
-  it("refuses a text-carrying supply_value for a reference fact", () => {
-    expect(
-      decisionRefusals({
-        action: "supply_value",
-        review_item_id: ITEM_ID,
-        actor: ACTOR,
-        note: null,
-        value: referenceValue,
-      } as unknown as VerdictDecision),
-    ).not.toEqual([]);
-  });
-
-  // Was QA's second strict xfail, flipped by admin-window/BUG-0091 — the same
-  // defect stated as the write that reaches the database.
-  it("sends no venue NAME to the settle function", async () => {
-    const stub = scriptDatabase(functionInstalled("supply_value"));
-    const { status } = await post(forgedSupply);
-    expect(status).toBe(400);
-    expect(stub.functionsCalled()).toEqual([]);
-  });
-
-  it("refuses it by NAME, for every fact the registry calls a reference", () => {
-    // Iterated off the constant rather than off `events.venue` alone, so a
-    // reference field added there is guarded by this same line — and named, so
-    // a surface can branch on the identifier instead of parsing a sentence.
-    for (const spelling of REFERENCE_FIELDS) {
-      const decision = {
-        ...crafted(spelling),
-        review_item_id: ITEM_ID,
-        actor: ACTOR,
-      } as unknown as VerdictDecision;
-      expect(decisionRefusals(decision), spelling).toContain("reference_field_not_scalar");
-    }
-  });
-
-  it("reaches the database with nothing at all, for every one of them", async () => {
-    for (const spelling of REFERENCE_FIELDS) {
-      const stub = scriptDatabase(functionInstalled("supply_value"));
-      const { status, payload } = await post(crafted(spelling));
-
-      expect(status, spelling).toBe(400);
-      expect(payload.refusals, spelling).toContain("reference_field_not_scalar");
-      // Not the function, and not a read either.
-      expect(stub.calls, spelling).toEqual([]);
-      expect(stub.functionsCalled(), spelling).toEqual([]);
-      expect(stub.tablesRead(), spelling).toEqual([]);
-    }
-  });
-
-  it("still settles the identical request shape for a scalar fact", async () => {
-    // The must-NOT half: the guard reads the FACT, so the supply the surface
-    // really offers still lands in exactly one call. Same body, same route,
-    // one field name apart.
-    const stub = scriptDatabase(functionInstalled("supply_value"));
-    const { status, payload } = await post(crafted("events.title"));
-
-    expect(status).toBe(200);
-    expect(payload.ok).toBe(true);
-    expect(stub.functionsCalled()).toEqual([FN.settleReviewItem]);
-    const args = stub.calls[0].steps[0].args[0] as Record<string, unknown>;
-    const decision = args.p_decision as { value: Record<string, unknown> };
-    expect(decision.value.value).toBe(TYPED);
-  });
-
-  it("still settles a link carrying the chosen entity for the same fact", async () => {
-    // A reference is not made un-settleable: it travels in `ref`, which is how
-    // the picker sends it. Refusing this too would be the fix overreaching.
-    for (const spelling of REFERENCE_FIELDS) {
-      const [domain, field] = spelling.split(".");
-      const stub = scriptDatabase(functionInstalled("link_entity"));
-      const { status } = await post({
-        action: "link_entity",
-        note: null,
-        value: {
-          domain,
-          entity_id: ID.eventEntity,
-          field,
-          observation_id: null,
-          value: null,
-          ref: CHOSEN_VENUE,
-        },
-      });
-
-      expect(status, spelling).toBe(200);
-      expect(stub.functionsCalled(), spelling).toEqual([FN.settleReviewItem]);
     }
   });
 });

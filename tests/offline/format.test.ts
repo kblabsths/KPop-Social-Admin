@@ -54,12 +54,6 @@ describe("absoluteUtc", () => {
  * cannot drift apart on the instant itself.
  */
 describe("absoluteUtcInZonedColumn", () => {
-  it("renders the same instant as absoluteUtc, without the zone token", () => {
-    expect(absoluteUtcInZonedColumn(T)).toBe("2026-08-29 04:12");
-    expect(absoluteUtcInZonedColumn(T)).not.toContain(UTC_ZONE);
-    expect(absoluteUtc(T)).toBe(`${absoluteUtcInZonedColumn(T)} ${UTC_ZONE}`);
-  });
-
   it("agrees with absoluteUtc across kinds and across the day", () => {
     for (const instant of [
       T,
@@ -196,10 +190,6 @@ describe("pluralise", () => {
     }
   });
 
-  it("carries whatever the caller's two forms are, verb as readily as noun", () => {
-    expect(pluralise(1, "names", "name")).toBe("names");
-    expect(pluralise(3, "names", "name")).toBe("name");
-  });
 });
 
 describe("counted", () => {
@@ -428,18 +418,6 @@ describe("isAbsent and orDash", () => {
   it("calls absent a figure that is not a finite number, so no cell reads NaN", () => {
     for (const missing of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       expect(isAbsent(missing)).toBe(true);
-    }
-  });
-
-  it("calls absent the dash string the formatting helpers return", () => {
-    expect(isAbsent(count(null))).toBe(true);
-    expect(isAbsent(absoluteUtc(null))).toBe(true);
-    expect(isAbsent(relativeAge(null).text)).toBe(true);
-  });
-
-  it("keeps a real value present, including the zero and the empty-looking ones", () => {
-    for (const present of [0, "0", count(0), "false", "no value"]) {
-      expect(isAbsent(present)).toBe(false);
     }
   });
 

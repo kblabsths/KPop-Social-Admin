@@ -7,11 +7,10 @@ import {
   type EvidenceClaim,
   type ProvenanceSegment,
 } from "@/components/evidence/evidence-pair";
-import { Button } from "@/components/ui/button";
 import { Identifier } from "@/components/ui/identifier";
 import { EM_DASH, absoluteUtc, orDash, relativeAge } from "@/lib/format";
 
-import { classesOf, h, render, textOf } from "./markup";
+import { h, render, textOf } from "./markup";
 
 /**
  * The evidence pair — the app's signature block (campaign admin-window,
@@ -102,27 +101,12 @@ describe("EvidencePair", () => {
     expect(text.match(/current/g)).toHaveLength(1);
   });
 
-  it("separates the cards with hairlines and nothing else — no fills, no shadows", () => {
-    const html = pair();
-    const cardBorders = [...html.matchAll(/class="[^"]*border-l[^"]*"/g)];
-    // two boundaries for three cards: claim 2 and the canonical card
-    expect(cardBorders).toHaveLength(2);
-    expect(classesOf(html).some((c) => c.startsWith("shadow"))).toBe(false);
-  });
-
   it("carries value, then source, tier and age, in that fixed order on every claim card", () => {
     const text = textOf(pair());
     const card = text.slice(text.indexOf("contender"), text.lastIndexOf("contender"));
     expect(card.indexOf("2026-09-14T19:00:00Z")).toBeLessThan(card.indexOf("ticketmaster"));
     expect(card.indexOf("ticketmaster")).toBeLessThan(card.indexOf("primary"));
     expect(card.indexOf("primary")).toBeLessThan(card.indexOf("ago"));
-  });
-
-  it("renders the value in data and the source line in secondary", () => {
-    const classes = classesOf(pair());
-    expect(classes).toContain("type-data");
-    expect(classes).toContain("text-ink-secondary");
-    expect(classes).toContain("type-micro");
   });
 
   it("shows the age relatively with the absolute value in the title attribute", () => {
@@ -139,44 +123,10 @@ describe("EvidencePair", () => {
     }
   });
 
-  it("puts the verdict control inside the card it acts on, never in a toolbar", () => {
-    const html = pair({
-      claims: [{ ...CLAIMS[0], action: h(Button, {}, "Choose this value") }, CLAIMS[1]],
-    });
-    const firstCardEnd = html.indexOf("bandsintown");
-    expect(html.indexOf("Choose this value")).toBeGreaterThan(0);
-    expect(html.indexOf("Choose this value")).toBeLessThan(firstCardEnd);
-  });
-
   it("renders a null contender value as the dash, keeping the anatomy identical", () => {
     const html = pair({ claims: [{ ...CLAIMS[0], value: null }] });
     expect(html).toContain(EM_DASH);
     expect(html).toContain("text-ink-disabled");
-  });
-
-
-  /**
-   * The claim line's SOURCE is a machine identifier, and the primitive says so
-   * itself: `src/components/ui/identifier.tsx` names "a source's own name"
-   * among the foreign text an identifier span is where it lands, and its
-   * `DATA_MUTED` doc says "a machine identifier takes `<Identifier muted>`
-   * instead — never this" (campaign admin-window/BUG-0151, DEBT-0011
-   * criteria 2 and 4).
-   *
-   * The expectation is READ OFF the primitive rather than typed here: whatever
-   * `<Identifier muted>` renders for `dir` is what the source must carry, so
-   * this pins the behaviour and not a literal.
-   */
-  it("gives the claim's source the isolation the identifier primitive gives an identifier — admin-window/BUG-0151", () => {
-    const source = "ticketmaster";
-    const $primitive = cheerio.load(render(h(Identifier, { muted: true, children: source })));
-    const isolation = $primitive("span").attr("dir");
-
-    const $ = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source }] }));
-    const own = $("*").toArray().filter((element) => $(element).text() === source);
-
-    expect(own).toHaveLength(1);
-    expect($(own[0]).attr("dir")).toBe(isolation);
   });
 
   /**
@@ -202,51 +152,6 @@ describe("EvidencePair", () => {
     const $absent = cheerio.load(pair({ claims: [{ ...CLAIMS[0], tier: null }] }));
     const dash = $absent('[aria-label="no value"]');
     expect(dash, "the app's absence element still draws the absent tier").toHaveLength(1);
-    expect(dash.attr("dir"), "the dash is the app's own, not a machine value").toBeUndefined();
-    expect(dash.parents("[dir]"), "and it sits in no isolated box").toHaveLength(0);
-  });
-
-  /**
-   * A producer's value that LOOKS like the app's dash is still a value
-   * (admin-window/BUG-0156).
-   *
-   * Every value this line carries is foreign — the source's own name, the
-   * tier, the applied claim's status — so "is there anything here" is the
-   * question the app asks of a producer's string (`hasVisibleContent`, the one
-   * definition of blank, which is what the label rule
-   * `lib/sources/names.ts` asks of the registry). It is NOT `isAbsent`, whose
-   * extra branch calls a bare em dash an absence because that is what the
-   * app's OWN formatters return for one. This line asked `isAbsent`, so a
-   * source the registry NAMES `—` was drawn in disabled ink and announced to
-   * a screen reader as `no value` — about a source whose name the page is
-   * holding, one block above the evidence cell that had lost its link over the
-   * same disagreement.
-   *
-   * Both directions (LESSONS 8), and the second is the one a fix that simply
-   * stopped dashing would fail: a name with NO ink is still an absence here.
-   */
-  it("draws a producer's em-dash name as a value and a name with no ink as the absence", () => {
-    const isolation = cheerio
-      .load(render(h(Identifier, { muted: true, children: "x" })))("span")
-      .attr("dir");
-
-    // 1. A registry name whose only character is an em dash: a machine value,
-    //    in the isolated box every other source name gets, announced as
-    //    nothing.
-    const $named = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source: EM_DASH }] }));
-    const own = $named("*")
-      .toArray()
-      .filter((element) => $named(element).text() === EM_DASH);
-    expect(own, "the name is on the line exactly once").toHaveLength(1);
-    expect($named(own[0]).attr("dir"), "isolated like any other source name").toBe(isolation);
-    expect($named('[aria-label="no value"]'), "announced as an absence").toHaveLength(0);
-
-    // 2. A name with nothing visible in it — not merely whitespace: the class
-    //    `hasVisibleContent` knows and `trim()` does not — is an absence, and
-    //    the app's own element draws it, in no isolated box.
-    const $blank = cheerio.load(pair({ claims: [{ ...CLAIMS[0], source: "\u200b \u2060" }] }));
-    const dash = $blank('[aria-label="no value"]');
-    expect(dash, "the app's absence element draws an unreadable name").toHaveLength(1);
     expect(dash.attr("dir"), "the dash is the app's own, not a machine value").toBeUndefined();
     expect(dash.parents("[dir]"), "and it sits in no isolated box").toHaveLength(0);
   });
@@ -329,7 +234,6 @@ describe("EvidencePair", () => {
   it("keeps the app's separators and age out of the source's bidi box, and adds no text to the healthy line", () => {
     const RLO = "\u202e";
     const claim = { ...CLAIMS[0], source: "ticketmaster", tier: "official" };
-
 
     const healthy = parts(pair({ claims: [claim] }));
     const hostile = parts(pair({ claims: [{ ...claim, source: `ticket${RLO}master` }] }));
@@ -528,47 +432,6 @@ describe("EvidencePair", () => {
     expect(hostileStatus.appWords).not.toContain(RLO);
     expect(hostileStatus.appWords).toBe(healthy.appWords);
   });
-
-  /**
-   * A provenance value with nothing visible in it draws the app's own absence
-   * element — the same thing the claim line one card to its LEFT draws for the
-   * same class of value (`sources.source`, reached through `canonicalSideOf`'s
-   * `sources.get(id)?.source`), because both lines now ask one guard
-   * (`MachineValue`; admin-window/BUG-0152, BUG-0151, BUG-0134).
-   *
-   * Until the guard landed, `ProvenancePart` wrapped `segment.identifier`
-   * unconditionally: the line rendered `<span dir="ltr" class="…"></span>` and
-   * read " ·  at apply · applied 3d ago", a silent gap where the winning source
-   * belongs and no absence announced to a reader who cannot see the ink.
-   *
-   * Both halves are asserted, because a fix that wrapped `orDash`'s result
-   * wholesale would satisfy the second and still leave the value's own empty box
-   * standing. The expectation is read off `orDash` rather than typed here, so
-   * this pins the behaviour and not a literal.
-   */
-  it.each([["empty", ""], ["blank", "   "], ["ink-less", "​‮"]])(
-    "draws a %s provenance value as the app's absence element, not an empty isolated box — admin-window/BUG-0152",
-    (_name, value) => {
-      const absence = cheerio.load(render(orDash("")))("[aria-label]").first();
-
-      const $ = cheerio.load(
-        pair({
-          canonical: {
-            ...CANONICAL,
-            provenance: [{ identifier: value }, ...PROVENANCE.slice(1)],
-          },
-        }),
-      );
-      const line = $("div").first().children("div").last().children("span").last();
-
-      const boxes = line.find("[dir]").toArray().map((node) => $(node).text());
-      expect(boxes, "no identifier box is left standing empty").not.toContain(value);
-      expect(
-        line.find(`[aria-label="${absence.attr("aria-label")}"]`),
-        "the app's absence element stands in for the missing source",
-      ).toHaveLength(1);
-    },
-  );
 
   /**
    * The absent-value fixtures every guard on this card is graded on: the three

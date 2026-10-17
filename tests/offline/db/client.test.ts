@@ -61,10 +61,4 @@ describe("getDbClient", () => {
     // It is a usable PostgREST client, not a stub.
     expect(typeof first.from).toBe("function");
   });
-
-  it("publishes the names it reads, so nothing else has to spell them", async () => {
-    const { DB_URL_ENV_NAME, DB_KEY_ENV_NAME } = await freshClientModule();
-    expect(DB_URL_ENV_NAME).toBe(URL_NAME);
-    expect(DB_KEY_ENV_NAME).toBe(KEY_NAME);
-  });
 });

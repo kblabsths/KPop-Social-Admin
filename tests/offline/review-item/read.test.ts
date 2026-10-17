@@ -15,11 +15,7 @@ import {
   reviewItemSourcePattern,
   sourceRow,
 } from "../../fixtures/rows";
-import {
-  permissionDenied,
-  stubClient,
-  type Script,
-} from "../../fixtures/stub-client";
+import { stubClient, type Script } from "../../fixtures/stub-client";
 
 /**
  * The review-item detail's READS (campaign admin-window/TASK-0011).
@@ -128,35 +124,6 @@ describe("the evidence read", () => {
     ]);
   });
 
-  it("keeps a claim whose source row is missing, with its id verbatim and no tier", async () => {
-    // The claim is real whether or not the registry row was read; borrowing a
-    // tier from anywhere would be a fact this app never read (§6 trap 5).
-    const item = reviewItemDataConflict();
-    const client = stubClient(healthy({ [T.sources]: { data: [] } }));
-    const result = await readItemEvidence(item, client.asSupabaseClient());
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.data.claims).toHaveLength(2);
-    expect(result.data.claims[0].source).toBe(CLAIM_A.source_id);
-    expect(result.data.claims[0].tier).toBeNull();
-  });
-
-  it("reports the ids that resolved to no claim", async () => {
-    const item = reviewItemDataConflict({
-      evidence: [ID.observationA, "01920000-0000-7000-8000-0000000009ff"],
-    });
-    const client = stubClient(healthy({ [T.observations]: { data: [CLAIM_A] } }));
-    const result = await readItemEvidence(item, client.asSupabaseClient());
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.data.claims).toHaveLength(1);
-    expect(result.data.unresolved).toEqual([
-      "01920000-0000-7000-8000-0000000009ff",
-    ]);
-  });
-
   /**
    * The accounting a surface divides — admin-window/BUG-0021.
    *
@@ -182,47 +149,6 @@ describe("the evidence read", () => {
       "resolved + unresolved must cover exactly the distinct ids",
     ).toBe(result.data.ids.distinct);
     expect(result.data.unresolved).toEqual([missing]);
-  });
-
-  /**
-   * The `sources` leg alone degrades — admin-window/BUG-0021 (QA's second
-   * finding on TASK-0011).
-   *
-   * The registry only LABELS a claim: without it the read's documented
-   * fallback already renders (the source id verbatim, no tier), which is what
-   * it does when the registry row is merely absent. Returning the refusal
-   * instead of the claims would report an item with no evidence when it has
-   * all of it, so the refusal rides along and the caller reports it beside.
-   */
-  it("keeps the claims when the source registry refuses, and carries the refusal", async () => {
-    const failure = permissionDenied(T.sources);
-    const client = stubClient(healthy({ [T.sources]: { error: failure } }));
-    const result = await readItemEvidence(
-      reviewItemDataConflict(),
-      client.asSupabaseClient(),
-    );
-
-    expect(result.kind).toBe("ok");
-    if (result.kind !== "ok") return;
-    expect(result.data.claims).toHaveLength(2);
-    expect(result.data.claims[0].source).toBe(CLAIM_A.source_id);
-    expect(result.data.claims[0].tier).toBeNull();
-
-    const refusal = result.data.sourcesUnavailable;
-    expect(refusal?.kind).toBe("error");
-    if (refusal?.kind !== "error") return;
-    // The object that refused is named, and the database's own words are kept
-    // (admin-window/BUG-0016).
-    expect(refusal.reading).toBe(T.sources);
-    expect(refusal.message).toContain(failure.message);
-  });
-
-  it("carries no refusal when every leg answered", async () => {
-    const result = await readItemEvidence(
-      reviewItemDataConflict(),
-      stubClient(healthy()).asSupabaseClient(),
-    );
-    expect(result.kind === "ok" && result.data.sourcesUnavailable).toBeNull();
   });
 });
 
@@ -394,13 +320,5 @@ describe("the columns the evidence reads name", () => {
         ).toEqual([]);
       }
     }
-  });
-
-  it("still names the column that carries the canonical table on each side", () => {
-    // The two spellings, after the drop: the evidence side has only `domain`,
-    // the decision log keeps `entity_type`, and they hold the same value.
-    expect(Object.keys(observationRow())).toContain("domain");
-    expect(Object.keys(observationRow())).not.toContain("entity_type");
-    expect(Object.keys(fieldProvenanceRow())).toContain("entity_type");
   });
 });

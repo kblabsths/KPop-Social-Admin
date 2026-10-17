@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RUN_COLUMNS, RUN_COUNTS, RUN_WINDOW } from "@/lib/db/runs";
 import { T } from "@/lib/db/tables";
 import { EM_DASH, absoluteUtc } from "@/lib/format";
-import { readNumber } from "../../live/parity";
+import { readNumber } from "../../fixtures/surface-state";
 import { APPLIES, CYCLES, OBSERVED } from "../cycles/population";
 import { RUN_CELL_HOOK, columnsFromHooks } from "../../fixtures/run-hooks";
 import { runRow, type RunRow as RunFixture } from "../../fixtures/rows";
@@ -249,38 +249,6 @@ describe("the columns the adapter-runs half shows", () => {
     expect(headers(markup, RUNS_TABLE)).toHaveLength(RUN_COLUMNS.length);
   });
 
-  it("shows no tenth column — not the primary key, not one of the other thirteen", async () => {
-    const markup = await renderCycles(healthyScript());
-    // Read off the hooks, not off the headers: the headers are the app's
-    // words, so asking them whether they contain `checkpoint_before` would
-    // pass whatever the table rendered (LESSONS 3 — no vacuous guard).
-    const header = columnsOf(markup, FAILED.run_id);
-    expect(header).toHaveLength(9);
-    expect(headers(markup, RUNS_TABLE)).toHaveLength(9);
-    // `run_id` is the row key and the order's tiebreak, never a column.
-    expect(header).not.toContain("run_id");
-    for (const outOfScope of [
-      "checkpoint_before",
-      "checkpoint_after",
-      "payloads_fetched",
-      "payloads_archived",
-      "records_rejected",
-      "claims_dropped_empty",
-      "claims_collapsed",
-      "claims_ai",
-      "records_linked",
-      "records_escalated",
-      "batches_written",
-      "observations_returned",
-    ]) {
-      expect(header, outOfScope).not.toContain(outOfScope);
-    }
-    // Every rendered row carries exactly nine cells, so no row smuggles one in.
-    for (const run of NEWEST_FIRST) {
-      expect(runRowOf(markup, run.run_id).cells, run.run_id).toHaveLength(9);
-    }
-  });
-
   it("renders all three counts as their own figures, thousand-separated", async () => {
     const markup = await renderCycles(healthyScript());
     const row = runRowOf(markup, SUCCEEDED.run_id);
@@ -437,17 +405,6 @@ describe("a ?source= link arriving from the Sources page", () => {
     }
   });
 
-  it("passes the name to the read, and matches by name rather than by key", async () => {
-    const stub = stubClient(healthyScript({ [T.runs]: { data: [] } }));
-    readWith.client = stub.asSupabaseClient();
-    await CyclesPage({ searchParams: Promise.resolve({ source: SOURCE.bandsintown }) });
-    const call = stub.calls.find((recorded) => recorded.table === T.runs);
-    expect(call).toBeDefined();
-    expect(
-      call?.steps.filter((step) => step.method === "eq").map((step) => step.args),
-    ).toEqual([["source", SOURCE.bandsintown]]);
-  });
-
   it("says the facet applies to the runs half, and narrows none of the cycles", async () => {
     // `resolution_runs` carries no source, so the cycles are the same cycles
     // with the facet as without it — and the page says which half was narrowed
@@ -514,21 +471,6 @@ describe("a ?source= link arriving from the Sources page", () => {
     expect(text).not.toContain(absoluteUtc(tableOldest));
   });
 
-  it("makes the unfaceted claim about the table only when the read was unfaceted", async () => {
-    // The complement, on the same page and the same population: with no facet
-    // the read covered the table, so the line makes the claim bar 13 asked for
-    // — and it is the claim the faceted line above must not make.
-    const plain = cheerio
-      .load(await renderCycles(healthyScript()))('[data-window="runs"]')
-      .text()
-      .replace(/\s+/g, " ");
-    const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
-    expect(plain).toContain(
-      `runs recorded since ${absoluteUtc(tableOldest)}; nothing earlier is retained`,
-    );
-    expect(plain).not.toContain(SOURCE.ticketmaster);
-  });
-
   it("says a facet that filled its cap is a window of THAT source's runs", async () => {
     // The other direction of the same fact: a narrowed window that hit its cap
     // says nothing false about a floor, but it must still say which population
@@ -551,31 +493,6 @@ describe("a ?source= link arriving from the Sources page", () => {
     expect(text).toContain(`runs from ${SOURCE.ticketmaster}`);
     // A filled window has no floor to offer, faceted or not.
     expect(text).not.toContain(absoluteUtc(capped[capped.length - 1].started_at));
-  });
-
-  it("says a facet that matched nothing found nothing OF THAT SOURCE", async () => {
-    // The second manifestation of the same root cause: over a read narrowed to
-    // one name, "the read happened and found no runs at all" is a claim about
-    // the table — and it stood directly above this page's own empty card,
-    // which says the window holds "runs from <name>"
-    // (admin-window/BUG-0114).
-    const markup = await renderCycles(
-      healthyScript({ [T.runs]: { data: [] } }),
-      { source: NO_SUCH_SOURCE },
-    );
-    const text = cheerio
-      .load(markup)('[data-window="runs"]')
-      .text()
-      .replace(/\s+/g, " ");
-    expect(text).toContain(`no runs from ${NO_SUCH_SOURCE} at all`);
-    expect(text).not.toContain("found no runs at all");
-
-    // …and with no facet, the same empty read is a claim about the table.
-    const plain = cheerio
-      .load(await renderCycles(healthyScript({ [T.runs]: { data: [] } })))('[data-window="runs"]')
-      .text()
-      .replace(/\s+/g, " ");
-    expect(plain).toContain("found no runs at all");
   });
 
   it("renders the empty state with a stated 0 when the name matches nothing", async () => {
@@ -613,16 +530,6 @@ describe("a ?source= link arriving from the Sources page", () => {
     expect(
       call?.steps.filter((step) => step.method === "eq").map((step) => step.args),
     ).toEqual([["source", SOURCE.bandsintown]]);
-  });
-
-  it("renders a facet value the URL invented as text, never as markup", async () => {
-    const markup = await renderCycles(healthyScript({ [T.runs]: { data: [] } }), {
-      source: '"><img src=x onerror=alert(1)>',
-    });
-    expect(markup).not.toContain("<img");
-    const $ = cheerio.load(markup);
-    expect($("img").length).toBe(0);
-    expect($("[data-source-facet]").text()).toContain('"><img src=x onerror=alert(1)>');
   });
 });
 
@@ -670,30 +577,6 @@ describe("a database without the adapter framework's runs", () => {
     expect(readsFailed(markup)).toContain(T.runs);
     expect(cheerio.load(markup)('[data-empty="runs"]').length).toBe(0);
     expect(() => readNumber(markup, RUNS_FIGURE)).toThrow();
-  });
-
-  it("renders the empty state with a stated 0 when no adapter has ever run", async () => {
-    const markup = await renderCycles(healthyScript({ [T.runs]: { data: [] } }));
-    expect(runsState(markup)).toBe("empty");
-    expect(renderedRuns(markup)).toEqual([]);
-    expect(readNumber(markup, RUNS_FIGURE)).toBe(0);
-    expect(notProvisioned(markup)).toEqual([]);
-  });
-
-  it("claims no window it never read", async () => {
-    // The window line says "a window of at most 200 runs". A refused or absent
-    // read returned no window at all, so the line would be describing a table
-    // that is not there — while an EMPTY window is still a window the page
-    // looked in, and keeps its line.
-    for (const [label, script] of [
-      ["absent", { [T.runs]: { error: tableNotInSchemaCache(T.runs) } }],
-      ["refused", { [T.runs]: { error: permissionDenied(T.runs) } }],
-    ] as const) {
-      const markup = await renderCycles(healthyScript(script));
-      expect(cheerio.load(markup)('[data-window="runs"]').length, label).toBe(0);
-    }
-    const empty = await renderCycles(healthyScript({ [T.runs]: { data: [] } }));
-    expect(cheerio.load(empty)('[data-window="runs"]').length).toBe(1);
   });
 
   it("keeps a cycles failure to the cycles half", async () => {

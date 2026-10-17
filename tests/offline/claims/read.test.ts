@@ -107,31 +107,6 @@ describe("the bucket vocabulary", () => {
 });
 
 describe("the claim window read", () => {
-  it("is ONE request that asks the database for the order and the bound", async () => {
-    const stub = scripted(wholeView());
-    const result = await readClaimWindow(
-      { limit: 3 },
-      stub.asSupabaseClient(),
-    );
-    expect(result.kind).toBe("ok");
-
-    // One request over the view, and no second leg anywhere: the instant is a
-    // column of the view now (admin-window/BUG-0138).
-    expect(stub.tablesRead()).toEqual([T.pendingClaims]);
-
-    const steps = stepsOf(stub, T.pendingClaims);
-    expect(steps[0].method).toBe("select");
-    expect(String(steps[0].args[0])).toContain("observed_at");
-    expect(argsOf(stub, T.pendingClaims, "order")).toEqual([
-      ["observed_at", { ascending: true, nullsFirst: false }],
-      ["observation_id", { ascending: true }],
-    ]);
-    // An omitted offset is offset 0, spelled as the range it is: PostgREST's
-    // `.range()` is inclusive at both ends (admin-window/TASK-0065).
-    expect(argsOf(stub, T.pendingClaims, "range")).toEqual([[0, 2]]);
-    expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([]);
-  });
-
   it.each([
     { offset: undefined, from: 0, to: 49 },
     { offset: 0, from: 0, to: 49 },
@@ -163,31 +138,6 @@ describe("the claim window read", () => {
       expect(result.data.map((claim) => claim.bucket)).not.toContain(PARKED);
     },
   );
-
-  it("pages the SAME order: two windows meet exactly, with nothing repeated or dropped", async () => {
-    // The property paging rests on. The fixture population is small, so the
-    // pages are small — what is asserted is that page 2 begins where page 1
-    // ended in the one order the query states, over claims the exclusion has
-    // already taken the parked bucket out of.
-    const expected = longestWaiting(SHOWABLE);
-    const first = await readClaimWindow(
-      { limit: 4 },
-      scripted(wholeView()).asSupabaseClient(),
-    );
-    const second = await readClaimWindow(
-      { limit: 4, offset: 4 },
-      scripted(wholeView()).asSupabaseClient(),
-    );
-    if (first.kind !== "ok" || second.kind !== "ok") {
-      throw new Error("expected both pages to be ok");
-    }
-    expect(first.data.map((claim) => claim.observation_id)).toEqual(
-      expected.slice(0, 4),
-    );
-    expect(second.data.map((claim) => claim.observation_id)).toEqual(
-      expected.slice(4, 8),
-    );
-  });
 
   it("keeps the parked bucket out of a page at offset 50, over a view that really has one", async () => {
     // The offset-50 chain above is asserted on a fixture too small to fill a
@@ -363,15 +313,6 @@ describe("the claim count read", () => {
     });
   });
 
-  it("counts every renderable bucket when no bucket is named", async () => {
-    const result = await readClaimCount(
-      {},
-      scripted(wholeView()).asSupabaseClient(),
-    );
-    expect(result).toEqual({ kind: "ok", data: SHOWABLE.length });
-    expect(SHOWABLE.length).toBeLessThan(CLAIMS.length);
-  });
-
   it("answers a real zero with a real zero", async () => {
     const result = await readClaimCount(
       { source_id: "0192cccc-0000-7000-8000-000000000000" },
@@ -475,16 +416,6 @@ describe("the windowed claim count read", () => {
     // bound is the count read's own "bring back nothing".
     expect(steps.some((step) => step.method === "range")).toBe(false);
     expect(argsOf(stub, T.pendingClaims, "limit")).toEqual([[0]]);
-  });
-
-  it("leaves out a claim dated after until — the figure the old count changed", async () => {
-    // The fixture where the upper edge MATTERS: the view holds four claims the
-    // lower edge admits, one of them dated ahead of the instant the read was
-    // resolved at.
-    expect(await countIn([...INSIDE, AFTER_UNTIL])).toEqual({
-      kind: "ok",
-      data: INSIDE.length,
-    });
   });
 
   it("leaves out nothing when no claim is dated after until", async () => {

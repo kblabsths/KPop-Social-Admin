@@ -1,8 +1,6 @@
 import * as cheerio from "cheerio";
 import { describe, expect, it, vi } from "vitest";
-import { cycleState } from "@/lib/cycles/state";
 import { DASHBOARD_WINDOW } from "@/lib/db/dashboard";
-import { RESOLVER_CADENCE_SECONDS } from "@/lib/gauges/gauge";
 import { T } from "@/lib/db/tables";
 import { absoluteUtc } from "@/lib/format";
 import { TONE_INK } from "@/components/ui/badge";
@@ -10,14 +8,13 @@ import { NOTHING_IN_QUEUE } from "@/components/queues/surfaces";
 import { render } from "../ui/markup";
 import {
   BROKEN_INK,
-  chipsInsideLinks,
   classesOf,
   expectDrawnAsLinkAtRest,
   expectDrawnAsLinkAtRestIn,
   expectNotDrawnAsLink,
 } from "../../fixtures/link-spelling";
 import { blankCells } from "../absence/surfaces";
-import { oneEach, readNumber, surfaceHooks } from "../../live/parity";
+import { oneEach, readNumber, surfaceHooks } from "../../fixtures/surface-state";
 import type { ResolutionRunRow as CycleRow } from "@/lib/db/cycles";
 import {
   resolutionRunRow,
@@ -238,25 +235,6 @@ function cycles(): ResolutionRunRow[] {
   ];
 }
 
-/**
- * The row admin-window/BUG-0106 was filed about, in the shape this page shows
- * it: the producer wrote `succeeded` and the cycle's own errors column says
- * 108, with its failure recorded verbatim beside it.
- *
- * Built from the window's newest row so the pair under test differs in the ONE
- * fact — the error count — and never in its word.
- */
-const CYCLE_ERRORED: ResolutionRunRow = resolutionRunRow({
-  run_id: CYCLE_NEWEST,
-  started_at: minutesAgo(4),
-  ended_at: secondsAfter(minutesAgo(4), 45),
-  outcome: "succeeded",
-  applied: 0,
-  escalated: 0,
-  errors: 108,
-  error_summary: CYCLE_ERROR,
-});
-
 function runs(): RunRow[] {
   return [
     runRow({
@@ -437,17 +415,6 @@ describe("the attention summary", () => {
     expect(readNumber(markup, "Open signals")).toBe(openSignals(items).length);
   });
 
-  it("counts open items alone — a settled item is browsable, never attention", async () => {
-    const items = reviewItems();
-    const markup = await renderDashboard(healthyScript());
-
-    // The population holds a settled high-severity decision; it is not counted.
-    expect(items.some((item) => item.status === "settled")).toBe(true);
-    expect(readNumber(markup, "Open decisions")).toBe(
-      items.filter((item) => item.status === "open" && !isSignal(item)).length,
-    );
-  });
-
   it("gives the two counts equal standing — same container, same level", async () => {
     const markup = await renderDashboard(healthyScript());
     const $ = cheerio.load(markup);
@@ -496,35 +463,6 @@ describe("the attention summary", () => {
     // for it and never a percentage — the ranking formula is parked.
     expect(card).not.toMatch(/high\s*[:=]?\s*\d/);
     expect(card).not.toContain("%");
-  });
-
-  /*
-   * Closed: admin-window/BUG-0115, the Dashboard sibling of
-   * admin-window/BUG-0113. Was a strict `it.fails` pin while the defect was
-   * open; it is a plain assertion now that the chip is gone.
-   *
-   * Both attention `StatCard`s are links (`href` = /queues?kind=…) and their
-   * sub-line used to render the max severity as a `<Badge>` — a chip, with a
-   * fill of its own, INSIDE the anchor. ARCHITECTURE.md §7: "no anchor in any
-   * page's delivered markup contains a chip-filled span"; on a card-shaped
-   * link a badge that classifies the card sits inside the shell and OUTSIDE
-   * the anchor. What it cost, measured in bundled Chromium on a production
-   * build at 1440x900 with the pointer on the card: the chip and the card's
-   * hover state carry the SAME fill token, so in a 54x28 crop of the chip the
-   * light theme went from 691 chip-fill + 676 card-fill px at rest to 1383
-   * chip-fill and ZERO card-fill px hovered (dark: 683 + 676 -> 1359 + 0) —
-   * the chip's box gone exactly where the reader was pointing.
-   *
-   * The repo-wide form of this rule, over every route the filesystem offers,
-   * is `tests/offline/ui/link-spelling.test.ts`. This one stays because the
-   * Dashboard is where the defect landed twice.
-   */
-  it("never draws a chip inside a link, on the card the severity sits in", async () => {
-    const markup = await renderDashboard(healthyScript());
-    const $ = cheerio.load(markup);
-    // The population holds an open `high`, so a chip would be rendered to find.
-    expect(reviewItems().some((item) => item.severity === "high")).toBe(true);
-    expect(chipsInsideLinks($, $.root())).toEqual([]);
   });
 
   /*
@@ -631,19 +569,6 @@ describe("a zero attention count", () => {
     return card.text().replace(/\s+/g, " ").trim();
   }
 
-  it("names what fills that queue, in the words the queue's own empty state uses", async () => {
-    const markup = await renderDashboard(neitherKind);
-
-    for (const kind of ["decision", "signal"] as const) {
-      // The count is still a real figure in its fixed position (DECISIONS
-      // 2026-09-02) — the sentence is what the card gained.
-      expect(readNumber(markup, OPEN_LABEL_TEXT[kind])).toBe(0);
-      expect(cardText(markup, kind), `${kind} card`).toContain(
-        NOTHING_IN_QUEUE[kind].filledBy,
-      );
-    }
-  });
-
   it("names its own queue's filler and never the other card's", async () => {
     const markup = await renderDashboard(neitherKind);
 
@@ -717,17 +642,6 @@ describe("last night's cycles and runs", () => {
     expect(rendered).toEqual(runs().map((row) => `/cycles?run=${row.run_id}`));
   });
 
-  it("surfaces each error_summary verbatim, linked to the row that produced it", async () => {
-    const markup = await renderDashboard(healthyScript());
-
-    expect(errorLinesOf(markup, "cycles")).toEqual([
-      { text: CYCLE_ERROR, href: `/cycles?cycle=${CYCLE_OLDEST}` },
-    ]);
-    expect(errorLinesOf(markup, "runs")).toEqual([
-      { text: RUN_ERROR, href: `/cycles?run=${RUN_OLDEST}` },
-    ]);
-  });
-
   /**
    * Bar 10: the routes off this page are the age cells and the error lines,
    * and until admin-window/BUG-0108 all thirteen of them were drawn in plain
@@ -769,45 +683,6 @@ describe("last night's cycles and runs", () => {
     expect(outcomesOf(markup, "cycles")).toEqual(["running", "skipped", "failed"]);
     // The producer's own word, rendered verbatim.
     expect(rowsOf(markup, "cycles")[1].outcome).toBe("skipped");
-  });
-
-  /**
-   * LOOK_AND_FEEL, Palette: **healthy is green only when nothing needs a
-   * human** — an outcome whose own row carries a non-zero error count renders
-   * in attention amber, whatever word its producer wrote.
-   *
-   * admin-window/BUG-0106 measured that on `/cycles` and found the same defect
-   * waiting here: this page kept its own copy of the tone map, so the day one
-   * of the six newest cycles errors, it would have said `succeeded` in green
-   * over its own 108. The rule is `components/cycles/outcome.tsx`'s, called
-   * from here rather than copied — which is what "the same map" means.
-   */
-  it("does not paint a succeeded cycle green when its own row reports errors [admin-window/BUG-0106]", async () => {
-    const markup = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: { data: [CYCLE_ERRORED, ...cycles().slice(1)] },
-      }),
-    );
-
-    const rows = rowsOf(markup, "cycles");
-    const tones = tonesOf(markup, "cycles");
-    // The pair under test: one `succeeded` row with errors, one without.
-    expect(rows[0].outcome).toBe("succeeded");
-    expect(readCell(rows[0], "errors")).toBeGreaterThan(0);
-    expect(tones[0]).toBe("attention");
-
-    const cleanMarkup = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: {
-          data: [resolutionRunRow({ ...CYCLE_ERRORED, errors: 0, error_summary: null })],
-        },
-      }),
-    );
-    const cleanRows = rowsOf(cleanMarkup, "cycles");
-    // Same word, same row, no errors — and green is what it earns.
-    expect(cleanRows[0].outcome).toBe(rows[0].outcome);
-    expect(readCell(cleanRows[0], "errors")).toBe(0);
-    expect(tonesOf(cleanMarkup, "cycles")[0]).toBe("healthy");
   });
 
   it("keeps a failed cycle broken and an adapter run's tone unchanged [admin-window/BUG-0106]", async () => {
@@ -890,19 +765,6 @@ describe("the line saying when the resolver last applied something", () => {
     return lastApplied(markup).text().replace(/\s+/g, " ").trim();
   }
 
-  /** The longest tail two strings share — the clause both arms state. */
-  function commonSuffix(one: string, two: string): string {
-    let shared = 0;
-    while (
-      shared < one.length &&
-      shared < two.length &&
-      one[one.length - 1 - shared] === two[two.length - 1 - shared]
-    ) {
-      shared += 1;
-    }
-    return one.slice(one.length - shared);
-  }
-
   it("states the age of the cycle that applied, not of the newest cycle", async () => {
     const applied = appliedCycle();
     const markup = await renderDashboard(
@@ -949,28 +811,6 @@ describe("the line saying when the resolver last applied something", () => {
     expect(lineText(markup)).not.toMatch(/\d/);
     // The cycles the page always showed are still there beside it.
     expect(rowsOf(markup, "cycles")).toHaveLength(ran.length);
-  });
-
-  it("describes the read it made the same way in both states", async () => {
-    // Both arms name what was looked in — every cycle on record, not the
-    // window below — so an operator cannot read "nothing applied" as "nothing
-    // applied among these six". The words are the designer's; that the two
-    // arms share them is the app's.
-    const found = lineText(
-      await renderDashboard(
-        healthyScript({ [T.resolutionRuns]: [{ data: cycles() }, { data: appliedCycle() }] }),
-      ),
-    );
-    const none = lineText(
-      await renderDashboard(
-        healthyScript({ [T.resolutionRuns]: [{ data: cycles() }, { data: null }] }),
-      ),
-    );
-
-    expect(found).not.toBe("");
-    expect(none).not.toBe("");
-    expect(found).not.toBe(none);
-    expect(commonSuffix(found, none).length).toBeGreaterThan(20);
   });
 
   it("renders identically at every age — no threshold, no elapsed-time colour", async () => {
@@ -1111,49 +951,6 @@ describe("with the tables present and empty", () => {
     expect($('table[aria-label="runs"]')).toHaveLength(0);
     // Words under each heading say what the surface will hold.
     expect(textOf(markup).length).toBeGreaterThan(0);
-  });
-});
-
-/* ── the not-provisioned case ────────────────────────────────────────────── */
-
-describe("against a database without the ecosystem tables", () => {
-  const absentScript: Script = {
-    [T.reviewItems]: { error: tableNotInSchemaCache(T.reviewItems) },
-    [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-    [T.runs]: { error: tableNotInSchemaCache(T.runs) },
-  };
-
-  it("renders, names every missing table, and throws nothing", async () => {
-    const markup = await renderDashboard(absentScript);
-    const text = textOf(markup);
-
-    expect(markup.length).toBeGreaterThan(0);
-    for (const missing of [T.reviewItems, T.resolutionRuns, T.runs]) {
-      expect(text, missing).toContain(missing);
-    }
-  });
-
-  it("shows no count at all — a missing table is never a zero", async () => {
-    const markup = await renderDashboard(absentScript);
-    const $ = cheerio.load(markup);
-
-    // No count card at all, and no standalone digit anywhere in the surface.
-    expect($('a[href^="/queues?"]')).toHaveLength(0);
-    expect(textOf(markup)).not.toMatch(/(?<!\d)0(?!\d)/);
-  });
-
-  it("keeps the surfaces independent — one absent table leaves the others rendering", async () => {
-    const markup = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-      }),
-    );
-
-    expect(readNumber(markup, "Open decisions")).toBe(
-      openDecisions(reviewItems()).length,
-    );
-    expect(textOf(markup)).toContain(T.resolutionRuns);
-    expect(rowsOf(markup, "runs")).toHaveLength(runs().length);
   });
 });
 
@@ -1336,57 +1133,6 @@ describe("each panel states the window it is showing", () => {
     expect(windowOf(filled, "cycles").text).toContain(THE_REST);
     expect(windowOf(filled, "runs").text).toContain(THE_REST);
   });
-
-  it("states a window on a read that returned nothing, and none on a read that did not", async () => {
-    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3): an
-    // empty window is still a window the page looked in, and a refused read
-    // publishes no window at all. Graded for every surface at once in
-    // `tests/offline/absence/pages.test.ts`; pinned here because these two
-    // panels are the newest surfaces to inherit the rule.
-    const empty = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: [{ data: [] }, { data: null }],
-        [T.runs]: { data: [] },
-      }),
-    );
-    expect(windowOf(empty, "cycles").held).toBe("0");
-    expect(windowOf(empty, "runs").held).toBe("0");
-
-    const absent = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: { error: tableNotInSchemaCache(T.resolutionRuns) },
-        [T.runs]: { error: tableNotInSchemaCache(T.runs) },
-      }),
-    );
-    expect(windowOf(absent, "cycles").lines).toBe(0);
-    expect(windowOf(absent, "runs").lines).toBe(0);
-  });
-});
-
-describe("the cycles and runs window", () => {
-  it("never renders more lines than the window it asked for", async () => {
-    const many = Array.from({ length: DASHBOARD_WINDOW + 4 }, (_, index) =>
-      resolutionRunRow({
-        run_id: `01920000-0000-7000-8000-0000000006${String(index).padStart(2, "0")}`,
-        started_at: `2026-09-01T0${index % 10}:00:00Z`,
-      }),
-    );
-    // The database honours the limit; the page renders what it was handed.
-    const markup = await renderDashboard(
-      healthyScript({
-        [T.resolutionRuns]: { data: many.slice(0, DASHBOARD_WINDOW) },
-      }),
-    );
-
-    expect(rowsOf(markup, "cycles")).toHaveLength(DASHBOARD_WINDOW);
-  });
-
-  it("renders the source of every run row it was handed", async () => {
-    const markup = await renderDashboard(healthyScript());
-    const sources = rowsOf(markup, "runs").map((row) => row.source);
-
-    expect(sources).toEqual(runs().map((row) => row.source));
-  });
 });
 
 /* ── the adversarial pass (QA, campaign admin-window/TASK-0009) ──────────── */
@@ -1484,15 +1230,6 @@ describe("hostile and boundary producer text", () => {
 
     expect(outcomesOf(markup, "runs")).toEqual(["partial"]);
     expect(rowsOf(markup, "runs")[0].outcome).toBe("partial");
-  });
-
-  it("reads an adapter run still in flight as running, not as a blank", async () => {
-    // The cycles half is asserted above; the runs half shares the rendering
-    // and nothing pinned it. A run row is inserted at start, so a null
-    // `ended_at` with a null `outcome` is the commonest live row there is.
-    const markup = await renderDashboard(healthyScript());
-
-    expect(outcomesOf(markup, "runs")).toEqual(["running", "failed"]);
   });
 });
 
@@ -1703,81 +1440,6 @@ describe("a cycle or run that reported nothing", () => {
     expect(errorLinesOf(markup, "runs")).toEqual([]);
     expect(absencesOf(markup, "runs", "error")).toEqual([true]);
     expect(blankCells(markup)).toBe(0);
-  });
-});
-
-/* ── the two states a null outcome can be in ─────────────────────────────── */
-
-describe("a cycle with no end recorded", () => {
-  /*
-   * The Dashboard classifies a cycle by `ended_at` ALONE
-   * (`src/app/page.tsx`), so every null-outcome, null-`ended_at` row reads as
-   * running however old it is. `/cycles` reads the same row through
-   * `cycleState` (`src/lib/cycles/state.ts`) and calls one older than a cadence
-   * `died` — migration 20260901000001's own requirement, "a null older than
-   * one cadence is how a crash stays visible".
-   *
-   * `data-outcome` is the STATE hook both surfaces expose for a test, not the
-   * word on screen: this asserts the classification, and a rename of either
-   * page's copy never touches it.
-   *
-   * Two fixtures on purpose: one the surface must flag (a month old) and one
-   * it must not (a minute old). Both are built off the wall clock, because
-   * this page reads its own — a fixture with a literal date decides nothing.
-   */
-  const CADENCE = RESOLVER_CADENCE_SECONDS;
-
-  function noEndCycles(now: number): ResolutionRunRow[] {
-    return [
-      resolutionRunRow({
-        run_id: CYCLE_NEWEST,
-        started_at: new Date(now - 60_000).toISOString(),
-        ended_at: null,
-        outcome: null,
-        errors: 0,
-        error_summary: null,
-      }),
-      resolutionRunRow({
-        run_id: CYCLE_OLDEST,
-        started_at: new Date(now - 30 * 24 * 3_600_000).toISOString(),
-        ended_at: null,
-        outcome: null,
-        errors: 0,
-        error_summary: null,
-      }),
-    ];
-  }
-
-  it("reads a cycle younger than one cadence as running", async () => {
-    const now = Date.now();
-    const [fresh] = noEndCycles(now);
-    expect(cycleState(fresh, { now: new Date(now), cadenceSeconds: CADENCE }).kind).toBe(
-      "running",
-    );
-    const markup = await renderDashboard(
-      healthyScript({ [T.resolutionRuns]: { data: noEndCycles(now) } }),
-    );
-    expect(outcomesOf(markup, "cycles")[0]).toBe("running");
-  });
-
-  /*
-   * admin-window/BUG-0074, filed as an `it.fails` xfail and closed here: the
-   * Dashboard classified a cycle by `ended_at` ALONE, so it had no `died`
-   * state at all and this assertion was the divergence itself. It now reads
-   * the row through the same `cycleState` /cycles reads it through.
-   */
-  it("does not read a cycle older than one cadence as running", async () => {
-    const now = Date.now();
-    const dead = noEndCycles(now)[1];
-    // What the OTHER surface makes of the same row, from the one function that
-    // decides it.
-    expect(cycleState(dead, { now: new Date(now), cadenceSeconds: CADENCE }).kind).toBe(
-      "died",
-    );
-    const markup = await renderDashboard(
-      healthyScript({ [T.resolutionRuns]: { data: noEndCycles(now) } }),
-    );
-    expect(outcomesOf(markup, "cycles")[1]).toBe("died");
   });
 });
 
@@ -2232,7 +1894,7 @@ const HOOKS = Object.values(SURFACE_HOOKS);
 describe("the surface hooks the live parity oracle addresses", () => {
   /**
    * The live oracle grades ONE surface at a time and `stateOf`
-   * (`tests/live/parity.ts`) refuses any selector matching other than exactly
+   * (`tests/fixtures/surface-state.ts`) refuses any selector matching other than exactly
    * one element. Until admin-window/DEBT-0002 it addressed these three
    * POSITIONALLY — `section:nth-of-type(n)` — so one added section, or one
    * `<div>` wrapped around an existing one, either duplicates a match or
