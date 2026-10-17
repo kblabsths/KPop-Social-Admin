@@ -93,9 +93,11 @@ The scripts themselves are in `package.json`:
 | `npm test` | the offline tiers (`tests/offline/`, `tests/isolated/`) — no network, and green with no staging names in the environment |
 | `npm run test:live` | the live tier: a read-only contract smoke, ~10 cases in one file (`tests/live/contract.live.test.ts`), proving the offline stubs' assumptions about how PostgREST answers on **staging**; needs the staging names and refuses loudly if they are unset |
 | `npm run test:http` | the HTTP tier (`tests/http/`) — builds the app, starts it, drives it over HTTP; needs no database |
+| `npm run test:handoff` | the handoff tier (`tests/handoff/`), opt-in: the guards that READ the sibling repo `../kspace Scraper`, which this repo does not own — so a red there is a fact about the sibling, not about your diff. **Not part of `npm test`**; run it when you prepare or re-check a handoff |
 
-The directory a test lives in *is* its tier (`tests/suite-globs.ts`): `npm test` cannot reach
-`tests/live/`, which is why the offline suite is safe to run anywhere. Agent walk tooling lives in
+The directory a test lives in *is* its tier (`tests/suite-globs.ts`) — five tiers: offline and
+isolated (both under `npm test`), live, http, and the opt-in handoff tier. `npm test` cannot reach
+`tests/live/` or `tests/handoff/`, which is why the offline suite is safe to run anywhere. Agent walk tooling lives in
 `tests/walk/` and writes only to the staging-only `walk_sandbox` table; no test script can reach it
 (none of the scripts above names it).
 
