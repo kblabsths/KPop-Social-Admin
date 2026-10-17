@@ -84,7 +84,7 @@ settling two of 56 is your call. Pick two open ones from
 3. Check:
    ```sql
    select venue_id from public.events where event_id = '01a09c5e-5c1d-71cf-8044-fc1cf992db20';   -- a uuid, not null
-   select * from public.confirmed_matches where external_ref = '<that venue uuid>' order by matched_at desc limit 1;  -- matched_by = 'verdict'
+   select * from public.confirmed_matches where external_ref = '<that venue uuid>' order by confirmed_at desc limit 1;  -- matched_by = 'verdict'
    select action, created_at from public.verdicts order by created_at desc limit 1;               -- override
    ```
    `event_performers` is untouched by this step (no performer edit was made).
