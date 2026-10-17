@@ -21,6 +21,7 @@ import {
   type GaugeOptions,
   type WindowInfo,
 } from "./gauge";
+import { isSourceNamed, sourceLabel, sourceNamesOf } from "../sources/names";
 
 /**
  * Gauge 6 of 6 — **settled values**, on `/sources`.
@@ -91,7 +92,11 @@ export interface RejectionWeek {
 
 export interface SourceRejections {
   sourceId: string;
-  /** The source's name, or `null` when its `sources` row did not come back. */
+  /**
+   * The registry's name for the source, byte-identical, or `null` when the
+   * registry named nothing — no row came back, or the row's name has no ink
+   * in it. Decided by `isSourceNamed` (`lib/sources/names.ts`), never here.
+   */
   source: string | null;
   /** `sources.tier` — the CURRENT tier, which drifts; the knob this gauge moves. */
   tier: string | null;
@@ -126,7 +131,13 @@ export interface SettledValues {
   byReason: Record<string, number>;
   /** Per source, most re-rejects first. */
   bySource: SourceRejections[];
-  /** Sources whose `sources` row did not come back — their names are null above. */
+  /**
+   * Sources the registry did not name — their `source` is null above. "Did
+   * the registry name this source?" is asked of `isSourceNamed`
+   * (`lib/sources/names.ts`), the one owner of that question, so this figure
+   * and the twin gauge's (`standing-disagreements.ts`) count by one reading
+   * (admin-window/BUG-0236).
+   */
   unnamedSources: number;
   /**
    * Rejections carrying no `rejected_by` at all. The column is nullable and
@@ -192,6 +203,9 @@ function emptyReasons(): Record<string, number> {
 export function aggregateRejectionStamps(input: SettledValuesRows): SettledValues {
   const { rejections, window } = input;
   const sourceById = indexBy(input.sources, (row) => row.source_id);
+  // WHAT THE REGISTRY CALLS EACH SOURCE, read through the one owner of that
+  // question (`lib/sources/names.ts`), exactly as the twin gauge reads it.
+  const names = sourceNamesOf(input.sources);
   const weeks = utcWeeksBetween(window.since, window.until);
 
   const byReason = emptyReasons();
@@ -208,7 +222,14 @@ export function aggregateRejectionStamps(input: SettledValuesRows): SettledValue
   const bySource = [...groupBy(rejections, (row) => row.source_id).entries()]
     .map(([sourceId, group]) => {
       const source = sourceById.get(sourceId);
-      if (source === undefined) unnamedSources += 1;
+      // "Did the registry name this source?" — asked of `isSourceNamed` and
+      // not of `source === undefined`: a row that came back with no ink in
+      // its name is the same fact to an operator as no row at all, and is
+      // labelled by its id either way (`sourceLabel`). This was the last
+      // hand-spelling of that test beside the owner (admin-window/BUG-0236;
+      // the blank-source-name class, BUG-0152/54/56/58/59).
+      const named = isSourceNamed(names, sourceId);
+      if (!named) unnamedSources += 1;
 
       const reasons = emptyReasons();
       let unattributedHere = 0;
@@ -232,7 +253,9 @@ export function aggregateRejectionStamps(input: SettledValuesRows): SettledValue
 
       return {
         sourceId,
-        source: source?.source ?? null,
+        // The registry's name, byte-identical, where there is one to give;
+        // `null` where there is not, which is what puts the id on screen.
+        source: named ? sourceLabel(names, sourceId) : null,
         tier: source?.tier ?? null,
         lifecycle: source?.lifecycle ?? null,
         rerejected: reasons[RE_REJECT_REASON] ?? 0,
