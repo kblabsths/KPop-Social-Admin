@@ -5,7 +5,6 @@ import {
   BucketTable,
   ClaimList,
   ClaimTabs,
-  CLAIM_WINDOW,
   FilterBar,
   PagedClaimList,
   type BucketStat,
@@ -29,6 +28,7 @@ import {
   Section,
   StateOf,
   WindowLine,
+  WindowRefused,
   type DrawnWindow,
   narrowedTo,
 } from "@/components/ui";
@@ -64,6 +64,7 @@ import {
   listFilterOf,
   sourceHref,
   tabFacetsOf,
+  TAB_PARAM,
   type FacetLabel,
   tabFrom,
   tabLinks,
@@ -86,8 +87,16 @@ import {
   type UnchippedNarrowing,
 } from "@/lib/url/narrowing";
 import { claimLines, type ClaimLine } from "@/lib/claims/lines";
-import { PAGE_ROUTES, pageBound } from "@/lib/paging/bounds";
-import { type RowIdKey, boundOf, idAt, initialPage } from "@/lib/paging/machine";
+import {
+  PAGE_PARAM,
+  PAGE_ROUTES,
+  SIZE_PARAM,
+  endsWithin,
+  firstRowOf,
+  rawWindowOf,
+  windowBound,
+} from "@/lib/paging/bounds";
+import { type RowIdKey, idAt, initialPage } from "@/lib/paging/machine";
 import { resolveBounds } from "@/lib/gauges/gauge";
 import {
   PENDING_CLAIMS_DEFAULTS,
@@ -127,7 +136,7 @@ import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
  * queries. What it reads now, ALL AT ONCE and none of them waiting on
  * another's ids:
  *
- *  - the LIST — ONE window read of the longest-waiting `CLAIM_WINDOW` claims,
+ *  - the LIST — ONE window read of the longest-waiting claims (the window the address names),
  *    ordered in the DATABASE (`observed_at asc`, the instant the scraper
  *    handoff carries through the view), narrowed by `.eq()` at the query;
  *  - every COUNT — `countRead` requests `ROW_CAP` cannot reach: the total
@@ -141,12 +150,12 @@ import { sourceLabel, sourceNamesOf } from "@/lib/sources/names";
  *
  * So the page's cost is invariant to the size of the view: the same requests
  * over 20 claims and over 2,000, none of them reading more than
- * `CLAIM_WINDOW` claim rows, and no figure on screen derived from a set that
+ * one window of claim rows, and no figure on screen derived from a set that
  * had to be transported to be counted. Each leg keeps its own `DbResult` and
  * its own rendering — no leg is cast into another's shape and no leg's refusal
  * removes another leg's rows (§4.1, §4.3, common violations row 14).
  *
- * **The LIST is a window and its count is a count** (`CLAIM_WINDOW`,
+ * **The LIST is a window and its count is a count** (the window's size,
  * admin-window/BUG-0041): the longest-waiting rows only, with the cap and the
  * number of matching claims stated above the table in the app's window voice.
  * The rows never become a total — the sentence above them states a figure the
@@ -1175,6 +1184,14 @@ export default async function ClaimsPage({
   const params = (await searchParams) ?? {};
   const tab = tabFrom(params);
 
+  // THE WINDOW THE ADDRESS NAMES — page windows (Ben's ruling of 2026-09-11,
+  // built 2026-10-16). `?page=` and `?size=` are read by the ONE guard both
+  // paging routes use (`windowBound`), so a cold load of `/claims?page=3&size=20`
+  // renders exactly the window a move to it would draw (SPEC F14). A refused
+  // window is refused BY NAME below — the list is not read, no rows are drawn
+  // and the first window is offered — never clamped to one that exists.
+  const window = windowBound(rawWindowOf(params));
+
   // The narrowing, from the URL ALONE — before a single read, because every
   // read below carries it as `.eq()` and none of them may wait for another to
   // learn what to ask (admin-window/BUG-0138; the same rule `/sources` follows
@@ -1337,7 +1354,13 @@ export default async function ClaimsPage({
     withoutChips,
     gaugeWithoutChips,
   ] = await Promise.all([
-      readClaimWindow({ filter: listFilter, limit: CLAIM_WINDOW }),
+      window.kind === "ok"
+        ? readClaimWindow({
+            filter: listFilter,
+            limit: window.window.size,
+            offset: window.offset,
+          })
+        : Promise.resolve(null),
       // The count the LIST's window line states — under the same narrowing the
       // window read carried, so the sentence and the rows describe one set. On
       // the buckets tab it is also the bucket table's own figure, and where a
@@ -1581,40 +1604,36 @@ export default async function ClaimsPage({
 
   // The rows the list draws — the window read's own rows, in the order the
   // database returned them, named from the registry read.
-  const listed = rows.kind === "ok" ? claimLines(rows.data, names) : [];
+  const listed = rows !== null && rows.kind === "ok" ? claimLines(rows.data, names) : [];
 
-  // WHETHER THE OPERATOR IS OFFERED MORE — the page's decision, and the whole
-  // of it (admin-window/TASK-0067, SPEC F14). Three facts, all of them already
-  // established above; nothing is read for this.
+  // WHETHER THE LIST IS DRAWN AS A MOVABLE WINDOW — the page's decision, and
+  // the whole of it (admin-window/TASK-0067, SPEC F14; page windows 2026-10-16).
   //
-  //  1. A COUNT said there is more. That is `truncated` — the same comparison
-  //     the window line states, off the count and never off the rows, so the
-  //     sentence above the list and the control below it can never disagree
-  //     about whether a 51st claim exists. A refused or ABSENT count is NOT a
-  //     reason to offer one: a control drawn on a guess would be this page
-  //     claiming a total no read established (ARCHITECTURE.md §4.3, LESSONS
-  //     2), so the honest arm is no affordance, and the refused count still
-  //     says so on its own sub-surface below.
-  //  2. The rows are a bound this surface can PAGE FROM. A count and a window
-  //     read are two reads and they can disagree — a count of 900 beside a
-  //     window read that returned 37 rows is reachable — and `initialPage(37,
-  //     true)` is a state whose every press `pageBound` refuses for ever, so
-  //     the widget would honestly draw its limit sentence and the operator
-  //     would get "no further rows" with no control and no way back (QA,
-  //     admin-window/BUG-0168). This is not a second ceiling check: the
-  //     ceiling is the WIDGET's rule and stays there. It is the question of
-  //     whether the state this page would HAND it is on the grid at all.
-  //  3. The rows read `ok` and drew something. `not_provisioned` and `error`
-  //     render exactly the state they render today, and an empty `ok` window
-  //     keeps the Empty card and the window line it has always had (§4.3,
-  //     admin-window/BUG-0070) — in all three, no wrapper and no paging
-  //     element in the markup at all.
+  //  1. The rows read `ok` under a window the address names. `not_provisioned`
+  //     and `error` render exactly the state they render today, and a REFUSED
+  //     address reads nothing at all — in all three, no paging element in the
+  //     markup (a control that cannot be honoured is never drawn, SPEC F10).
+  //  2. The COUNT answered. The window line is the count's and the window's
+  //     together, and the provider that publishes the surface's state needs
+  //     that line's facts; a refused count still says so on its own
+  //     sub-surface below and the rows render plain.
+  //  3. There is something to window: rows on screen, or a window past the
+  //     first (an EMPTY later window still offers the way back). An empty
+  //     FIRST window keeps the Empty card and the line it has always had
+  //     (§4.3, admin-window/BUG-0070), with no control over rows that do not
+  //     exist.
+  //
+  // `truncated` for the UNPAGED line is the count's own comparison, as it
+  // always was; on the paged arm the provider states it from the read that
+  // drew the window (`exhausted`), the one derivation both the line and the
+  // controls read (LESSONS 11).
   const truncated = listCount.kind === "ok" && listCount.data > listed.length;
   const pageable =
+    window.kind === "ok" &&
+    rows !== null &&
     rows.kind === "ok" &&
-    listed.length > 0 &&
-    truncated &&
-    pageBound(String(listed.length), CLAIM_WINDOW).kind === "ok";
+    listCount.kind === "ok" &&
+    (listed.length > 0 || window.window.page > 1);
 
   // THE FIRST SCREEN'S WINDOW, COMPOSED ONCE (admin-window/BUG-0172). One
   // object reaches whichever component renders the line — the paged arm or the
@@ -1639,9 +1658,11 @@ export default async function ClaimsPage({
   // count costs the LINE and nothing else, and says so on its own sub-surface
   // below.
   const listWindow: DrawnWindow | null =
-    rows.kind === "ok" && listCount.kind === "ok"
+    window.kind === "ok" && rows !== null && rows.kind === "ok" && listCount.kind === "ok"
       ? {
-          limit: CLAIM_WINDOW,
+          // The window's SIZE — the cap of the read that drew it, which is the
+          // operator's choice of 20, 50 or 100 since page windows.
+          limit: window.window.size,
           // The matching COUNT its own count read established. Paging reads no
           // new claim into it, so it is the same number after a press as
           // before one — the hook the live paged-walk oracle grades the walk
@@ -1682,13 +1703,15 @@ export default async function ClaimsPage({
           // `PagingProvider` overwrites it with the rows the operator now
           // holds, which is the same fact after a press.
           drawn: listed.length,
-          // WHETHER A PRESS CAN CONTINUE THIS WINDOW — the same expression
+          // WHERE THIS WINDOW STARTS in the order — stated from the window the
+          // address named, so the line can say "rows 51–100 are below"
+          // (ARCHITECTURE.md §4.3 rule 4).
+          from: firstRowOf(window.window),
+          // WHETHER THE OPERATOR CAN MOVE THIS WINDOW — the same expression
           // that chooses which component renders the line below, so one fact
           // reaches both and they cannot come to disagree. It is stated rather
-          // than read off `drawn`'s presence: those are two different facts,
-          // and conflating them is what made stating the rows drawn
-          // impossible without also claiming an affordance this arm does not
-          // offer (admin-window/BUG-0183, ARCHITECTURE.md §4.3 rule 4).
+          // than read off `drawn`'s presence (admin-window/BUG-0183,
+          // ARCHITECTURE.md §4.3 rule 4).
           continues: pageable,
         }
       : null;
@@ -1696,7 +1719,7 @@ export default async function ClaimsPage({
   // what the window is not showing, which needs no state this file knows. It
   // used to hand down a way to REACH the held-back rows in the one state the
   // shared clause could not be said in (admin-window/BUG-0160); no state of
-  // this page can reach them at all — the list is a hard `CLAIM_WINDOW` window
+  // this page can reach them at all — the list is a hard window
   // and the narrowest state the chip rows offer still held 108 claims against
   // 50 rows (measured on staging 2026-09-10) — so both wordings were removed
   // rather than one chosen (admin-window/BUG-0162).
@@ -1720,9 +1743,19 @@ export default async function ClaimsPage({
       ) : (
         <WindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
       )}
-      {rows.kind === "not_provisioned" ? (
-        <StateOf result={rows} />
-      ) : rows.kind === "ok" && rows.data.length === 0 ? (
+      {window.kind === "refused" ? (
+        // THE ADDRESS NAMED A WINDOW THIS APP DOES NOT SERVE: refused by name,
+        // nothing read, nothing drawn, and the first window offered under the
+        // narrowing this page applied — never a window the operator did not
+        // ask for (design question 2, page windows).
+        <WindowRefused
+          param={window.param}
+          reason={window.reason}
+          firstWindowHref={claimsHref(CLAIMS_PATH, filter, tab)}
+        />
+      ) : rows === null || rows.kind === "not_provisioned" ? (
+        rows === null ? null : <StateOf result={rows} />
+      ) : rows.kind === "ok" && rows.data.length === 0 && !pageable ? (
         // Three different emptinesses, three different renderings: the
         // table that holds nothing, the filter that matched nothing, and
         // the table that is not in this database (LOOK_AND_FEEL,
@@ -1734,11 +1767,11 @@ export default async function ClaimsPage({
           <Empty holds={emptyWords.holds} filledBy={emptyWords.filledBy} />
         </div>
       ) : pageable ? (
-        // The same rows, the same markup, the same order — plus the control
-        // beneath them. The wrapper takes the rows, the press and the
-        // window from the provider above rather than deriving any of them
-        // (admin-window/BUG-0168, admin-window/BUG-0172).
-        <PagedClaimList label={LIST_TITLE[tab]} initial={listed} />
+        // The window the address names, through the same `ClaimList` — with
+        // the controls that move it ABOVE the rows (LOOK_AND_FEEL bar 14).
+        // The wrapper takes the rows and the window from the provider above
+        // rather than deriving any of them (admin-window/BUG-0172).
+        <PagedClaimList label={LIST_TITLE[tab]} />
       ) : (
         <ClaimList
           label={LIST_TITLE[tab]}
@@ -1759,7 +1792,7 @@ export default async function ClaimsPage({
           first is the list's own `held`; the second is the unnarrowed
           population, which decides only which of two sentences and which of
           two empty cards this surface shows. */}
-      {rows.kind === "ok" && listCount.kind !== "ok" ? (
+      {rows !== null && rows.kind === "ok" && listCount.kind !== "ok" ? (
         <div data-surface={LIST_COUNT_SURFACE}>
           <StateOf result={listCount} eyebrow={LIST_COUNT_EYEBROW} />
         </div>
@@ -1788,7 +1821,14 @@ export default async function ClaimsPage({
         )}
       />
       <DroppedParamsLine
-        dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET])}
+        dropped={droppedParams(params, filter, [UNRENDERABLE_BUCKET], [
+          TAB_PARAM,
+          // The window's two parameters are consumed by the list — rendered
+          // as the window, or refused by name on its own line — so neither is
+          // a parameter this page silently dropped.
+          PAGE_PARAM,
+          SIZE_PARAM,
+        ])}
       />
 
       {showsBuckets ? (
@@ -1848,44 +1888,31 @@ export default async function ClaimsPage({
       ) : null}
 
       <Section title={LIST_TITLE[tab]} surface={LIST_SURFACE}>
-        {pageable && listWindow !== null ? (
-          // The window this surface pages by is spelled ONCE, here, and handed
-          // to the driver that grades every page against it. The narrowing a
-          // press carries is serialized from the FILTER the reads above were
-          // given, never from `searchParams`, so a parameter this page dropped
-          // cannot come back as a different narrowing under rows drawn from
-          // this one (admin-window/BUG-0141).
-          //
+        {pageable && listWindow !== null && window.kind === "ok" ? (
           // THE FIRST SCREEN'S WINDOW GOES IN HERE, AND NOWHERE ELSE
-          // (admin-window/BUG-0180). The provider combines it with the press
-          // state once, so the line above the rows and the sentence below them
-          // read one object and one verdict over it. `listWindow` is non-null
-          // in every state `pageable` is true — it needs the same two `ok`
-          // reads — and the condition says so out loud rather than asserting
-          // it.
+          // (admin-window/BUG-0180). The provider combines it with the paging
+          // state once, so the line above the rows and the controls read one
+          // object and one verdict over it. The narrowing a move carries is
+          // serialized from the FILTER the reads above were given, never from
+          // `searchParams` (admin-window/BUG-0141).
           <PagingProvider
-            // THE BOUND THIS FIRST SCREEN ENDS AT, so the driver can tell
-            // that a re-rendered first screen is a different one and start
-            // again from it rather than concatenating one order's rows under
-            // another's (admin-window/BUG-0216). It is the same field
-            // `ClaimList` keys its rows by.
+            // THE WINDOW THE SERVER DREW — its rows, which window it is, and
+            // whether the read said the set ends inside it (`endsWithin`, the
+            // one derivation the route uses too) — plus the ids this screen
+            // drew, on the same field `ClaimList` keys by, so a server screen
+            // re-rendered under a kept client state is told apart from the one
+            // that state continues (admin-window/BUG-0216).
             initial={initialPage<ClaimLine>(
-              listed.length,
-              truncated,
-              boundOf(listed, observationId),
-              // AND THE IDS THIS SCREEN HAS ALREADY DRAWN, so a page the route
-              // serves at a position claims have moved under cannot put one
-              // claim on screen twice (admin-window/BUG-0222). Same spelling
-              // as the bound above and as `deps.idKey` below — one derivation of
-              // "what this row is called", which is also the field `ClaimList`
-              // keys by.
+              listed,
+              window.window,
+              endsWithin(listed.length, window.window.size),
               listed.map(observationId),
             )}
             window={listWindow}
             deps={{
               route: PAGE_ROUTES.claims,
+              path: CLAIMS_PATH,
               params: claimsQuery(filter, tab),
-              size: CLAIM_WINDOW,
               // THE NAME, NEVER THE READER (admin-window/BUG-0226): every prop
               // written on this `"use client"` element is serialized into the
               // flight payload, and a function is the one shape that is not

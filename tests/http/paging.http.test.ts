@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CLAIM_WINDOW } from "@/components/claims";
-import { RECENT_EVENTS } from "@/lib/browse/views";
 import {
-  OFFSET_PARAM,
   PAGE_ANSWER_CACHE_CONTROL,
+  PAGE_PARAM,
   PAGE_ROUTES,
   isPageAnswer,
 } from "@/lib/paging/bounds";
@@ -66,10 +64,10 @@ const browseRoute = `${base}${PAGE_ROUTES.browse}`;
  * the handler telling an unauthenticated caller what its bound grader thinks.
  */
 const STRANGER_ASKS: ReadonlyArray<readonly [string, string]> = [
-  ["a bound the handler would serve", `?${OFFSET_PARAM}=${CLAIM_WINDOW}`],
-  ["a bound the handler would refuse", `?${OFFSET_PARAM}=abc`],
+  ["a bound the handler would serve", `?${PAGE_PARAM}=2`],
+  ["a bound the handler would refuse", `?${PAGE_PARAM}=abc`],
   ["no bound at all", ""],
-  ["the facets a press carries", `?tab=standing&domain=events&${OFFSET_PARAM}=${CLAIM_WINDOW}`],
+  ["the facets a press carries", `?tab=standing&domain=events&${PAGE_PARAM}=2`],
 ];
 
 describe("the claims paging route, gated like a page", () => {
@@ -106,7 +104,7 @@ describe("the claims paging route, gated like a page", () => {
   it("refuses a signed-in caller the allowlist cannot vouch for, and serves no rows", async () => {
     const { child } = await startServer();
     try {
-      const response = await fetch(`${route}?${OFFSET_PARAM}=${CLAIM_WINDOW}`, {
+      const response = await fetch(`${route}?${PAGE_PARAM}=2`, {
         headers: { cookie: await signedInCookie() },
         redirect: "manual",
       });
@@ -153,10 +151,10 @@ describe("the claims paging route, gated like a page", () => {
  * issued and no event row is served.
  */
 const BROWSE_STRANGER_ASKS: ReadonlyArray<readonly [string, string]> = [
-  ["a bound the handler would serve", `?${OFFSET_PARAM}=${RECENT_EVENTS.window}`],
-  ["a bound the handler would refuse", `?${OFFSET_PARAM}=abc`],
+  ["a bound the handler would serve", `?${PAGE_PARAM}=2`],
+  ["a bound the handler would refuse", `?${PAGE_PARAM}=abc`],
   ["no bound at all", ""],
-  ["the params the view carries", `?cols=title%2Cvenue&${OFFSET_PARAM}=${RECENT_EVENTS.window}`],
+  ["the params the view carries", `?cols=title%2Cvenue&${PAGE_PARAM}=2`],
 ];
 
 describe("the browse paging route, gated like a page", () => {
@@ -191,7 +189,7 @@ describe("the browse paging route, gated like a page", () => {
   it("refuses a signed-in caller the allowlist cannot vouch for, and serves no rows", async () => {
     const { child } = await startServer();
     try {
-      const response = await fetch(`${browseRoute}?${OFFSET_PARAM}=${RECENT_EVENTS.window}`, {
+      const response = await fetch(`${browseRoute}?${PAGE_PARAM}=2`, {
         headers: { cookie: await signedInCookie() },
         redirect: "manual",
       });
@@ -336,17 +334,17 @@ describe("a gated answer is never storable", () => {
   const ROUTE_ASKS: ReadonlyArray<readonly [string, string]> = [
     [
       "the browse route, the gate's answer to a signed-in caller",
-      `${browseRoute}?${OFFSET_PARAM}=${RECENT_EVENTS.window}`,
+      `${browseRoute}?${PAGE_PARAM}=2`,
     ],
     [
       "the browse route, the gate's answer to a refused bound",
-      `${browseRoute}?${OFFSET_PARAM}=abc`,
+      `${browseRoute}?${PAGE_PARAM}=abc`,
     ],
     [
       "the claims route, the gate's answer to a signed-in caller",
-      `${route}?${OFFSET_PARAM}=${CLAIM_WINDOW}`,
+      `${route}?${PAGE_PARAM}=2`,
     ],
-    ["the claims route, the gate's answer to a refused bound", `${route}?${OFFSET_PARAM}=abc`],
+    ["the claims route, the gate's answer to a refused bound", `${route}?${PAGE_PARAM}=abc`],
   ];
 
   it("answers the gate's refusal, and never with anything a store may keep", async () => {
