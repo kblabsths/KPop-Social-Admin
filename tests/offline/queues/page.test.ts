@@ -451,20 +451,21 @@ describe("the two queues", () => {
     expect(idsIn(markup, "signal").length).toBeGreaterThan(0);
   });
 
-  it("states its sort on screen, in each queue", async () => {
-    // LOOK_AND_FEEL bar 6: a ranked list states its sort. The words are the
-    // contract's own ("open first, severity then age"), which is why this
-    // asserts them and nothing else about the copy.
-    const markup = await renderQueues(healthyScript());
-    const { $, blocks } = blocksOf(markup);
-
-    for (const block of blocks) {
-      const said = $(block).text().toLowerCase();
-      expect(said, $(block).attr("data-queue")).toContain("open first");
-      expect(said).toContain("severity");
-      expect(said).toContain("age");
-    }
-  });
+  /*
+   * "states its sort on screen, in each queue" stood here until 2026-10-21.
+   *
+   * It pinned bar 6's standing sentence — "Open first, severity then age —
+   * settled items last, still browsable" — printed above both queues on
+   * every load. Ben's operator pass cut it as prose that said the same thing
+   * forever ("things should speak for themselves"); bar 6 is amended in
+   * LOOK_AND_FEEL and the ruling is in DECISIONS.md.
+   *
+   * It is deleted rather than inverted because `QueueList` no longer HAS a
+   * `sort` prop: the type is the guard now, and `tsc` catches a re-add at the
+   * call site, which no copy assertion here could do. The ORDER itself is
+   * still `queueOrder`'s alone and still pinned — by `shapes.test.ts`, which
+   * grades the order of the rows rather than a sentence about them.
+   */
 
   it("shows each queue's open count under its own figure", async () => {
     // Quality bar 1: the Queues page answers "how much is open in each queue"

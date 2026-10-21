@@ -154,7 +154,6 @@ export function AwaitingRowTrendSection({
         <GaugeCard
           label="Sources with awaiting-row claims"
           value={series.length}
-          sub="A claim waits here when its record has no canonical row yet"
         />
       </div>
       {narrowed === null ? (
@@ -168,7 +167,7 @@ export function AwaitingRowTrendSection({
           empty={{
             holds: "sources waiting on a record in this window",
             filledBy:
-              "A source's claim arrives before the record it belongs to exists, and the source appears here.",
+              "A source's claim arrives before the record it belongs to exists.",
           }}
           state={
             filter.source_id === undefined
@@ -177,7 +176,7 @@ export function AwaitingRowTrendSection({
                   kind: "empty",
                   holds: "awaiting-row claims from this source in this window",
                   filledBy:
-                    "This source claims a fact about a record the pipeline has not created yet, and the days appear here.",
+                    "This source claims a fact about a record the pipeline has not created yet.",
                 }
           }
         />
@@ -328,7 +327,6 @@ export function RejectionSection({
           label="Re-rejected claims in this window"
           value={rerejected}
           floor={info.truncated}
-          sub="Values a human already adjudicated out, pushed again"
         />
         <GaugeCard
           label="Sources re-pushing adjudicated values"
@@ -351,7 +349,7 @@ export function RejectionSection({
           empty={{
             holds: "sources whose claims were adjudicated in this window",
             filledBy:
-              "A human settles a fact, or the resolver throws a settled value out again, and the source appears here.",
+              "A human settles a fact, or the resolver throws a settled value out again.",
           }}
           state={
             filter.source_id === undefined
@@ -360,7 +358,7 @@ export function RejectionSection({
                   kind: "empty",
                   holds: "adjudicated claims from this source in this window",
                   filledBy:
-                    "This source pushes a value a verdict already rejected, and the weeks appear here.",
+                    "This source pushes a value a verdict already rejected.",
                 }
           }
         />

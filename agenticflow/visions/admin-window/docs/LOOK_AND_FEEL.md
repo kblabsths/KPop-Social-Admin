@@ -107,11 +107,27 @@ typographic idea: the operator can always see which words are the machine's.
 
 | Step | Size / line | Face | Used for |
 | --- | --- | --- | --- |
-| `figure` | 20 / 24, semibold | mono | the one number on a stat or gauge card |
-| `title` | 14 / 20, semibold, uppercase, +0.05em | sans | page h1 and section h2, nothing else |
-| `body` | 12 / 18 | sans | buttons, nav, prose, form labels |
-| `data` | 11 / 16 | mono | table cells, values, chips, badges, inline detail |
-| `micro` | 10 / 14, uppercase, +0.05em | sans | the eyebrow label above a value |
+| `figure` | 24 / 30, semibold | mono | the one number on a stat or gauge card |
+| `title` | 16 / 22, semibold, uppercase, +0.05em | sans | page h1 and section h2, nothing else |
+| `body` | 14 / 20 | sans | buttons, nav, prose, form labels, **chips and badges carrying the app's words** |
+| `data` | 13 / 18 | mono | table cells, ids, timestamps, error strings — **values the database produced**, chips and badges included |
+| `micro` | 11 / 15, uppercase, +0.05em | sans | the eyebrow label above a value |
+
+**Sizes revalued 2026-10-21 (Ben's first operator pass; was 20/14/12/11/10).**
+The app was authored at 10–12px against a 16px browser default — prose at 75%
+of it, table cells at 69%, eyebrows at 62% — and the verdict was "just hard to
+read". The five steps did not change and no sixth was added; only their values
+did. The spacing scale below is deliberately NOT revalued with them, so the
+glyphs grew and the density survived.
+
+**The step is chosen by whose word it is, never by what kind of element it
+is.** The row above used to hand `data` mono to "chips, badges" as a
+category — which contradicted the paragraph directly above this table, and put
+the app's own word `Queues` on the Queues tab strip in Geist Mono (found by
+Ben on the same pass). Where an element can carry either, it ASKS: `ui/Chip`
+takes a `face` of `words` or `value`, and the caller that knows answers it
+(`FilterChoice.face` — `all` is the app's word, `data_conflict` is the
+database's).
 
 - Nothing outside these five steps. The existing app's `text-[9px]`,
   `text-xl` and `text-2xl` do not survive.
@@ -230,7 +246,12 @@ the M2 override editor and the walk sandbox's cells. They license no editor on
 a catalog row: Ben struck direct `groups`/`idols` editing on 2026-09-08, those
 rows carry no editor and none returns.
 
-**Chips and badges** — `data` mono, 4px radius, 2/8 padding. A *filter chip*
+**Chips and badges** — 4px radius, 2/8 padding, and the FACE of whoever wrote
+the label: `body` sans for the app's own words (a tab name, `all`, a column
+name, a page size), `data` mono for a value the database produced (a facet
+value, a registry source name). Severity, tier, kind, bucket, shape and
+lifecycle are all the database's, so every badge in the app today is mono; the
+chips are mixed and say which they are (`ChipFace`). A *filter chip*
 is interactive: active = accent fill + white; inactive = chrome fill +
 secondary text. A *badge* is not interactive and is always chrome fill with
 primary text (tier, kind, bucket, shape) — **only severity and health carry
@@ -287,8 +308,15 @@ header's `animate-pulse` stale dot is gone).
    every editable field — and there is no provenance page in the nav.
    *(spec §4 rationale; VISION: "provenance is visible at the field")*
 6. **Severity is the registry's word.** Every ranked list shows `low` / `high`
-   verbatim and states its sort ("open first, severity then age") on screen.
-   No score, no computed rank, no number. *(VISION non-goal: "no severity formula")*
+   verbatim. No score, no computed rank, no number.
+   *(VISION non-goal: "no severity formula")*
+   *(Amended 2026-10-21: the bar also required each ranked list to STATE its
+   sort on screen — "Open first, severity then age — settled items last, still
+   browsable" above both queues, every load. Ben cut it on his operator pass:
+   "things should speak for themselves". The ORDER is unchanged and still
+   `queueOrder`'s alone; only the standing sentence about it is gone, and
+   `QueueList` no longer has a `sort` prop to put one back. If it ever needs
+   saying again it is an info bubble, not a paragraph.)*
 7. **A settlement resolves in place.** After a verdict or an override, the
    item's new state — settled, with its action — replaces the controls in the
    same view, with no full-page reload and no instruction to refresh.
@@ -459,10 +487,16 @@ newcomer")*
    why the condition stands, then close it again" beats "Error: note
    required".
 4. **Every empty and not-provisioned state names what the surface holds and
-   what fills it.** Never a bare "No data" or "No items to display": "No open
-   decisions — the resolver files one here when sources disagree." /
-   "`verdicts` isn't in this database yet — it arrives with the scraper repo's
-   migration."
+   what fills it, in ONE clause.** Never a bare "No data" or "No items to
+   display": "No open decisions — the resolver files one here when sources
+   disagree." / "`verdicts` isn't in this database yet — it arrives with the
+   scraper repo's migration."
+   *(The one-clause bound is 2026-10-21's. The rule itself stands — an
+   emptiness still says what fills it — but the sentences had grown a second
+   clause that told the operator the surface they were looking at was the
+   surface it would appear on: "…, and its age joins the spread", "…, and the
+   bucket appears here", "…, and the source appears here". Twenty-nine of
+   them were cut back to the clause that carries the fact.)*
 5. **Sentence case everywhere; capitals only for names.** Machine identifiers
    (`data_conflict`, `admin_locked`, `event_performers`, `wont_fix`) render
    verbatim in mono and are never prettified into Title Case prose.

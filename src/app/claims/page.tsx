@@ -192,22 +192,31 @@ export const dynamic = "force-dynamic";
 /** This route's own path — the base every filter, tab and bucket link is built on. */
 const CLAIMS_PATH = "/claims";
 
-/** The order the claim list is in, stated on screen (LOOK_AND_FEEL bar 6). */
-const SORT_STATEMENT =
-  "Oldest first — the longest-waiting claim at the top; a claim whose instant is unknown sorts last.";
+/**
+ * The order the claim list is in — the window line's opening clause.
+ *
+ * Cut to two words on 2026-10-21 (Ben's operator pass). It read "Oldest
+ * first — the longest-waiting claim at the top; a claim whose instant is
+ * unknown sorts last", and the two clauses after the dash restated the first
+ * one and named an edge the operator cannot act on. It stays a `lede` rather
+ * than going away because the window line is BUILT on this phrase: every arm
+ * opens with the page's own words about its own subject and then states the
+ * facts of the read (`ui/window-line.tsx`).
+ */
+const SORT_STATEMENT = "Oldest first.";
 
 /** What an empty claims table holds and what fills it — never a bare "No data". */
 const NOTHING_HELD: EmptyWords = {
   holds: "claims waiting",
   filledBy:
-    "The resolver files one here when it cannot apply a claim yet — no canonical row, an unresolved link, a contradiction, or an open review item.",
+    "The resolver files one here when it cannot apply a claim yet.",
 };
 
 /** The standing tab's own emptiness, which is good news and reads that way. */
 const NOTHING_STANDING: EmptyWords = {
   holds: "standing disagreements",
   filledBy:
-    "One appears when a live claim contradicts the applied value and does not displace it — the loser stays visible here.",
+    "One appears when a live claim contradicts the applied value and does not displace it.",
 };
 
 /**
@@ -909,13 +918,13 @@ function gaugeEmpty(words: EmptyWords, narrowing: GaugeNarrowing): EmptyWords {
 /** The age distribution's two emptinesses, in the app's own words. */
 const NO_AGES_IN_WINDOW: EmptyWords = {
   holds: "claims to age in this window",
-  filledBy: "A claim is made and stays pending, and its wait joins the spread.",
+  filledBy: "A claim is made and stays pending.",
 };
 
 const NO_CLAIMS_IN_WINDOW: EmptyWords = {
   holds: "claims in this window",
   filledBy:
-    "A claim the resolver cannot apply yet appears here, and its wait is measured.",
+    "A claim the resolver cannot apply yet appears here.",
 };
 
 /**
@@ -957,7 +966,7 @@ const GAUGE_ANSWERS_FOR_EVERY_BUCKET = `These figures ${ANSWERS_FOR_EVERY_BUCKET
 const NO_STANDING_SOURCES: EmptyWords = {
   holds: "sources holding a contradiction in this window",
   filledBy:
-    "A source's claim contradicts the applied value without displacing it, and the source appears here.",
+    "A source's claim contradicts the applied value without displacing it.",
 };
 
 /** The pending-claims gauge (spec §5, gauge 3 of 6) — the buckets tab's. */
@@ -1045,7 +1054,7 @@ function PendingClaimsGauge({
           // sentence no render can produce (admin-window/BUG-0163).
           empty={{
             holds: "buckets in this window",
-            filledBy: "A claim is classified into one, and the bucket appears here.",
+            filledBy: "A claim is classified into one.",
           }}
         />
       </FiguresOf>

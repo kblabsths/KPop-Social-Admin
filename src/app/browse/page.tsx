@@ -221,8 +221,7 @@ export default async function BrowsePage({
     body = (
       <Empty
         holds="events in this window"
-        filledBy="An adapter writes an event, and the resolver applies the fields it carries."
-      />
+        filledBy="An adapter writes an event."/>
     );
   } else {
     body = <BrowseTable view={view} shown={shown} rows={events.data} />;

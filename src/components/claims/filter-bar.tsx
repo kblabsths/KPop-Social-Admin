@@ -61,6 +61,7 @@ export function FilterBar({
               // narrowing, by construction.
               key={choice.href}
               label={choice.label}
+              face={choice.face}
               href={choice.href}
               active={choice.active}
             />

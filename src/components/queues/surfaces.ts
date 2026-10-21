@@ -36,7 +36,7 @@ export const NOTHING_IN_QUEUE: Record<Kind, EmptyWords> = {
   decision: {
     holds: "decisions waiting",
     filledBy:
-      "The resolver files one when sources disagree about a fact, or when a record cannot link.",
+      "The resolver files one when sources disagree, or a record cannot link.",
   },
   signal: {
     holds: "signals",

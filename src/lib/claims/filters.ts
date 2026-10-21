@@ -532,6 +532,17 @@ export interface FilterChoice {
    * guess.
    */
   label: string;
+  /**
+   * Whose word `label` is, so the chip is drawn in the right face without the
+   * renderer guessing (`ui/Chip`'s `ChipFace`; structurally the same union,
+   * declared here because a domain leaf imports no component —
+   * ARCHITECTURE.md §4 rule 7, the same reason `FacetLabel` is handed in).
+   *
+   * The comment above `label` already stated the rule; before 2026-10-21 it
+   * was only prose, and the renderer drew every chip in mono — the app's own
+   * `all` included.
+   */
+  face: "words" | "value";
   href: string;
   active: boolean;
 }
@@ -576,6 +587,8 @@ export function facetChips(
     choices: [
       {
         label: ANY_LABEL,
+        // The app's own word for "no narrowing", so sans.
+        face: "words" as const,
         href: claimsHref(path, withFacet(filter, facet, undefined), tab),
         active: current === undefined,
       },
@@ -583,6 +596,8 @@ export function facetChips(
         // The chip says what the value is CALLED; the href still carries the
         // value itself, so naming a source never changes what a chip narrows.
         label: labelOf === undefined ? value : labelOf(facet, value),
+        // A registry NAME is still the database's word, so mono either way.
+        face: "value" as const,
         href: claimsHref(path, withFacet(filter, facet, value), tab),
         active: current === value,
       })),

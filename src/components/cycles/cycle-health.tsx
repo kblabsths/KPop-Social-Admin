@@ -108,7 +108,7 @@ export function CycleHealthSection({
     health.cycles === 0
       ? {
           holds: "cycles in this window",
-          filledBy: "The resolver wakes on its cron and files a row, and the window fills.",
+          filledBy: "The resolver wakes on its cron and files a row.",
         }
       : undefined;
 
@@ -131,7 +131,7 @@ export function CycleHealthSection({
             label="Facts examined"
             value={health.factsExamined}
             floor={info.truncated}
-            sub={`${count(health.held)} held, and a held fact writes nothing`}
+            sub={`${count(health.held)} held`}
           />
           <GaugeCard
             label="Writes"
@@ -168,7 +168,7 @@ export function CycleHealthSection({
         rows={outcomeRows(health.outcomes, outcomeKeys)}
         empty={{
           holds: "outcomes in this window",
-          filledBy: "A cycle completes and its outcome is counted here.",
+          filledBy: "A cycle completes.",
         }}
         state={empty === undefined ? undefined : { kind: "empty", ...empty }}
       />
@@ -180,7 +180,7 @@ export function CycleHealthSection({
         format={duration}
         empty={{
           holds: "measured durations in this window",
-          filledBy: "A cycle records its end, and the time it took is measurable.",
+          filledBy: "A cycle records its end.",
         }}
         state={empty === undefined ? undefined : { kind: "empty", ...empty }}
       />

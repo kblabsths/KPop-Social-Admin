@@ -59,6 +59,9 @@ export function SourceChips({
           // registry names nothing readable — the app's one rule, asked here
           // rather than answered again (admin-window/BUG-0159).
           label={sourceLabel(names, source.source_id)}
+          // A registry name, or the id verbatim — the database's word either
+          // way, so mono. The `all` chip above is the app's and stays sans.
+          face="value"
           href={sourcesHref({ source_id: source.source_id })}
           active={filter.source_id === source.source_id}
         />

@@ -419,11 +419,10 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
           label={label}
           value={series.claims}
           floor={read?.truncated ?? false}
-          sub={
-            series.claims === 0
-              ? "nothing stuck in this window"
-              : "stuck records this source has in the window below"
-          }
+          // The zero arm states a FACT the figure alone does not carry (this
+          // window, not this source's whole history). The non-zero arm said
+          // only what the label already says, and is gone (Ben, 2026-10-21).
+          sub={series.claims === 0 ? "nothing stuck in this window" : undefined}
         />
       )}
       {read === null ? null : (

@@ -23,7 +23,7 @@ import type { EmptyWords } from "@/components/gauges";
 export const NOTHING_RECORDED: EmptyWords = {
   holds: "cycles recorded",
   filledBy:
-    "The resolver files a row every time it wakes, including the cycles that found nothing to do.",
+    "The resolver files a row every time it wakes.",
 };
 
 /**

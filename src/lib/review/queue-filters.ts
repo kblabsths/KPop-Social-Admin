@@ -536,6 +536,18 @@ export interface FilterChoice {
    * the app's.
    */
   label: string;
+  /**
+   * Whose word `label` is, so the chip is drawn in the right face without the
+   * renderer guessing (`ui/Chip`'s `ChipFace`; structurally the same union,
+   * declared here because a domain leaf imports no component —
+   * ARCHITECTURE.md §4, the reason `ui/window-line.tsx` declares its own
+   * `WindowObject`).
+   *
+   * The comment above `label` already stated the rule; before 2026-10-21 it
+   * was only prose, and the renderer drew every chip in mono — including the
+   * app's own `all`.
+   */
+  face: "words" | "value";
   href: string;
   active: boolean;
 }
@@ -570,11 +582,15 @@ export function facetChips(
     choices: [
       {
         label: ANY_LABEL,
+        // The app's own word for "no narrowing", so sans.
+        face: "words" as const,
         href: queuesHref(path, withFacet(filter, facet, undefined)),
         active: current === undefined,
       },
       ...values.map((value) => ({
         label: value,
+        // The database's own value, verbatim, so mono.
+        face: "value" as const,
         href: queuesHref(
           path,
           withFacet(filter, facet, value as ReviewItemFilter[Facet]),

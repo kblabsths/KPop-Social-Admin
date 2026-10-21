@@ -56,7 +56,6 @@ export function QueueList({
   openLabel,
   open,
   openDetail,
-  sort,
   items,
   hrefFor,
   card,
@@ -85,8 +84,6 @@ export function QueueList({
   open?: number;
   /** At most one `data` line under that figure: severity split and oldest age. */
   openDetail?: ReactNode;
-  /** The order the list is in, stated on screen (quality bar 6). */
-  sort: string;
   /** The rows, already filtered and already in `queueOrder`. */
   items: readonly ReviewItemRow[];
   /** Where a row opens — the item's own detail URL. */
@@ -197,7 +194,6 @@ export function QueueList({
         <div data-rows={kind} className="flex flex-col gap-2">
           {card ?? (
             <>
-              <p className="type-body text-ink-secondary">{sort}</p>
               <DataTable<ReviewItemRow>
                 columns={columns}
                 rows={line === undefined ? [...items] : []}

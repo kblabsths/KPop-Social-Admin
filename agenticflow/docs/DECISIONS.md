@@ -2300,3 +2300,92 @@ obsolete, not fixed.
 URL, on both surfaces; no ticket introduces a second spelling, a cursor, or a
 caller-chosen size outside `WINDOW_SIZES`. Keyset paging is not on the table
 while the shape is positional.
+
+## 2026-10-21 — Readability: the type scale, the mono rule, and the prose
+
+Ben's first real operator pass on the production app, after the page-windows
+deploy. Three verdicts, all his, recorded with what moved. The campaign is
+CLOSED; this is patch work on a shipped product, not a milestone.
+
+**1. The type scale was too small, and that was a build-wide fact, not a
+page's.** The five steps were `figure` 20 / `title` 14 / `body` 12 / `data` 11
+/ `micro` 10 px, against a browser default of 16 — prose at 75% of it, table
+cells at 69%, eyebrows at 62%. Ben: *"the website is just hard to read."*
+Revalued to **24 / 16 / 14 / 13 / 11**. The five steps are unchanged and no
+sixth was added; `--spacing` stays pinned at 4px, so the glyphs grew and the
+density did not move with them. Nothing pinned the old numbers:
+`contrast.test.ts` reads this file for `--color-*` only, and `tokens.test.ts`
+grades which STEP an element uses, never a step's value.
+
+Deferred, not decided: whether the spacing scale should follow. Table cell
+padding is still 8 horizontal / 6 vertical under 13px text. Ben looks first.
+
+**2. The mono face had escaped its own rule.** LOOK_AND_FEEL's typography
+paragraph has always said *"Mono carries every value the database produced …
+Sans carries every word the app wrote. That split IS the typographic idea"* —
+and the step table three lines under it then handed `data` mono to "chips,
+badges" **as a category**. So the Queues tab strip rendered the app's own word
+`Queues` in Geist Mono at 11px, which is what Ben saw: *"this font should only
+be used for code."* The table was wrong; the principle above it was right.
+
+The fix makes the question askable instead of assumed. `ui/Chip` takes a
+`face` of `words` (sans `body`) or `value` (mono `data`), defaulting to
+`words` — the default that needs no thought is the one that is right when
+nobody thought. The caller that KNOWS answers it: `FilterChoice` gained a
+`face` field in both filter modules, which is where the fact already lived as
+prose (*"Only the 'no narrowing' chip is a word of the app's"*). Tabs, the
+`all` chip, column names and page sizes are sans; facet values and registry
+source names are mono.
+
+`Badge` was NOT changed. Every call site carries a database value — `outcome`,
+`severity`, `kind`, `shape`, `queue`, `status`, `lifecycle` — so mono is
+already correct there, and the one arguable case (`STATE_WORD.died`, the app's
+word for a cycle that recorded no outcome) sits in the same column as real
+outcome words, where a second face would read worse than the first.
+
+`DataTable` was not changed either: its cells are `type-data` by category, the
+same defect one level down. It is left alone deliberately — cells are
+overwhelmingly machine values, any child span with its own step already wins,
+and the columns that read wrong should be named off a screen rather than
+guessed at. Open, and named here so it is not rediscovered.
+
+**3. The prose: "AI writing the obvious."** Ben's rule — *things should speak
+for themselves, and if not, be hidden by an info bubble; he writes the bubbles,
+not us.* What was cut:
+
+- **Six stat-card sub-lines** that defined their own label underneath it
+  forever ("Applies in this window" / *"Claims that became the canonical
+  value"*; "Unset by a human decision" / *"Decisions that name no claim, so
+  they carry no wait to measure"*). Where a sub-line carried a SECOND number
+  the figure does not — `p90 …, against a 15m cadence` — it stands.
+- **The standing sort sentence**, both surfaces. Bar 6 amended; `QueueList`'s
+  `sort` prop is gone, so the type is the guard. `/claims`'s is structurally
+  the window line's opening clause and could not go away, so it was cut to
+  two words: "Oldest first."
+- **Twenty-nine empty-state sentences**, each to the clause that carries the
+  fact. The dominant pattern was a tautology: ", and its age joins the
+  spread", ", and the bucket appears here", ", and the source appears here" —
+  telling the operator that the surface they are looking at is the surface the
+  thing would appear on. Voice bar 4 is amended to bound the fill at ONE
+  clause; the rule itself stands, because an emptiness that says nothing about
+  what fills it is the "No data" this app has never shipped.
+
+**What this does NOT touch: the window line.** Bar 13 stands unamended and
+`ui/window-line.tsx` is unchanged. Cutting its prose was in scope and was
+deliberately not done: that module encodes roughly fifteen resolved bugs about
+never asserting a relationship between two reads that neither read
+established (BUG-0077, 0118, 0123, 0160, 0162, 0172, 0174, 0183, 0186, 0197,
+0204, DEBT-0022), and several of its arms are commented as unchanged byte for
+byte. Compressing those sentences without a screen in front of Ben risks
+reintroducing the one bug class the module exists to prevent — a window
+aggregate read as a total. It waits for his queue-page feedback, which is the
+surface the line is most prominent on.
+
+**Tests.** Two reddened, both pinning copy this ruling removed, and both were
+fixed to pin the new contract rather than deleted for convenience:
+`cycles/page.test.ts` now asserts the three latency COUNTS carry no sub-line
+and the one MEASURED figure keeps its own (a sub-line returning is a decision,
+and reddens it); `queues/page.test.ts`'s "states its sort on screen" is
+retired with its reason in place, since `QueueList` has no `sort` prop for
+`tsc` to miss. The row ORDER is still pinned, by `shapes.test.ts`, which
+grades rows rather than a sentence about them.

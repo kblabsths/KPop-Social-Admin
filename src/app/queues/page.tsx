@@ -126,10 +126,6 @@ export const dynamic = "force-dynamic";
 /** This route's own path — the base every filter link is built on. */
 const QUEUES_PATH = "/queues";
 
-/** The order both lists are in, stated on screen (LOOK_AND_FEEL bar 6). */
-const SORT_STATEMENT =
-  "Open first, severity then age — settled items last, still browsable.";
-
 /**
  * The name the queue-health gauge's WINDOW answers to — `data-window`, the
  * hook a live oracle reads a window back by, as `/cycles` and `/sources`
@@ -194,7 +190,7 @@ const VERDICT_LEDE = "Every admin data action, newest first";
 const NO_VERDICTS: EmptyWords = {
   holds: "verdict rows",
   filledBy:
-    "An admin settles a review item or overrides a value, and the settlement lands here as one row.",
+    "An admin settles a review item or overrides a value.",
 };
 
 /** The h2 above each queue. Both are sections of the page, at one level. */
@@ -321,7 +317,6 @@ function Queue({
     kind,
     title: QUEUE_TITLE[kind],
     openLabel: OPEN_LABEL[kind],
-    sort: SORT_STATEMENT,
     hrefFor: itemHref,
   };
 
@@ -514,7 +509,7 @@ function QueueGauge({
         rows={spreadRows(stats.openAge)}
         empty={{
           holds: "open items to age in this window",
-          filledBy: "An item opens and stays open, and its age joins the spread.",
+          filledBy: "An item opens and stays open.",
         }}
         state={
           stats.openAge.count === 0
@@ -522,7 +517,7 @@ function QueueGauge({
                 kind: "empty",
                 holds: "open items in this window",
                 filledBy:
-                  "An item opens in this queue, and its wait is measured here.",
+                  "An item opens in this queue.",
               }
             : undefined
         }
@@ -539,7 +534,7 @@ function QueueGauge({
         ]}
         empty={{
           holds: "weeks of this queue in the window",
-          filledBy: "The resolver opens an item, and the week it opened in appears here.",
+          filledBy: "The resolver opens an item.",
         }}
       />
     </div>

@@ -12,7 +12,7 @@ export const ANY_LABEL = "all";
 export const NOTHING_REGISTERED: EmptyWords = {
   holds: "sources registered",
   filledBy:
-    "A source appears once the scraper repo registers it and it reports a lifecycle and a tier.",
+    "A source appears once the scraper repo registers it.",
 };
 
 /** The emptiness that has a REASON: the narrowing, not the database. */

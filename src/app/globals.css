@@ -55,24 +55,36 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
+  /*
+   * Sizes raised 2026-10-21 at Ben's ruling: the app was authored at 10-12px,
+   * i.e. 62-75% of the browser's 16px default, and the first real operator
+   * pass called it "just hard to read". The five STEPS are unchanged — this is
+   * a revaluation, not a sixth step — and because `--spacing` stays pinned at
+   * 4px (below), the boxes do not grow with the text. That is deliberate: the
+   * density survives and only the glyphs get bigger.
+   *
+   * Nothing pins these numbers. `tests/offline/ui/contrast.test.ts` reads this
+   * file for `--color-*` only, and `tokens.test.ts` grades which STEP an
+   * element uses, never the step's value.
+   */
   /* the one number on a stat or gauge card */
-  --text-figure: 20px;
-  --text-figure--line-height: 24px;
+  --text-figure: 24px;
+  --text-figure--line-height: 30px;
   --text-figure--font-weight: 600;
   /* page h1 and section h2, nothing else */
-  --text-title: 14px;
-  --text-title--line-height: 20px;
+  --text-title: 16px;
+  --text-title--line-height: 22px;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: 0.05em;
-  /* buttons, nav, prose, form labels */
-  --text-body: 12px;
-  --text-body--line-height: 18px;
-  /* table cells, values, chips, badges, inline detail */
-  --text-data: 11px;
-  --text-data--line-height: 16px;
+  /* buttons, nav, prose, form labels, chips, badges */
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  /* values the database produced: table cells, ids, timestamps, error strings */
+  --text-data: 13px;
+  --text-data--line-height: 18px;
   /* the eyebrow label above a value */
-  --text-micro: 10px;
-  --text-micro--line-height: 14px;
+  --text-micro: 11px;
+  --text-micro--line-height: 15px;
   --text-micro--letter-spacing: 0.05em;
 
   /*

@@ -50,7 +50,7 @@ const NO_RUNS = 0;
 const NO_RUNS_RECORDED: EmptyWords = {
   holds: "runs recorded",
   filledBy:
-    "An adapter files a row the moment it wakes, before it has fetched anything.",
+    "An adapter files a row the moment it wakes.",
 };
 
 /** The same, for a window narrowed to a source name that matched nothing. */
@@ -58,7 +58,7 @@ function noRunsFrom(source: string): EmptyWords {
   return {
     holds: `runs from ${source}`,
     filledBy:
-      "The name is matched against the run's own source text, which is not a registered source's key — a source that has never run has no run here, and a name nothing was ever filed under matches nothing.",
+      "The name is matched against the run's own source text, not a registered source's key.",
   };
 }
 

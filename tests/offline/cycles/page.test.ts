@@ -3063,15 +3063,23 @@ describe("the state a gauge surface is in, at the grain the oracle reads it", ()
     // second reading of the same fact.
     expect(latency.find("[data-outcome-tone]")).toHaveLength(0);
 
-    // …and a window that holds decisions renders exactly what it rendered
-    // before: all four figures, all four sub-lines, the wait spread, the
-    // domain table — and no card of the surface's own.
+    // …and a window that holds decisions renders all four figures, the wait
+    // spread, the domain table — and no card of the surface's own.
     const filled = await renderCycles(healthyScript());
     for (const label of LATENCY_COUNTS) {
       expect(figureLabels(filled), label).toContain(label);
     }
-    for (const label of [...LATENCY_COUNTS, MEDIAN_WAIT]) {
-      expect(cardSubLine(filled, label), label).not.toBe("");
+    // The MEASURED figure keeps its sub-line, because that line carries a
+    // SECOND number the figure does not (`p90 …, against a 15m cadence`).
+    expect(cardSubLine(filled, MEDIAN_WAIT)).not.toBe("");
+    // The three COUNTS carry none, since 2026-10-21 (Ben's operator pass).
+    // Each of their sub-lines restated its own label in a second voice
+    // ("Applies in this window" / "Claims that became the canonical value"),
+    // which is the prose Ben cut: "things should speak for themselves".
+    // Pinned positively so this is the contract and not a silent regression —
+    // a sub-line returning here is a decision, and it reddens this.
+    for (const label of LATENCY_COUNTS) {
+      expect(cardSubLine(filled, label), label).toBe("");
     }
     expect(ownCards(filled, SURFACE_HOOKS.resolution_latency)).toEqual([]);
     expect(tableRows(filled, WAITS).length).toBeGreaterThan(0);

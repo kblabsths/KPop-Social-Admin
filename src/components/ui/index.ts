@@ -4,7 +4,7 @@
  */
 export { Badge, TONE_INK, type BadgeTone } from "./badge";
 export { Button, type ButtonVariant } from "./button";
-export { Chip } from "./chip";
+export { Chip, type ChipFace } from "./chip";
 export { ClearRow, ClearedBy } from "./cleared-by";
 export { DroppedParamsLine } from "./dropped-params";
 export { type Column, DataTable, type SortDirection } from "./data-table";

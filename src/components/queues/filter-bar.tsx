@@ -53,6 +53,7 @@ export function FilterBar({
             <Chip
               key={choice.label}
               label={choice.label}
+              face={choice.face}
               href={choice.href}
               active={choice.active}
             />

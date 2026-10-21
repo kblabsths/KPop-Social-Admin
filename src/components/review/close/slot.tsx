@@ -211,8 +211,7 @@ const DASH_MEANS =
 const NO_VERDICT_ROW = {
   holds: "verdict on record for this item",
   filledBy:
-    "The item is settled, so something settled it — but the log holds no " +
-    "row saying what. The record of this decision is missing, not the log.",
+    "The item is settled, but the log holds no row saying what settled it.",
 };
 
 /** One labelled line of the verdict: what it is called, and what it says. */

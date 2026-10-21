@@ -42,8 +42,7 @@ export default function NotFound() {
     <Page title="Page not found">
       <Empty
         holds="page at this address"
-        filledBy="Analytics, Database and Data management were retired with the old dashboard, and nothing replaced their URLs. The window is the six pages in the sidebar."
-      />
+        filledBy="Analytics, Database and Data management were retired with the old dashboard. The window is the six pages in the sidebar."/>
       <p className="type-body text-ink">
         <Link href="/" className={IN_PAGE_LINK}>
           Open the Dashboard

@@ -483,7 +483,7 @@ function dialProps(
   const empty: EmptyWords = {
     holds: "days with a stuck record in this window",
     filledBy:
-      "A record of this source misses its creation bar, and the day it was claimed appears here.",
+      "A record of this source misses its creation bar.",
   };
   if (trend.kind !== "ok") {
     return { label, series: null, window: null, empty, state: gaugeStateOf(trend) };

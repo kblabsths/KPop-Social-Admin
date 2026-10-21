@@ -38,7 +38,7 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
     ? {
         holds: "decisions in this window",
         filledBy:
-          "The resolver applies a claim to canonical, and the wait from claim to apply is measurable here.",
+          "The resolver applies a claim to canonical.",
       }
     : undefined;
 
@@ -55,7 +55,6 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
             label="Applies in this window"
             value={latency.applies}
             floor={info.truncated}
-            sub="Claims that became the canonical value"
           />
           <GaugeCard
             label="Median wait, claim to apply"
@@ -71,13 +70,11 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
             label="Unset by a human decision"
             value={latency.verdictUnsets}
             floor={info.truncated}
-            sub="Decisions that name no claim, so they carry no wait to measure"
           />
           <GaugeCard
             label="Applies with no claim found"
             value={latency.unmatchedApplies}
             tone={latency.unmatchedApplies > 0 ? "attention" : "default"}
-            sub="The claim behind the apply was not in this read — a join gap, not a wait"
           />
         </div>
       ) : (
@@ -104,7 +101,7 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
         format={duration}
         empty={{
           holds: "measured waits in this window",
-          filledBy: "An apply names the claim it wrote, and the wait between them is measurable.",
+          filledBy: "An apply names the claim it wrote.",
         }}
         state={empty === undefined ? undefined : { kind: "empty", ...empty }}
       />
@@ -132,7 +129,7 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
         ]}
         empty={{
           holds: "domains with a decision in this window",
-          filledBy: "The resolver writes to a canonical table, and that domain appears here.",
+          filledBy: "The resolver writes to a canonical table.",
         }}
         state={empty === undefined ? undefined : { kind: "empty", ...empty }}
       />
