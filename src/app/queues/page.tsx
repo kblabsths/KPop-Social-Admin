@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 import {
-  FilterBar,
   QueueList,
   QueueTabs,
   SourceScope,
-  VerdictLog,
-  type VerdictLine,
 } from "@/components/queues";
 import { NOTHING_IN_QUEUE } from "@/components/queues/surfaces";
 import {
@@ -19,20 +16,21 @@ import {
   ClearedBy,
   DroppedParamsLine,
   Empty,
+  FilterRow,
   Identifier,
   Page,
   Section,
   StateOf,
   WindowLine,
-  oldestIn,
 } from "@/components/ui";
 import { canonicalRecordId } from "@/lib/records/id";
-import { readReviewQueues, type ReviewQueues } from "@/lib/db/review-items";
+import {
+  readReviewAttention,
+  readReviewQueues,
+  type ReviewQueues,
+} from "@/lib/db/review-items";
 import type { DbResult } from "@/lib/db/result";
 import {
-  VERDICTS_OBJECT,
-  readVerdictLog,
-  type VerdictLogWindow,
 } from "@/lib/db/verdict";
 import { count, counted, duration, relativeAge } from "@/lib/format";
 import {
@@ -40,13 +38,14 @@ import {
   type QueueHealth,
   type QueueStats,
 } from "@/lib/gauges/queue-health";
-import { recordHref } from "@/lib/records/routes";
 import {
   QUEUES_UNCHIPPED_FACETS,
   SOURCE_FACET,
   TAB_PARAM,
-  filterBar,
+  facetOptions,
+  facetsForTab,
   filterFrom,
+  kindOfTab,
   isBlockNarrowed,
   isNarrowedBeyond,
   narrowingOfKind,
@@ -57,9 +56,8 @@ import {
   type SearchParams,
 } from "@/lib/review/queue-filters";
 import { droppedParams } from "@/lib/url/dropped-params";
-import { clearNarrowing, unchippedNarrowings } from "@/lib/url/narrowing";
+import { unchippedNarrowings } from "@/lib/url/narrowing";
 import {
-  KINDS,
   oldestOpenedAt,
   selectItems,
   type Kind,
@@ -139,28 +137,6 @@ const QUEUES_PATH = "/queues";
 const HEALTH_WINDOW = "queue_health";
 
 /**
- * The name the VERDICT LOG's window answers to — `data-window`, the hook the
- * absence sweep and the live oracle read the window back by.
- *
- * Named for the object the read ran over, the way `cycle_health` is named for
- * its gauge: there is one window on this tab and it is `verdicts`.
- */
-const VERDICT_LOG_WINDOW = "verdict_log";
-
-/**
- * The names this page's two graded surfaces answer to — `data-surface`, unique
- * within the page (ARCHITECTURE.md §10, common violation 8).
- *
- * `verdict_log` is the log itself; `verdict_provenance` is the sub-surface
- * carrying the observation leg's own refusal, which is not the log's to answer
- * for — a registry the app could not read costs the log a LINK, never a
- * verdict, so an oracle grading the log excludes it exactly as
- * `queues.live.test.ts` excludes the gauge's per-queue slices.
- */
-const VERDICT_SURFACE = "verdict_log";
-const VERDICT_PROVENANCE_SURFACE = "verdict_provenance";
-
-/**
  * The name each queue block's POPULATION sub-surface answers to — one per
  * kind, so a live oracle addresses it by name and never by position
  * (ARCHITECTURE.md §10; campaign admin-window/BUG-0135).
@@ -181,15 +157,7 @@ const POPULATION_SURFACE: Record<Kind, string> = {
 const POPULATION_EYEBROW = "Whole-queue count";
 
 /** The h2 above the log, and the accessible name of its table. */
-const VERDICT_TITLE = "Verdict log";
-
 /** What an empty verdict log holds and what fills it — never a bare "No data". */
-const NO_VERDICTS: EmptyWords = {
-  holds: "verdict rows",
-  filledBy:
-    "An admin settles a review item or overrides a value.",
-};
-
 /** The h2 above each queue. Both are sections of the page, at one level. */
 const QUEUE_TITLE: Record<Kind, string> = {
   decision: "Decision queue",
@@ -538,101 +506,7 @@ function QueueGauge({
   );
 }
 
-/**
- * The verdict log, as the tab renders it (spec F13,
- * `contracts/admin-observability.md` §7).
- *
- * One row per verdict, and the two structural nulls are rendered by the
- * component as this app's one dash, with one line above the table saying what
- * a dash means there (LESSONS 1, admin-window/BUG-0053).
- *
- * The observation's link is the RECORD surface of the fact it is about — the
- * one place a rendered observation already leads in this app
- * (`components/claims/claim-list.tsx`'s `record` column). There is no
- * observation-addressable URL, so an id the resolving leg could not place
- * renders verbatim rather than linking somewhere invented.
- */
-function verdictLines(log: VerdictLogWindow): VerdictLine[] {
-  return log.rows.map((row) => {
-    const fact =
-      row.observation_id === null ? undefined : log.facts.get(row.observation_id);
-    return {
-      verdictId: row.verdict_id,
-      actor: row.actor,
-      action: row.action,
-      reviewItemId: row.review_item_id,
-      itemHref: row.review_item_id === null ? null : itemPath(row.review_item_id),
-      observationId: row.observation_id,
-      observationHref:
-        fact === undefined ? null : recordHref(fact.domain, fact.entity_id),
-      note: row.note,
-      createdAt: row.created_at,
-    };
-  });
-}
-
 /** The verdict tab's one section: the window line, the log, and its states. */
-function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode {
-  return (
-    <Section title={VERDICT_TITLE} surface={VERDICT_SURFACE}>
-      {/* The window line follows the READ, not the rows (ARCHITECTURE.md
-          §4.3): it stands on an `ok` result — with rows or with none — and on
-          no other state, so the absence of the line means "this read did not
-          happen" here exactly as it does on every other surface. The rule is
-          graded for every surface at once in
-          `tests/offline/absence/pages.test.ts`. */}
-      {log.kind === "ok" ? (
-        <WindowLine
-          gauge={VERDICT_LOG_WINDOW}
-          window={{
-              limit: log.data.limit,
-              held: log.data.rows.length,
-              truncated: log.data.truncated,
-              over: VERDICTS_OBJECT,
-              // Newest first, so the last row is the oldest verdict the read
-              // came back with — the log's own floor when the window did not
-              // fill (admin-window/BUG-0109).
-              oldest: oldestIn(log.data.rows, (row) => row.created_at),
-              // The verdict log read carries no filter at all — the tab decides
-              // WHETHER this read happens, never which rows it may see — so the
-              // floor below is the log's own (admin-window/BUG-0114).
-              scope: null,
-            }}
-        />
-      ) : null}
-
-      <VerdictLog
-        label={VERDICT_TITLE}
-        lines={log.kind === "ok" ? verdictLines(log.data) : []}
-        card={
-          log.kind === "not_provisioned" ? (
-            // A graded case, not an error: against a database without
-            // `verdicts` (which databases those are is ARCHITECTURE.md
-            // §9.2's to say) the tab draws the card naming it and states no
-            // number at all (LOOK_AND_FEEL state 3).
-            <StateOf result={log} />
-          ) : log.kind === "ok" && log.data.rows.length === 0 ? (
-            <Empty holds={NO_VERDICTS.holds} filledBy={NO_VERDICTS.filledBy} />
-          ) : undefined
-        }
-        line={log.kind === "error" ? <StateOf result={log} /> : undefined}
-      />
-
-      {log.kind === "ok" && log.data.factsUnavailable !== null ? (
-        // The observation leg alone refused: every verdict is here and only
-        // the link to where its observation landed is missing, so the refusal
-        // is reported as its OWN sub-surface, naming its own object
-        // (admin-window/BUG-0021). It is excluded from the log's state for the
-        // same reason the gauge's per-queue slices are excluded from the
-        // gauge's: a leg that only labels is not the surface's to answer for.
-        <div data-surface={VERDICT_PROVENANCE_SURFACE}>
-          <StateOf result={log.data.factsUnavailable} />
-        </div>
-      ) : null}
-    </Section>
-  );
-}
-
 export default async function QueuesPage({
   searchParams,
 }: {
@@ -673,61 +547,92 @@ export default async function QueuesPage({
       dropped={droppedParams(params, { ...applied }, [], [TAB_PARAM])}
     />
   );
-  // The strip renders on both tabs and carries the filter across, so the queue
-  // you were looking at is the queue you come back to.
-  const tabs = <QueueTabs tabs={tabLinks(QUEUES_PATH, filter, tab)} />;
 
-  // Each tab makes ITS OWN reads and no others. A read the rendered tab never
-  // needs is a read that never happened, which is exactly what the absence of
-  // a window line means on every surface of this app (ARCHITECTURE.md §4.3):
-  // the verdict tab asks `review_items` nothing, and the queues tab asks
-  // `verdicts` nothing.
-  if (tab === "verdict_log") {
+  /*
+   * THE TAB STRIP, and the open count in each list pill.
+   *
+   * Ben's queues pass, 2026-10-21: the kind stopped being a filter row and
+   * became the tab ("one kind visible at a time is better"), and the pills
+   * carry "the number of open items". The counts come from
+   * `readReviewAttention` — the read the Dashboard's two cards already make,
+   * per kind, over the whole open set — so the number in a pill and the number
+   * on the Dashboard cannot disagree.
+   *
+   * A read that refused passes NO count: the pills render their labels alone
+   * rather than a zero for a question nobody answered (LOOK_AND_FEEL state 3).
+   */
+  const attention = await readReviewAttention();
+  const openCounts =
+    attention.kind === "ok"
+      ? { decisions: attention.data.decision.open, alerts: attention.data.signal.open }
+      : {};
+  const tabs = <QueueTabs tabs={tabLinks(QUEUES_PATH, filter, tab, openCounts)} />;
+
+  /*
+   * QUEUE HEALTH IS ITS OWN TAB (Ben: "Queue health should also get its own
+   * tab pill"), and each tab makes ITS OWN reads and no others — a read the
+   * rendered tab never needs is a read that never happened, which is what the
+   * absence of a window line means on every surface of this app
+   * (ARCHITECTURE.md §4.3). So this tab asks `review_items` for nothing but
+   * the gauge's own bounded window.
+   */
+  if (tab === "health") {
+    const health = await readQueueHealth();
     return (
       <Page title="Queues">
         {tabs}
         {droppedLine({})}
-        <VerdictSection log={await readVerdictLog()} />
+        <Section title="Queue health">
+          {health.kind !== "ok" ? (
+            <StateOf result={health} />
+          ) : (
+            <>
+              <WindowLine gauge={HEALTH_WINDOW} window={health.data.window} />
+              {health.data.queues.map((stats) => (
+                <QueueGauge key={stats.queue} stats={stats} health={health.data} />
+              ))}
+            </>
+          )}
+        </Section>
       </Page>
     );
   }
 
-  // One complete read for both queues — plus, when the URL carries a facet, one
-  // `countRead` count — `{ count: "exact" }` over `limit 0` — per shape OF EACH
-  // KIND THE URL NARROWS, so each block that has a zero to explain knows its own
-  // population and an empty queue's zero is never dressed as a filtered one
-  // (admin-window/BUG-0133, admin-window/DEBT-0012).
-  // Those counts return no rows, so no row cap can refuse them and a faceted
-  // URL always renders the rows its own read returned (admin-window/BUG-0135).
-  // And the gauge's own bounded window.
-  // Reported separately: with the gauge's window unreadable the lists still
-  // render, and each surface names the read that refused.
-  const [items, health] = await Promise.all([
-    readReviewQueues(filter),
-    readQueueHealth(),
-  ]);
+  /*
+   * A LIST TAB. The kind is the TAB's, not a parameter's, so it is composed
+   * into the filter here — one place, from `kindOfTab` — and everything
+   * downstream (the query, `selectItems`, the population count) narrows by it
+   * exactly as it did when a chip set it.
+   */
+  const kind = kindOfTab(tab);
+  if (kind === undefined) throw new Error(`tab ${tab} lists no items`);
+  const listFilter: ReviewItemFilter = { ...filter, kind };
+  const items = await readReviewQueues(listFilter);
 
   return (
     <Page title="Queues">
       {tabs}
-      {/* The chip rows, and under them the ONE control that clears every
-          narrowing at once — `all` clears its own facet and carries the other
-          four forward, `source_id` included, so no chip on this page is an
-          exit from a filter (admin-window/BUG-0164). It draws nothing where
-          the URL narrowed nothing. */}
-      <FilterBar
-        facets={filterBar(QUEUES_PATH, filter)}
-        clear={clearNarrowing(
-          isNarrowedBeyond(filter, {}),
-          queuesHref(QUEUES_PATH, {}, tab),
-        )}
+      {/*
+        THE FILTERS, as dropdowns, above the list and to the right (Ben: "the
+        filter UI should appear to the top right above the table"). Empty by
+        default and empty means show all.
+
+        Which facets a tab offers is `facetsForTab`'s: the alerts tab holds one
+        shape, so it draws no shape dropdown — a control that cannot be
+        honoured is one this app does not draw. A tab offering none draws no
+        row at all.
+      */}
+      <FilterRow
+        filters={facetsForTab(tab).map((facet) => ({
+          facet,
+          value: filter[facet] ?? "",
+          options: facetOptions(QUEUES_PATH, filter, facet, tab),
+        }))}
       />
-      {droppedLine(filter)}
-      {/* The source narrowing has no chip row to show it active, so the page
+      {droppedLine(listFilter)}
+      {/* The source narrowing has no dropdown to show it active, so the page
           states it in a line of its own — with the id verbatim and a link back
-          that drops it and keeps everything else (admin-window/BUG-0141). It
-          renders only when the narrowing is really applied, which is exactly
-          when the blocks below are scoped by it. */}
+          that drops it and keeps everything else (admin-window/BUG-0141). */}
       {filter.source_id === undefined ? null : (
         <SourceScope
           facet={SOURCE_FACET}
@@ -739,33 +644,7 @@ export default async function QueuesPage({
           )}
         />
       )}
-
-      <div className="flex flex-col gap-4">
-        {KINDS.map((kind) => (
-          <Queue key={kind} kind={kind} result={items} filter={filter} />
-        ))}
-      </div>
-
-      <Section title="Queue health">
-        {health.kind !== "ok" ? (
-          <StateOf result={health} />
-        ) : (
-          <>
-            {/* The window line follows the READ, not the rows (ARCHITECTURE.md
-                §4.3): it stands on an `ok` result — with rows or with none —
-                and on no other state, so the absence of the line means "this
-                read did not happen" here exactly as it does on every other
-                surface. It said that in prose and published no `data-window`
-                hook at all until admin-window/DEBT-0006, which is why the rule
-                graded in `tests/offline/absence/pages.test.ts` could not reach
-                this page. */}
-            <WindowLine gauge={HEALTH_WINDOW} window={health.data.window} />
-            {health.data.queues.map((stats) => (
-              <QueueGauge key={stats.queue} stats={stats} health={health.data} />
-            ))}
-          </>
-        )}
-      </Section>
+      <Queue kind={kind} result={items} filter={listFilter} />
     </Page>
   );
 }

@@ -32,7 +32,7 @@ import {
  * admin-window/TASK-0058, spec F13).
  *
  * The page function is the route's only async component (ARCHITECTURE.md §5),
- * so the whole test is `renderToStaticMarkup(await QueuesPage(props))` — no
+ * so the whole test is `renderToStaticMarkup(await VerdictsPage())` — no
  * jsdom, no database. The read is stubbed at `getDbClient`, the ONE seam this
  * app resolves a client through, so both of the tab's legs (`verdicts`, and
  * the `observations` leg that only supplies a link) go through one script.
@@ -65,10 +65,15 @@ vi.mock("@/lib/db/client", async (importActual) => {
   };
 });
 
-const QueuesPage = (await import("@/app/queues/page")).default;
-
-/** The tab this file is about, as a URL facet — never a path segment. */
-const TAB = { tab: "verdict_log" } as const;
+/*
+ * The log is its OWN PAGE since 2026-10-21 (Ben: "it's the queues page not the
+ * verdicts page"), so this file renders `/verdicts` rather than `/queues` on a
+ * tab. Everything it grades — the window, the four states, the observation
+ * leg's own refusal, the ordering, the bidi isolation — is unchanged and still
+ * about the log, which is why the file keeps its cases rather than being
+ * rewritten with the route.
+ */
+const VerdictsPage = (await import("@/app/verdicts/page")).default;
 
 /** The log's surface and its provenance sub-surface, by name, never by position. */
 const LOG = '[data-surface="verdict_log"]';
@@ -77,12 +82,9 @@ const PROVENANCE = '[data-surface="verdict_provenance"]';
 /** The window the tab draws, spelled here rather than imported from the read. */
 const WINDOW = "100";
 
-async function renderQueues(
-  script: Script,
-  params: Record<string, string | string[]> = TAB,
-): Promise<string> {
+async function renderQueues(script: Script): Promise<string> {
   readWith.client = stubClient(script).asSupabaseClient();
-  return render(await QueuesPage({ searchParams: Promise.resolve(params) }));
+  return render(await VerdictsPage());
 }
 
 /** A database holding these verdicts, these observations, and no review items. */
@@ -292,7 +294,7 @@ describe("the tab against a database without verdicts", () => {
       [T.reviewItems]: { data: [], count: 0 },
     });
     readWith.client = stub.asSupabaseClient();
-    render(await QueuesPage({ searchParams: Promise.resolve(TAB) }));
+    render(await VerdictsPage());
 
     expect(stub.tablesRead()).toContain(T.verdicts);
     expect(stub.tablesRead()).not.toContain(T.observations);

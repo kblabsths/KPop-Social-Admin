@@ -47,7 +47,26 @@ import {
  * residual: a `src/app/**` path carrying `settle`/`verdict` is refused by the
  * M2-close guard, and rightly, since the close itself is M2's).
  */
-export const FACETS = ["kind", "queue", "shape", "status"] as const;
+export const FACETS = ["shape", "status"] as const;
+
+/*
+ * `kind` and `queue` were facets here until 2026-10-21 (Ben's queues pass).
+ *
+ * `kind` became the TAB: "Remove the kind filter. That can be a tab pill at
+ * the top; with decision and signal being the options… the current page is way
+ * too long. I think one kind visible at a time is better." A tab is still a
+ * search parameter and still in the URL, so nothing about bar 11 changes —
+ * what changes is that the page draws ONE list instead of two and the kind is
+ * chosen above it rather than filtered inside it. `KIND_BY_TAB` below is the
+ * one place that mapping exists.
+ *
+ * `queue` was deleted outright: "I think the queue filter that says
+ * data_conflict/entity_link can be removed." Nothing in the app linked with
+ * `?queue=` (checked across `src/`), so no href lost a destination; a URL
+ * still carrying one is reported by the dropped-parameter line like any other
+ * parameter this page does not apply, which is the honest answer rather than a
+ * silent narrowing.
+ */
 
 export type Facet = (typeof FACETS)[number];
 
@@ -136,12 +155,47 @@ export const REVIEW_STATUSES: readonly ReviewStatus[] = ["open", "settled"];
  * why the shape below — a `TABS` list, a `DEFAULT_TAB` omitted from every
  * href, `tabFrom` and `tabLinks` — is that module's, not a second invention.
  */
-export const TABS = ["queues", "verdict_log"] as const;
+export const TABS = ["decisions", "alerts", "health"] as const;
 
 export type QueuesTab = (typeof TABS)[number];
 
 /** The tab a bare URL lands on. Omitted from every href, so one state has one URL. */
-export const DEFAULT_TAB: QueuesTab = "queues";
+export const DEFAULT_TAB: QueuesTab = "decisions";
+
+/**
+ * Which kind of item a LIST tab shows — the mapping that used to be a facet.
+ *
+ * `health` is absent on purpose: it is not a list of items, so it has no kind,
+ * and the absence is what the page reads to decide whether to draw a list at
+ * all. A `Partial` rather than a union with `null`, so a tab added later must
+ * decide for itself rather than inheriting a default.
+ */
+export const KIND_BY_TAB: Readonly<Partial<Record<QueuesTab, Kind>>> = {
+  decisions: "decision",
+  alerts: "signal",
+};
+
+/** The kind a tab lists, or `undefined` where the tab lists no items. */
+export function kindOfTab(tab: QueuesTab): Kind | undefined {
+  return KIND_BY_TAB[tab];
+}
+
+/**
+ * What each tab is CALLED.
+ *
+ * "Source alerts" and not "Signals" (Ben, 2026-10-21: *"I honestly don't like
+ * the word choice of signal"*). The word was always the app's own — no column
+ * carries it — and it was the wrong one: the single shape in this tab is
+ * `entity_link_source_pattern`, which is a complaint about a SOURCE crossing
+ * its stuck-record threshold, not a question about a record. The items that
+ * ask "is this correct?" are the DECISIONS. So the new word names the subject:
+ * these are alerts about sources.
+ */
+export const TAB_LABELS: Readonly<Record<QueuesTab, string>> = {
+  decisions: "Decisions",
+  alerts: "Source alerts",
+  health: "Queue health",
+};
 
 /**
  * The parameter the tab travels in — a SEARCH parameter, never a path segment.
@@ -155,13 +209,9 @@ export const TAB_PARAM = "tab";
 
 /** Every value each facet may take, in the order its chips render. */
 export const FACET_VALUES: {
-  kind: readonly Kind[];
-  queue: readonly ReviewQueue[];
   shape: readonly Shape[];
   status: readonly ReviewStatus[];
 } = {
-  kind: KINDS,
-  queue: REVIEW_QUEUES,
   shape: SHAPES,
   status: REVIEW_STATUSES,
 };
@@ -229,12 +279,11 @@ export function filterFrom(
   canonicalId?: CanonicalId,
 ): ReviewItemFilter {
   const filter: ReviewItemFilter = {};
-  const kind = chosen(FACET_VALUES.kind, params.kind);
-  const queue = chosen(FACET_VALUES.queue, params.queue);
+  // `kind` is the TAB's now and `queue` is gone, so neither is read from a
+  // parameter here. `ReviewItemFilter` keeps both fields: `selectItems` still
+  // narrows by kind, and the page sets it from the tab (`kindOfTab`).
   const shape = chosen(FACET_VALUES.shape, params.shape);
   const status = chosen(FACET_VALUES.status, params.status);
-  if (kind !== undefined) filter.kind = kind;
-  if (queue !== undefined) filter.queue = queue;
   if (shape !== undefined) filter.shape = shape;
   if (status !== undefined) filter.status = status;
   if (canonicalId !== undefined) {
@@ -654,36 +703,87 @@ export const QUEUES_UNCHIPPED_FACETS: readonly UnchippedFacet<ReviewItemFilter>[
 export interface TabLink {
   tab: QueuesTab;
   label: string;
+  /** Open items in that tab's queue, where the page counted them. */
+  count?: number;
   href: string;
   active: boolean;
 }
 
 /**
- * What each tab is called on screen — the app's own words.
+ * Every tab, each linking to this page on that tab with the filter kept — the
+ * view you were looking at is the view you come back to.
  *
- * "Verdict log" and not `verdicts`: the tab is a view of this app's, not a
- * machine identifier, so it takes sentence case like every other heading. The
- * TABLE's name still appears verbatim where it is the subject — in the
- * not-provisioned card, which names the object the query named.
- */
-const TAB_LABEL: Record<QueuesTab, string> = {
-  queues: "Queues",
-  verdict_log: "Verdict log",
-};
-
-/**
- * Both tabs, each linking to this page on that tab with the filter kept — the
- * queue you were looking at is the queue you come back to.
+ * A LIST tab may carry a COUNT, which the pill renders beside its label (Ben:
+ * "we can show the number of open items in the tab pill too"). It is passed in
+ * rather than derived: this module is a pure domain leaf and may not reach a
+ * database (ARCHITECTURE.md §4 rule 7), and the number is the page's own
+ * population read. `undefined` draws no count at all — never a zero, which
+ * would be a figure for a read that did not happen (LOOK_AND_FEEL state 3).
  */
 export function tabLinks(
   path: string,
   filter: ReviewItemFilter,
   tab: QueuesTab,
+  openCounts: Readonly<Partial<Record<QueuesTab, number>>> = {},
 ): TabLink[] {
   return TABS.map((candidate) => ({
     tab: candidate,
-    label: TAB_LABEL[candidate],
+    label: TAB_LABELS[candidate],
+    count: openCounts[candidate],
     href: queuesHref(path, filter, candidate),
     active: candidate === tab,
   }));
+}
+
+/**
+ * One facet's choices for a DROPDOWN — the same vocabulary `facetChips` built
+ * chips from, in the shape `ui/FilterSelect` takes.
+ *
+ * It is the chip builder with one difference: the "no narrowing" choice
+ * carries the EMPTY value, because a dropdown's empty option is how "show all"
+ * is said (Ben: "empty by default, and empty means show all") where a chip row
+ * said it with a selected `all` pill. Every option still carries a whole
+ * address this module composed, so the dropdown narrows exactly what a chip
+ * narrowed.
+ */
+export function facetOptions(
+  path: string,
+  filter: ReviewItemFilter,
+  facet: Facet,
+  tab: QueuesTab,
+): { label: string; value: string; href: string }[] {
+  const values: readonly string[] = FACET_VALUES[facet];
+  return [
+    {
+      label: ANY_LABEL,
+      value: "",
+      href: queuesHref(path, withFacet(filter, facet, undefined), tab),
+    },
+    ...values.map((value) => ({
+      label: value,
+      value,
+      href: queuesHref(
+        path,
+        withFacet(filter, facet, value as ReviewItemFilter[Facet]),
+        tab,
+      ),
+    })),
+  ];
+}
+
+/**
+ * The facets a TAB offers a dropdown for — "on tabs that find it useful", in
+ * Ben's words, and the useful test is whether the facet can narrow anything
+ * there.
+ *
+ * `shape` is offered on `decisions` and withheld from `alerts`: the alerts tab
+ * holds exactly one shape (`entity_link_source_pattern`, the whole reason it
+ * is its own tab), so a shape dropdown there offers one value that changes
+ * nothing — a control that cannot be honoured, which this app does not draw
+ * (SPEC F10). `health` lists no items and so filters none.
+ */
+export function facetsForTab(tab: QueuesTab): Facet[] {
+  if (tab === "health") return [];
+  if (tab === "alerts") return ["status"];
+  return [...FACETS];
 }

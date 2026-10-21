@@ -5,7 +5,7 @@
  * which paths the sidebar offers and which one it marks active — is a pure
  * function the offline suite can assert without a DOM.
  *
- * LOOK_AND_FEEL, the Frame: six pages as text labels, no icons. There is no
+ * LOOK_AND_FEEL, the Frame: text labels, no icons. There is no
  * `icon` field here and none is added; the deprecated app's unicode glyphs
  * (one of them a combining-mark hack) are gone with it.
  */
@@ -17,7 +17,16 @@ export interface NavItem {
   readonly label: string;
 }
 
-/** The six pages of the window, in the order the sidebar lists them. */
+/**
+ * The pages of the window, in the order the sidebar lists them.
+ *
+ * SEVEN since 2026-10-21. It was six, and the count was load-bearing in the
+ * design: the verdict log rendered as a TAB of /queues rather than a page of
+ * its own precisely to keep the sidebar at six (DECISIONS 2026-09-04). Ben took
+ * the tab off that page — "it is the queues page not the verdicts page" — and
+ * a view that answers "what has already been decided" is not a facet of the
+ * one that answers "what is still open".
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard" },
   { href: "/queues", label: "Queues" },
@@ -25,6 +34,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/sources", label: "Sources" },
   { href: "/cycles", label: "Cycles & runs" },
   { href: "/browse", label: "Browse" },
+  { href: "/verdicts", label: "Verdicts" },
 ] as const;
 
 /**
