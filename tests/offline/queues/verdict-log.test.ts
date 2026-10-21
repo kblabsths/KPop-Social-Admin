@@ -770,12 +770,23 @@ describe("the observation leg", () => {
     }
 
     // ...and nothing the TABLE wrote is inside an isolated box: the isolated
-    // set is exactly the row's two machine values.
+    // set is exactly the row's machine values.
+    //
+    // Three of them since 2026-10-21, not two. Cells stopped being mono by
+    // CATEGORY, so each machine value now declares its own face through
+    // `Identifier` — and the actor became one, which means it is isolated too.
+    // That is the right answer rather than an accident: the actor is an
+    // account identity the database handed back, so a bidi override in an
+    // actor name could reorder this row exactly as the one in the observation
+    // id would. The app's own words — the labels, the separators — are still
+    // in no isolated box.
     const isolated = $(LOG)
       .find("[dir]")
       .toArray()
       .map((element) => $(element).text());
-    expect(isolated.slice().sort()).toEqual([SETTLEMENT.action, hostile].sort());
+    expect(isolated.slice().sort()).toEqual(
+      [SETTLEMENT.action, SETTLEMENT.actor, hostile].sort(),
+    );
   });
 
   it("keeps every verdict, and names its own object, when observations refuses", async () => {

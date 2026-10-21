@@ -170,11 +170,31 @@ describe("Page and Section", () => {
 });
 
 describe("DataTable", () => {
-  it("labels its header row in micro on a chrome fill and its cells in data", () => {
+  it("labels its header row in micro on a chrome fill and its cells in body sans", () => {
     const html = table();
     expect(html).toMatch(/<th[^>]*class="[^"]*type-micro/);
     expect(html).toMatch(/<tr[^>]*class="[^"]*bg-chrome/);
-    expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
+    /*
+     * `type-body`, not `type-data`, since 2026-10-21 (Ben's second pass).
+     * Cells were mono by CATEGORY — every cell of every table, whatever it
+     * held — so a date, a duration, a count, a title and an English summary
+     * all came out in the code face. Mono is now the CELL's declaration, made
+     * by rendering its value through `ui/Identifier`, and only a machine
+     * token makes it.
+     */
+    expect(html).toMatch(/<td[^>]*class="[^"]*type-body/);
+    expect(html).not.toMatch(/<td[^>]*class="[^"]*type-data/);
+  });
+
+  it("keeps a right-aligned column's digits aligned without the mono face", () => {
+    // Sans digits are proportional, so the numeric column that used to line up
+    // because the whole cell was mono would ripple. `tabular-nums` is the
+    // typographic answer and leaves the glyphs the app's own.
+    const html = table();
+    expect(html).toMatch(/<td[^>]*class="[^"]*tabular-nums/);
+    // ...and only where the column asked to be right-aligned.
+    const left = html.split("<td").filter((cell) => !cell.includes("text-right"));
+    expect(left.some((cell) => cell.includes("tabular-nums"))).toBe(false);
   });
 
   it("carries the neutral arrow in disabled-gray on a sortable column that is not the sort", () => {

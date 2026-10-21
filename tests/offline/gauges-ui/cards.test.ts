@@ -382,7 +382,10 @@ describe("TrendTable", () => {
     const html = weekTable();
     expect(html).toMatch(/<th[^>]*class="[^"]*type-micro/);
     expect(html).toMatch(/<tr[^>]*class="[^"]*bg-chrome/);
-    expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
+    // `type-body` since 2026-10-21: a trend/percentile cell holds a period
+    // label and a number, neither of which is a code-shaped token, so the
+    // data-table rule it follows now puts it in the app's own face.
+    expect(html).toMatch(/<td[^>]*class="[^"]*type-body/);
     expect(html.match(/<tr/g) ?? []).toHaveLength(CONFLICTS.weeks.length + 1);
     expect(textOf(html)).toContain("1,200");
     // no bespoke layout and no chart: the series is a table
@@ -453,7 +456,10 @@ describe("Distribution", () => {
     expect(html.match(/<tr/g) ?? []).toHaveLength(spreadRows(CYCLES.duration).length + 1);
     expect(textOf(html)).toContain(duration(CYCLES.duration.p50));
     expect(textOf(html)).toContain(duration(CYCLES.duration.max));
-    expect(html).toMatch(/<td[^>]*class="[^"]*type-data/);
+    // `type-body` since 2026-10-21: a trend/percentile cell holds a period
+    // label and a number, neither of which is a code-shaped token, so the
+    // data-table rule it follows now puts it in the app's own face.
+    expect(html).toMatch(/<td[^>]*class="[^"]*type-body/);
   });
 
   it("draws its bars from tokens, in proportion to the largest value", () => {

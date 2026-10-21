@@ -143,7 +143,9 @@ export function RecordFields({
     {
       key: "field",
       label: "Field",
-      cell: (field) => field.name,
+      // A column name: a machine token, mono. Cells stopped being mono by
+      // category on 2026-10-21, so this one declares its own face.
+      cell: (field) => <Identifier>{field.name}</Identifier>,
     },
     {
       key: "value",

@@ -3,6 +3,7 @@ import {
   Badge,
   DataTable,
   Empty,
+  Identifier,
   Page,
   Section,
   StatCard,
@@ -446,7 +447,13 @@ function cycleColumns(now: string): Column<DashboardCycleRow>[] {
  */
 function runColumns(now: string): Column<DashboardRunRow>[] {
   return [
-    { key: "source", label: "source", cell: (row) => row.source },
+    {
+      key: "source",
+      label: "source",
+      // The run's own source TEXT, verbatim — a machine token, so mono. It is
+      // the same value `/cycles` draws through `Identifier` in `run-columns`.
+      cell: (row) => <Identifier>{row.source}</Identifier>,
+    },
     {
       key: "started",
       label: "started",

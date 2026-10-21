@@ -110,7 +110,7 @@ typographic idea: the operator can always see which words are the machine's.
 | `figure` | 24 / 30, semibold | mono | the one number on a stat or gauge card |
 | `title` | 16 / 22, semibold, uppercase, +0.05em | sans | page h1 and section h2, nothing else |
 | `body` | 14 / 20 | sans | buttons, nav, prose, form labels, **chips and badges carrying the app's words** |
-| `data` | 13 / 18 | mono | table cells, ids, timestamps, error strings — **values the database produced**, chips and badges included |
+| `data` | 13 / 18 | mono | **a code-shaped machine token**: an id, a snake_case registry value, a table or column name, a verbatim claim value, an instant rendered as one, an error string. Reached through `ui/Identifier` |
 | `micro` | 11 / 15, uppercase, +0.05em | sans | the eyebrow label above a value |
 
 **Sizes revalued 2026-10-21 (Ben's first operator pass; was 20/14/12/11/10).**
@@ -119,6 +119,23 @@ of it, table cells at 69%, eyebrows at 62% — and the verdict was "just hard to
 read". The five steps did not change and no sixth was added; only their values
 did. The spacing scale below is deliberately NOT revalued with them, so the
 glyphs grew and the density survived.
+
+**Mono is for a code-shaped TOKEN, not for everything a database returned**
+(Ben, 2026-10-21). The test is whether an operator could paste the value into
+a query: `entity_link_source_pattern`, `data_conflict_fact`, a uuid, a column
+name, a claim's verbatim value. A count, a duration, an age, an event title
+and an English summary are all things a database produced and none of them is
+mono. A right-aligned numeric column keeps its digits aligned with
+`tabular-nums` rather than by borrowing the code face.
+
+`DataTable` is where this was most wrong: every cell of every table was
+`type-data` by CATEGORY, so dates, durations, counts, titles and summaries all
+came out looking like code. Cells are `body` sans now, and a cell that holds a
+token says so by rendering it through `ui/Identifier` — the one owner of the
+mono face (admin-window/DEBT-0011). Where the value also needs an ink the
+primitive refuses (an anchor's link spelling, a marked row's accent), the step
+is spelled beside that ink at the call site, which is the pattern faced links
+already used.
 
 **The step is chosen by whose word it is, never by what kind of element it
 is.** The row above used to hand `data` mono to "chips, badges" as a

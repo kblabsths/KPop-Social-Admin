@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Badge, type Column, DataTable } from "@/components/ui";
+import { Badge, type Column, DataTable, Identifier } from "@/components/ui";
 import type { ClaimLine } from "@/lib/claims/lines";
 import { orDash, relativeAge } from "@/lib/format";
 import { factKey, hasVisibleContent } from "@/lib/verdict/decision";
@@ -80,10 +80,10 @@ export function ClaimList({
       key: "fact",
       label: "fact",
       cell: (row) => (
-        <span
+        <Identifier
           data-claim={row.observationId}
           data-claim-domain={row.domain}
-        >{factKey(row.domain, row.field)}</span>
+        >{factKey(row.domain, row.field)}</Identifier>
       ),
     },
     {
@@ -98,7 +98,7 @@ export function ClaimList({
           <a
             href={row.provenanceHref}
             data-claim-provenance={row.observationId}
-            className={IN_PAGE_LINK}
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {row.entityId}
           </a>
@@ -124,12 +124,14 @@ export function ClaimList({
       // (admin-window/BUG-0156; LESSONS 4).
       cell: (row) =>
         !hasVisibleContent(row.source) ? (
-          <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
+          <Identifier data-claim-source={row.sourceId}>
+            {orDash(row.source)}
+          </Identifier>
         ) : (
           <a
             href={row.sourceHref}
             data-claim-source={row.sourceId}
-            className={IN_PAGE_LINK}
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {row.source}
           </a>
@@ -155,9 +157,9 @@ export function ClaimList({
       // `awaiting_row` carries a requirement, and it always does.
       cell: (row) =>
         row.unmetRequirement === null ? null : (
-          <span data-claim-requirement={row.unmetRequirement}>
+          <Identifier data-claim-requirement={row.unmetRequirement}>
             {row.unmetRequirement}
-          </span>
+          </Identifier>
         ),
     },
   ];

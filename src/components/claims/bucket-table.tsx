@@ -96,15 +96,21 @@ export function BucketTable({
       // as a link while rendering byte-identically to plain text. A badge
       // never sits inside a link, and a link never wears one (LOOK_AND_FEEL,
       // "Chips and badges"): badge classifies, link navigates, and this one
-      // navigates. No type class is added here — the DataTable cell already
-      // draws its body `type-data` (src/components/ui/data-table.tsx), so the
-      // bucket stays mono as the machine identifier it is (spec §11).
+      // navigates.
+      //
+      // The type class IS added here, since 2026-10-21. This comment used to
+      // say the opposite — "no type class is added here, the DataTable cell
+      // already draws its body `type-data`" — and that stopped being true the
+      // day cells stopped being mono by category, which would have left the
+      // bucket, a machine identifier, in the app's own face. Spelled beside
+      // the link spelling because `Identifier` rightly refuses a `className`
+      // and this one needs the anchor's.
       cell: (row) => (
         <a
           href={row.href}
           data-bucket={row.bucket}
           aria-current={row.active ? "true" : undefined}
-          className={IN_PAGE_LINK}
+          className={`type-data ${IN_PAGE_LINK}`}
         >
           {row.bucket}
         </a>

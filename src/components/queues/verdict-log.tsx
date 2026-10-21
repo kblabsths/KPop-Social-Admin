@@ -102,7 +102,7 @@ export function VerdictLog({
       // say whose action it was still says SOMETHING.
       cell: (row) =>
         isAbsent(row.actor) ? null : (
-          <span data-verdict-actor={row.actor}>{row.actor}</span>
+          <Identifier data-verdict-actor={row.actor}>{row.actor}</Identifier>
         ),
     },
     {
@@ -137,7 +137,7 @@ export function VerdictLog({
           <a
             href={row.itemHref}
             data-verdict-item={row.reviewItemId}
-            className={IN_PAGE_LINK}
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {row.reviewItemId}
           </a>
@@ -166,7 +166,7 @@ export function VerdictLog({
           <a
             href={row.observationHref}
             data-verdict-observation={row.observationId}
-            className={IN_PAGE_LINK}
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {row.observationId}
           </a>

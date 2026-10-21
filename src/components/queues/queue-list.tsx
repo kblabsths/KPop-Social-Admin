@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Badge, type Column, DataTable, Section, StatCard } from "@/components/ui";
+import { Badge, type Column, DataTable, Identifier, Section, StatCard } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { count, relativeAge } from "@/lib/format";
 import { shapeOf, type Kind, type ReviewItemRow } from "@/lib/review/shapes";
@@ -154,7 +154,7 @@ export function QueueList({
     {
       key: "status",
       label: "status",
-      cell: (item) => <span data-status={item.status}>{item.status}</span>,
+      cell: (item) => <Identifier data-status={item.status}>{item.status}</Identifier>,
     },
     {
       key: "opened",

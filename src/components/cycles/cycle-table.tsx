@@ -108,7 +108,13 @@ export function cycleColumns({
             // window of up to 200 mono ids (admin-window/BUG-0054). Accent on
             // this row's fill measures 5.04:1 light and 7.21:1 dark; it is not
             // underlined, which is what this page spells a link with.
-            className={asked ? "text-accent" : undefined}
+            /* A uuid: mono, because it is a machine token. The step is spelled
+               here rather than taken from `Identifier` because this cell also
+               carries a per-row INK (the accent below) and the primitive
+               rightly refuses a `className` — the same shape `IN_PAGE_LINK`
+               call sites use. Cells stopped being mono by category on
+               2026-10-21, so the face is this cell's to declare. */
+            className={asked ? "type-data text-accent" : "type-data"}
             data-cycle={row.run_id}
             // What this row IS, in one attribute: the four states of a cycle
             // row, decided once in `lib/cycles/state.ts`.

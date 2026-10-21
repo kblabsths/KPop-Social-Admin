@@ -7,7 +7,24 @@ import { cx } from "./cx";
  *
  * Surface fill, 1px border, chrome-filled header row of `micro` labels, rows
  * separated by 1px hairlines, hover fills the row with chrome. **No zebra
- * striping and no vertical rules.** Cells are `data`. A null renders as an em
+ * striping and no vertical rules.**
+ *
+ * **Cells are `body` sans, and only a CODE-SHAPED value is mono** (Ben,
+ * 2026-10-21). They were `type-data` mono by CATEGORY — every cell of every
+ * table, whatever it held — which is the same defect `ui/Chip` had one level
+ * up: a date, a duration, a count, a title and an English summary all came
+ * out in the code face. The rule is the one the typography section has always
+ * stated, now applied here: mono is for a machine TOKEN an operator could
+ * paste into a query (`entity_link_source_pattern`, `data_conflict_fact`, a
+ * table name, a row id), not for everything a database happened to return.
+ *
+ * A cell declares itself mono by rendering its value through `ui/Identifier`,
+ * which is the one owner of that face (admin-window/DEBT-0011, and the sweep
+ * in `tests/offline/ui/primitives.test.ts` that enforces it). There is no
+ * `face` prop on a column on purpose: a second way to reach the mono face is
+ * a second owner of it.
+ *
+ * A null renders as an em
  * dash in disabled-gray — never blank, never `null`, `N/A` or `none`. A table
  * wider than its column scrolls horizontally *inside its own border*; the page
  * does not.
@@ -166,8 +183,14 @@ export function DataTable<T>({
                       <td
                         key={column.key}
                         className={cx(
-                          "type-data px-2 py-1.5 text-ink",
-                          column.align === "right" && "text-right",
+                          "type-body px-2 py-1.5 text-ink",
+                          /* A right-aligned column is the numeric one, and sans
+                             digits are proportional — so a column of counts
+                             that used to align because it was MONO would now
+                             ripple. `tabular-nums` is the typographic fix and
+                             costs the code face nothing: the digits share one
+                             advance width, the glyphs stay the app's own. */
+                          column.align === "right" && "text-right tabular-nums",
                         )}
                       >
                         {orDash(body)}

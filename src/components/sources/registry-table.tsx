@@ -1,5 +1,5 @@
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Badge, type Column } from "@/components/ui";
+import { Badge, type Column, Identifier } from "@/components/ui";
 import { isAbsent, relativeAge } from "@/lib/format";
 import { sourceLabel } from "@/lib/sources/names";
 import {
@@ -58,7 +58,7 @@ export function sourceColumns(
             data-source={row.source_id}
             data-source-name={label}
             aria-current={filter.source_id === row.source_id ? "true" : undefined}
-            className={IN_PAGE_LINK}
+            className={`type-data ${IN_PAGE_LINK}`}
           >
             {label}
           </a>
@@ -71,7 +71,7 @@ export function sourceColumns(
       // `registered` or `cited` — how the source arrived. A machine identifier,
       // rendered verbatim, and not a badge: badges here carry lifecycle and
       // tier alone.
-      cell: (row) => <span data-source-kind={row.kind}>{row.kind}</span>,
+      cell: (row) => <Identifier data-source-kind={row.kind}>{row.kind}</Identifier>,
     },
     {
       key: "lifecycle",
@@ -101,7 +101,7 @@ export function sourceColumns(
       // (admin-window/BUG-0004).
       cell: (row) =>
         isAbsent(row.checkpoint) ? null : (
-          <span data-source-checkpoint={row.checkpoint}>{row.checkpoint}</span>
+          <Identifier data-source-checkpoint={row.checkpoint}>{row.checkpoint}</Identifier>
         ),
     },
     {

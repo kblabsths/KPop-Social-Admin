@@ -1,4 +1,4 @@
-import type { Column } from "@/components/ui";
+import { type Column, Identifier } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { EM_DASH, isAbsent, orDash, relativeAge } from "@/lib/format";
 import { hasVisibleContent } from "@/lib/verdict/decision";
@@ -172,7 +172,21 @@ function nullableColumn({
     // says that value is one — the same expression, read once
     // (admin-window/BUG-0156).
     absent: (row) => isAbsent(value(row)),
-    cell: (row) => <span {...{ [hook]: hookValue(row) }}>{orDash(value(row))}</span>,
+    /*
+     * Mono, through the one owner of that face. All four columns this builds —
+     * `value`, `tier now`, `payload`, `held by` — carry the database's own
+     * value VERBATIM, which is the whole job of an evidence table: you are
+     * comparing what each source literally said. LOOK_AND_FEEL is explicit
+     * that these are mono, a scheduled instant included
+     * (`2027-05-01T19:00:00+00:00`, Voice bar 6).
+     *
+     * Declared here since 2026-10-21, when cells stopped being mono by
+     * category — before that these four inherited the face from the `td` and
+     * said nothing about deserving it.
+     */
+    cell: (row) => (
+      <Identifier {...{ [hook]: hookValue(row) }}>{orDash(value(row))}</Identifier>
+    ),
   };
 }
 
@@ -266,7 +280,11 @@ export const sourceColumn: EvidenceColumn = {
     !hasVisibleContent(row.source) ? (
       <span data-claim-source={row.sourceId}>{orDash(row.source)}</span>
     ) : (
-      <a href={row.sourceHref} data-claim-source={row.source} className={IN_PAGE_LINK}>
+      <a
+        href={row.sourceHref}
+        data-claim-source={row.source}
+        className={`type-data ${IN_PAGE_LINK}`}
+      >
         {row.source}
       </a>
     ),
@@ -298,7 +316,7 @@ export const observedColumn: Column<EvidenceRow> = {
 export const statusColumn: Column<EvidenceRow> = {
   key: "status",
   label: "status",
-  cell: (row) => <span data-claim-status={row.status}>{row.status}</span>,
+  cell: (row) => <Identifier data-claim-status={row.status}>{row.status}</Identifier>,
 };
 
 /** The raw payload's pointer, verbatim. See `EvidenceRow.payloadRef`. */
@@ -382,17 +400,21 @@ export const recordColumn: EvidenceColumn = {
       // hold keeps the hook and draws the same dash inside it, rather than the
       // empty cell BUG-0152/BUG-0154 were filed to remove.
       return identity === null ? null : (
-        <span data-record={identity}>{orDash(identity)}</span>
+        <Identifier data-record={identity}>{orDash(identity)}</Identifier>
       );
     }
     if (row.entityId !== null && row.recordHref !== null) {
       return (
-        <a href={row.recordHref} data-record={row.entityId} className={IN_PAGE_LINK}>
+        <a
+          href={row.recordHref}
+          data-record={row.entityId}
+          className={`type-data ${IN_PAGE_LINK}`}
+        >
           {row.entityId}
         </a>
       );
     }
-    return <span data-record={identity}>{identity}</span>;
+    return <Identifier data-record={identity}>{identity}</Identifier>;
   },
 };
 
@@ -412,5 +434,5 @@ export const recordColumn: EvidenceColumn = {
 export const factColumn: Column<EvidenceRow> = {
   key: "fact",
   label: "fact",
-  cell: (row) => <span data-fact={row.fact}>{row.fact}</span>,
+  cell: (row) => <Identifier data-fact={row.fact}>{row.fact}</Identifier>,
 };

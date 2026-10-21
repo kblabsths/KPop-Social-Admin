@@ -2475,3 +2475,58 @@ cap, truncation verdict), with the discrepancy recorded in the test.
 in `type-data` mono by category — the same defect `Chip` had, one level down.
 Left alone until Ben names the columns that read wrong off a screen. The 4px
 spacing scale also still has not followed the type scale up.
+
+## 2026-10-21 (third pass) — mono means code-shaped, and DataTable obeys it
+
+Ben, on the open item the second pass recorded: *"DataTable should not put
+every cell in mono by category. same rule as before, only a code shaped item
+such as `entity_link_source_pattern` or `data_conflict_fact` should be mono."*
+
+This both closes the `DataTable` item and **narrows the rule itself**. The
+typography section had said mono carries "every value the database produced",
+which swept in counts, durations, ages, event titles and English summaries.
+The test now is whether an operator could paste the value into a query.
+
+- `DataTable` cells are `type-body` sans. A cell holding a token declares it by
+  rendering through `ui/Identifier`, the one owner of the mono face — there is
+  deliberately NO `face` prop on a column, because a second way to reach that
+  face is a second owner of it.
+- Right-aligned numeric columns get `tabular-nums`. Sans digits are
+  proportional, so a column of counts that used to line up because the whole
+  cell was mono would otherwise ripple. The alignment was a real benefit of the
+  old rule and it is kept without the code face.
+- Mono declared, column by column, where the value is a token: a review item's
+  `status`, a claim's `status`, `domain.field`, the record id or the source's
+  own `external_ref`, a source's `kind` and `checkpoint`, the verdict `actor`,
+  the `unmetRequirement`, a record's field NAME, the Dashboard's run `source`,
+  and the four verbatim-value columns of the evidence table (`value`,
+  `tier now`, `payload`, `held by`) — that table's whole job is comparing what
+  each source literally said.
+- Mono spelled beside an ink the primitive refuses, which is the existing
+  faced-link pattern: the bucket link, the claim's record and source links, the
+  verdict log's item and observation links, the registry's source link, and the
+  cycle id (which also carries the asked-for row's accent).
+- Left sans, deliberately: dates, ages, durations, counts, the queue's "what
+  happened" summary, a source's `note`, the registry's "links" column (the
+  app's own words "review items" and "runs"), and an event title. `/browse`'s
+  title column is now TWO faces in one cell — prose for a title, mono for the
+  `event_id` that stands in when there is none.
+
+**Two things fell out of it.**
+
+1. `bucket-table.tsx` carried a comment saying "no type class is added here —
+   the DataTable cell already draws its body `type-data`". That became false
+   the moment the category rule went, and would have silently dropped a
+   machine identifier into the app's own face. Corrected, with the comment
+   rewritten rather than left to mislead the next reader.
+2. Wrapping the verdict `actor` in `Identifier` put it inside a bidi-isolated
+   box, which changed the verdict log's isolation test from two isolated
+   values to three. That is the right answer, not an accident: the actor is an
+   account identity the database handed back, so a bidi override in an actor
+   name could reorder that row exactly as one in an observation id would. The
+   test records the reasoning.
+
+Gates: tsc, lint, build, offline 82/3131, isolated 8, test:http 37/37.
+
+**Still open:** the 4px spacing scale has not followed the type scale up —
+table cell padding is 8 horizontal / 6 vertical under 14px text.

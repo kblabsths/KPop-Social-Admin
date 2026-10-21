@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { DataTable, type Column } from "@/components/ui";
+import { DataTable, Identifier, type Column } from "@/components/ui";
 import {
   absoluteUtcInZonedColumn,
   isAbsent,
@@ -46,13 +46,18 @@ const CELLS: Record<BrowseColumnKey, CellBody> = {
    * (admin-window/DEBT-0001).
    */
   title: (row) => {
-    const label = row.title ?? row.event_id;
+    // A title is the app's subject matter and reads as prose; the `event_id`
+    // that stands in for a missing one is a machine token and reads as one.
+    // One cell, two faces, decided by which of the two it actually holds —
+    // the category rule that used to make BOTH mono went on 2026-10-21.
+    const titled = row.title !== null;
+    const label = titled ? row.title : <Identifier>{row.event_id}</Identifier>;
     const href = recordHref("events", row.event_id);
     return href === null ? (
       label
     ) : (
-      <a href={href} className={IN_PAGE_LINK}>
-        {label}
+      <a href={href} className={titled ? IN_PAGE_LINK : `type-data ${IN_PAGE_LINK}`}>
+        {titled ? row.title : row.event_id}
       </a>
     );
   },

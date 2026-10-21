@@ -897,8 +897,13 @@ describe("each shape gets its own view", () => {
     expect(cell.is("a")).toBe(false);
     expect(cell.closest("td").find("a")).toHaveLength(0);
     expectNotDrawnAsLink(classesOf(cell), "a record this app holds no address for");
-    // It is a machine identifier: rendered in the table's own mono cell.
-    expect(faceOf(classesOf(cell.closest("td")))).toEqual(["type-data"]);
+    // It is a machine identifier, so it is mono — and since 2026-10-21 that is
+    // the CELL's own declaration rather than the table's category. The `td`
+    // around it is the app's `body` sans like every other cell; the mono face
+    // comes from the `Identifier` this value is rendered through, which is
+    // what makes "only a code-shaped value is mono" checkable here.
+    expect(faceOf(classesOf(cell))).toEqual(["type-data"]);
+    expect(faceOf(classesOf(cell.closest("td")))).toEqual(["type-body"]);
   });
 
   it("draws only the record cell as the way to the record", async () => {
