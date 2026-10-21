@@ -155,7 +155,7 @@ export const REVIEW_STATUSES: readonly ReviewStatus[] = ["open", "settled"];
  * why the shape below — a `TABS` list, a `DEFAULT_TAB` omitted from every
  * href, `tabFrom` and `tabLinks` — is that module's, not a second invention.
  */
-export const TABS = ["decisions", "alerts", "health"] as const;
+export const TABS = ["decisions", "matches", "health"] as const;
 
 export type QueuesTab = (typeof TABS)[number];
 
@@ -172,7 +172,7 @@ export const DEFAULT_TAB: QueuesTab = "decisions";
  */
 export const KIND_BY_TAB: Readonly<Partial<Record<QueuesTab, Kind>>> = {
   decisions: "decision",
-  alerts: "signal",
+  matches: "signal",
 };
 
 /** The kind a tab lists, or `undefined` where the tab lists no items. */
@@ -183,17 +183,37 @@ export function kindOfTab(tab: QueuesTab): Kind | undefined {
 /**
  * What each tab is CALLED.
  *
- * "Source alerts" and not "Signals" (Ben, 2026-10-21: *"I honestly don't like
- * the word choice of signal"*). The word was always the app's own — no column
- * carries it — and it was the wrong one: the single shape in this tab is
- * `entity_link_source_pattern`, which is a complaint about a SOURCE crossing
- * its stuck-record threshold, not a question about a record. The items that
- * ask "is this correct?" are the DECISIONS. So the new word names the subject:
- * these are alerts about sources.
+ * **Both tabs are DECISIONS, and that is the point** (Ben, 2026-10-21:
+ * *"I just want to ensure that these become decisions; the worst thing you
+ * could do is hide them from me."*).
+ *
+ * This was briefly "Source alerts", and that was my error, corrected by the
+ * data. I read the shape name (`entity_link_source_pattern`), saw its close
+ * vocabulary was `fixed`/`wont_fix`, and concluded the items were source-level
+ * alerts about a stuck-record threshold. The summaries the resolver actually
+ * writes say otherwise, and they are questions put to a person:
+ *
+ *   ticketmaster "K Pop Dreamworld": no catalog name is close — confirm this
+ *   is not a k-pop act, or add the row
+ *
+ *   ticketmaster "TEN": 3 catalog names match closely, none exactly (Ten,
+ *   Ten, Ten-X) — which one is this, or none of them
+ *
+ * There is no reading of "which one is this" as an alert. They are keyed by
+ * SOURCE, which is all the shape name ever meant, and they ask about a
+ * specific unmatched name.
+ *
+ * So the tab is named for the question: these are name matches awaiting a
+ * decision. Why they nonetheless close with a disposition rather than a link
+ * is not a UI choice and is recorded in DECISIONS 2026-10-21 — the verdict
+ * function can link one reference field in the whole registry
+ * (`events.venue`), and the catalog domains these items are about are not
+ * registered, so the answer has nowhere to be written yet. The tab says what
+ * is being asked; the close says honestly what can be recorded.
  */
 export const TAB_LABELS: Readonly<Record<QueuesTab, string>> = {
   decisions: "Decisions",
-  alerts: "Source alerts",
+  matches: "Name matches",
   health: "Queue health",
 };
 
@@ -776,7 +796,7 @@ export function facetOptions(
  * Ben's words, and the useful test is whether the facet can narrow anything
  * there.
  *
- * `shape` is offered on `decisions` and withheld from `alerts`: the alerts tab
+ * `shape` is offered on `decisions` and withheld from `matches`: that tab
  * holds exactly one shape (`entity_link_source_pattern`, the whole reason it
  * is its own tab), so a shape dropdown there offers one value that changes
  * nothing — a control that cannot be honoured, which this app does not draw
@@ -784,6 +804,6 @@ export function facetOptions(
  */
 export function facetsForTab(tab: QueuesTab): Facet[] {
   if (tab === "health") return [];
-  if (tab === "alerts") return ["status"];
+  if (tab === "matches") return ["status"];
   return [...FACETS];
 }

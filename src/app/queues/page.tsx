@@ -564,7 +564,7 @@ export default async function QueuesPage({
   const attention = await readReviewAttention();
   const openCounts =
     attention.kind === "ok"
-      ? { decisions: attention.data.decision.open, alerts: attention.data.signal.open }
+      ? { decisions: attention.data.decision.open, matches: attention.data.signal.open }
       : {};
   const tabs = <QueueTabs tabs={tabLinks(QUEUES_PATH, filter, tab, openCounts)} />;
 
@@ -617,7 +617,7 @@ export default async function QueuesPage({
         filter UI should appear to the top right above the table"). Empty by
         default and empty means show all.
 
-        Which facets a tab offers is `facetsForTab`'s: the alerts tab holds one
+        Which facets a tab offers is `facetsForTab`'s: the matches tab holds one
         shape, so it draws no shape dropdown — a control that cannot be
         honoured is one this app does not draw. A tab offering none draws no
         row at all.
