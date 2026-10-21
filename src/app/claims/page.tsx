@@ -50,7 +50,7 @@ import {
 } from "@/lib/db/claims";
 import type { DbResult } from "@/lib/db/result";
 import { readSources } from "@/lib/db/sources";
-import { count, counted, duration, pluralise } from "@/lib/format";
+import { count, counted, duration } from "@/lib/format";
 import {
   claimsHref,
   claimsNarrowed,
@@ -191,19 +191,6 @@ export const dynamic = "force-dynamic";
 
 /** This route's own path — the base every filter, tab and bucket link is built on. */
 const CLAIMS_PATH = "/claims";
-
-/**
- * The order the claim list is in — the window line's opening clause.
- *
- * Cut to two words on 2026-10-21 (Ben's operator pass). It read "Oldest
- * first — the longest-waiting claim at the top; a claim whose instant is
- * unknown sorts last", and the two clauses after the dash restated the first
- * one and named an edge the operator cannot act on. It stays a `lede` rather
- * than going away because the window line is BUILT on this phrase: every arm
- * opens with the page's own words about its own subject and then states the
- * facts of the read (`ui/window-line.tsx`).
- */
-const SORT_STATEMENT = "Oldest first.";
 
 /** What an empty claims table holds and what fills it — never a bare "No data". */
 const NOTHING_HELD: EmptyWords = {
@@ -927,41 +914,6 @@ const NO_CLAIMS_IN_WINDOW: EmptyWords = {
     "A claim the resolver cannot apply yet appears here.",
 };
 
-/**
- * THE GAUGE'S OWN SCOPE, where a BUCKET facet is in force
- * (admin-window/BUG-0204, from the M3 user-sim walk of Marisa).
- *
- * `/claims?bucket=awaiting_link` put "108 claims match these filters" over the
- * list and "CLAIMS IN THIS WINDOW 877" one screen below it, and
- * `?bucket=escalated` put the empty list's card over the same 877 — two
- * numbers about the same thing on one screen, with the gauge's line the only
- * caption on the page that did not say what its own figures answer for. The
- * figures were right then and are unmoved now: this section reads
- * `observations` by source and domain, `gaugeFilter` is untouched, and no read,
- * leg or bound changed. What changed is that the sentence over them says so.
- *
- * The page used to record that silence as intended — "`?bucket=` alone narrows
- * this section's figures not at all, and its sentence says so by saying
- * nothing" — and saying nothing is not how this page says anything else
- * (LOOK_AND_FEEL bar 13; the same ruling the bucket caption's `everyBucket`
- * clause carries, 2026-09-11).
- *
- * It states SCOPE and nothing more, on the caption's own terms: the predicate
- * is the caption's, imported (`ANSWERS_FOR_EVERY_BUCKET`); it names no bucket
- * VALUE; it claims no narrowing, because nothing narrowed these figures; it
- * never takes the chip-blaming phrase a real narrowing takes
- * (`NARROWED_BY_FILTERS`, which this section still says only where a chip
- * facet really removed rows from this window); and it says nothing about the
- * list above it or about why that list is empty — an empty surface is
- * explained from two facts, and they are that card's, not this line's
- * (LESSONS 2 and 3).
- *
- * A SENTENCE and not a clause, because of where it lands: the window line's
- * own words end on a full stop ("…not the whole table."), so the same words
- * the caption folds in with a dash are said here as the sentence after it.
- */
-const GAUGE_ANSWERS_FOR_EVERY_BUCKET = `These figures ${ANSWERS_FOR_EVERY_BUCKET}.`;
-
 /** The standing gauge's per-source table, when it drew no source. */
 const NO_STANDING_SOURCES: EmptyWords = {
   holds: "sources holding a contradiction in this window",
@@ -979,17 +931,7 @@ function PendingClaimsGauge({
 }) {
   return (
     <>
-      <WindowLine
-        gauge={PENDING_WINDOW}
-        window={gauge.window}
-        measured="Claims observed"
-        scope={narrowing.scope}
-        // What this read ANSWERS FOR, where the page carries a facet it drops
-        // (admin-window/BUG-0204). It is not a `scope` phrase and may never
-        // become one: `scope` is what the read CARRIED, and this names the one
-        // facet it did not.
-        answersFor={narrowing.bucketFaceted ? GAUGE_ANSWERS_FOR_EVERY_BUCKET : null}
-      />
+      <WindowLine gauge={PENDING_WINDOW} window={gauge.window} />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Claims in this window"
@@ -1058,13 +1000,6 @@ function PendingClaimsGauge({
           }}
         />
       </FiguresOf>
-      <p className="type-body text-ink-secondary">
-        The per-source <Identifier>awaiting_row</Identifier>{" "}
-        trend lives on Sources, and it is drawn without its threshold line: the{" "}
-        <Identifier>stuck_pattern</Identifier>{" "}
-        dial is a source-registry value only the scraper repo holds, and where
-        Admin may read it is an open question. No default is substituted here.
-      </p>
     </>
   );
 }
@@ -1097,21 +1032,7 @@ function StandingGauge({
   );
   return (
     <>
-      <WindowLine
-        gauge={STANDING_WINDOW}
-        window={gauge.window}
-        measured="Claims observed"
-        // The standing tab's gauge reads the same `observations` scan under
-        // the same `gaugeFilter`, so its sentence carries the same narrowing
-        // on the same rule — one defect, both tabs (admin-window/BUG-0163).
-        scope={narrowing.scope}
-        // …and NOT the every-bucket sentence its sibling takes
-        // (admin-window/BUG-0204, criterion 6). This tab owns its bucket
-        // rather than carrying it as a URL facet — the page function drops
-        // `?bucket=` here — so there is no chip standing above these figures
-        // for a sentence to answer, and `bucketFaceted` is false in every
-        // state this line renders anyway.
-      />
+      <WindowLine gauge={STANDING_WINDOW} window={gauge.window} />
       <GaugeCard
         label="Live contradictions in this window"
         value={gauge.claims}
@@ -1153,28 +1074,6 @@ function StandingGauge({
           empty={gaugeEmpty(NO_STANDING_SOURCES, narrowing)}
         />
       </FiguresOf>
-      <p className="type-body text-ink-secondary">
-        Tier is the source&rsquo;s CURRENT tier, which drifts — not the tier the
-        applied value won under.
-        {/* WHAT the gauge counted, said in the words that cover it. The
-            registry names no source in two ways an operator cannot tell apart
-            — no row, or a row with nothing readable in it — and
-            `unnamedSources` counts both, through the one owner of that
-            question (campaign admin-window/DEBT-0022). "Had no registry row"
-            named only the first, so over a blank-named row it would claim more
-            than the read established (LESSONS 2). These are the words
-            `/sources` already says about the same fact, not new ones
-            (admin-window/TASK-0060, LESSONS 5). */}
-        {gauge.unnamedSources > 0
-          ? ` The registry gave ${count(
-              gauge.unnamedSources,
-            )} of these sources no name in this read, so ${pluralise(
-              gauge.unnamedSources,
-              "it is",
-              "they are",
-            )} named by id.`
-          : ""}
-      </p>
     </>
   );
 }
@@ -1732,8 +1631,6 @@ export default async function ClaimsPage({
   // and the narrowest state the chip rows offer still held 108 claims against
   // 50 rows (measured on staging 2026-09-10) — so both wordings were removed
   // rather than one chosen (admin-window/BUG-0162).
-  const listShows = { of: "matched", lede: SORT_STATEMENT, rows: "claims" } as const;
-
   // The list Section's children, in the order this page has always rendered
   // them. On the paged arm they are handed to `PagingProvider` — which emits no
   // markup of its own — so the line and the list stay exactly where they are,
@@ -1748,9 +1645,9 @@ export default async function ClaimsPage({
         // holds: a press is a read on this surface, and a server-rendered
         // constant above rows a press changes is the contradiction QA
         // measured (admin-window/BUG-0172).
-        <PagedWindowLine gauge={LIST_WINDOW} shows={listShows} />
+        <PagedWindowLine gauge={LIST_WINDOW} />
       ) : (
-        <WindowLine gauge={LIST_WINDOW} window={listWindow} shows={listShows} />
+        <WindowLine gauge={LIST_WINDOW} window={listWindow} />
       )}
       {window.kind === "refused" ? (
         // THE ADDRESS NAMED A WINDOW THIS APP DOES NOT SERVE: refused by name,

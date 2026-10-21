@@ -1,5 +1,5 @@
 import { Distribution, GaugeCard, TrendTable, spreadRows, type EmptyWords } from "@/components/gauges";
-import { Empty, Identifier, WindowLine } from "@/components/ui";
+import { Empty, WindowLine } from "@/components/ui";
 import { counted, duration } from "@/lib/format";
 import type { DomainLatency, ResolutionLatency } from "@/lib/gauges/resolution-latency";
 
@@ -44,11 +44,7 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
 
   return (
     <>
-      <WindowLine
-        gauge="resolution_latency"
-        window={info}
-        measured="Canonical decisions applied"
-      />
+      <WindowLine gauge="resolution_latency" window={info} />
       {empty === undefined ? (
         <div className="grid grid-cols-2 gap-4">
           <GaugeCard
@@ -133,15 +129,6 @@ export function LatencySection({ latency }: { latency: ResolutionLatency }) {
         }}
         state={empty === undefined ? undefined : { kind: "empty", ...empty }}
       />
-      <p className="type-body text-ink-secondary">
-        The wait is from the claim&rsquo;s{" "}
-        <Identifier>observed_at</Identifier>{" "}
-        to the instant it became canonical. A decision a human made rather than
-        a claim names no
-        claim, so it carries no wait: those are counted on their own and are in
-        neither the applies nor the waits — a domain showing no applies beside a
-        count of them is that, and not a broken resolver.
-      </p>
     </>
   );
 }

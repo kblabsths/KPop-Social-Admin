@@ -114,11 +114,7 @@ export function CycleHealthSection({
 
   return (
     <>
-      <WindowLine
-        gauge="cycle_health"
-        window={info}
-        measured="Cycles started"
-      />
+      <WindowLine gauge="cycle_health" window={info} />
       {empty === undefined ? (
         <div className="grid grid-cols-2 gap-4">
           <GaugeCard

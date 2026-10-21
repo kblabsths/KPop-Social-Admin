@@ -183,9 +183,6 @@ const POPULATION_EYEBROW = "Whole-queue count";
 /** The h2 above the log, and the accessible name of its table. */
 const VERDICT_TITLE = "Verdict log";
 
-/** The lede its window line opens with — this page's words about its subject. */
-const VERDICT_LEDE = "Every admin data action, newest first";
-
 /** What an empty verdict log holds and what fills it — never a bare "No data". */
 const NO_VERDICTS: EmptyWords = {
   holds: "verdict rows",
@@ -588,20 +585,19 @@ function VerdictSection({ log }: { log: DbResult<VerdictLogWindow> }): ReactNode
         <WindowLine
           gauge={VERDICT_LOG_WINDOW}
           window={{
-            limit: log.data.limit,
-            held: log.data.rows.length,
-            truncated: log.data.truncated,
-            over: VERDICTS_OBJECT,
-            // Newest first, so the last row is the oldest verdict the read
-            // came back with — the log's own floor when the window did not
-            // fill (admin-window/BUG-0109).
-            oldest: oldestIn(log.data.rows, (row) => row.created_at),
-            // The verdict log read carries no filter at all — the tab decides
-            // WHETHER this read happens, never which rows it may see — so the
-            // floor below is the log's own (admin-window/BUG-0114).
-            scope: null,
-          }}
-          shows={{ of: "newest", lede: VERDICT_LEDE, rows: "verdict rows" }}
+              limit: log.data.limit,
+              held: log.data.rows.length,
+              truncated: log.data.truncated,
+              over: VERDICTS_OBJECT,
+              // Newest first, so the last row is the oldest verdict the read
+              // came back with — the log's own floor when the window did not
+              // fill (admin-window/BUG-0109).
+              oldest: oldestIn(log.data.rows, (row) => row.created_at),
+              // The verdict log read carries no filter at all — the tab decides
+              // WHETHER this read happens, never which rows it may see — so the
+              // floor below is the log's own (admin-window/BUG-0114).
+              scope: null,
+            }}
         />
       ) : null}
 
@@ -763,18 +759,10 @@ export default async function QueuesPage({
                 hook at all until admin-window/DEBT-0006, which is why the rule
                 graded in `tests/offline/absence/pages.test.ts` could not reach
                 this page. */}
-            <WindowLine
-              gauge={HEALTH_WINDOW}
-              window={health.data.window}
-              measured="Items opened"
-            />
+            <WindowLine gauge={HEALTH_WINDOW} window={health.data.window} />
             {health.data.queues.map((stats) => (
               <QueueGauge key={stats.queue} stats={stats} health={health.data} />
             ))}
-            <p className="type-body text-ink-secondary">
-              Settles per week are not measurable yet: no column records when an
-              item was closed, so those cells are dashes and never zeros.
-            </p>
           </>
         )}
       </Section>

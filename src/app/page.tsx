@@ -141,17 +141,6 @@ const CYCLES_WINDOW = "cycles";
 const RUNS_WINDOW = "runs";
 
 /**
- * Where the rest of a list is, for the panel that has one.
- *
- * It rides on `more`, so `WindowLine` renders it only where the window's own
- * `truncated` is true — a page may not promise a remainder its own read says
- * is not there (admin-window/BUG-0109). Neither panel spells that comparison:
- * `drawnWindow` makes it from the cap the read carried, in the one place this
- * app decides whether a drawn window filled.
- */
-export const THE_REST = "Open Cycles & runs for the rest.";
-
-/**
  * The `micro` label above each count — and the label a parity test reads the
  * number under. Keyed by `Kind` so a third kind could not be added without the
  * compiler asking for its label.
@@ -486,7 +475,6 @@ function runColumns(now: string): Column<DashboardRunRow>[] {
  * lede already uses.
  */
 const LAST_APPLIED_INK = "type-body text-ink-secondary";
-const LAST_APPLIED_SCOPE = "read over every cycle on record, not only the newest.";
 
 /**
  * When the resolver last actually APPLIED something — one line on the cycles
@@ -531,8 +519,7 @@ function lastAppliedLine(
   if (result.data === null) {
     return (
       <p data-last-applied="none" className={LAST_APPLIED_INK}>
-        The resolver has applied nothing —{" "}
-        {LAST_APPLIED_SCOPE}
+        The resolver has applied nothing
       </p>
     );
   }
@@ -549,8 +536,7 @@ function lastAppliedLine(
       className={LAST_APPLIED_INK}
     >
       The resolver last applied something{" "}
-      <span title={age.title}>{age.text}</span> —{" "}
-      {LAST_APPLIED_SCOPE}
+      <span title={age.title}>{age.text}</span>
     </p>
   );
 }
@@ -624,10 +610,6 @@ export default async function DashboardPage() {
                 />
               ))}
             </div>
-            <p className="type-body text-ink-secondary">
-              Open items only, each kind counted on its own — open first,
-              severity then age, as the queues order them.
-            </p>
           </>
         )}
       </Section>
@@ -643,23 +625,17 @@ export default async function DashboardPage() {
           <WindowLine
             gauge={CYCLES_WINDOW}
             window={drawnWindow({
-              limit: DASHBOARD_WINDOW,
-              held: cycles.data.length,
-              over: CYCLES_OBJECT,
-              // Newest first, so the last row is the oldest cycle the read
-              // came back with.
-              oldest: oldestIn(cycles.data, (row) => row.started_at),
-              // Both panels read their whole table — this page carries no
-              // facet, no filter and no search — so the floor either line
-              // names is the object's own (admin-window/BUG-0114).
-              scope: null,
-            })}
-            shows={{
-              of: "newest",
-              lede: "The resolver’s newest cycles, newest first",
-              rows: "cycles",
-              more: THE_REST,
-            }}
+                limit: DASHBOARD_WINDOW,
+                held: cycles.data.length,
+                over: CYCLES_OBJECT,
+                // Newest first, so the last row is the oldest cycle the read
+                // came back with.
+                oldest: oldestIn(cycles.data, (row) => row.started_at),
+                // Both panels read their whole table — this page carries no
+                // facet, no filter and no search — so the floor either line
+                // names is the object's own (admin-window/BUG-0114).
+                scope: null,
+              })}
           />
         ) : null}
         {lastAppliedLine(lastApplied, now)}
@@ -679,18 +655,12 @@ export default async function DashboardPage() {
           <WindowLine
             gauge={RUNS_WINDOW}
             window={drawnWindow({
-              limit: DASHBOARD_WINDOW,
-              held: runs.data.length,
-              over: RUNS_OBJECT,
-              oldest: oldestIn(runs.data, (row) => row.started_at),
-              scope: null,
-            })}
-            shows={{
-              of: "newest",
-              lede: "The adapters’ newest runs, newest first",
-              rows: "runs",
-              more: THE_REST,
-            }}
+                limit: DASHBOARD_WINDOW,
+                held: runs.data.length,
+                over: RUNS_OBJECT,
+                oldest: oldestIn(runs.data, (row) => row.started_at),
+                scope: null,
+              })}
           />
         ) : null}
         <LineTable

@@ -809,8 +809,21 @@ describe("a surface offers a control only where the read behind it answered", ()
  * they share.
  */
 describe("two surfaces over one read describe it the same way", () => {
-  const lineText = (markup: string, gauge: string): string =>
-    cheerio.load(markup)(`[data-window="${gauge}"]`).text().replace(/\s+/g, " ").trim();
+  /**
+   * The window's published FACTS, which is what "describe it the same way"
+   * means since 2026-10-21: the lines say nothing now, so comparing their two
+   * empty strings would pass for any pair of surfaces at all.
+   */
+  const windowShape = (markup: string, gauge: string) => {
+    const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
+    return {
+      lines: line.length,
+      since: line.attr("data-window-since"),
+      until: line.attr("data-window-until"),
+      limit: line.attr("data-window-limit"),
+      truncated: line.attr("data-window-truncated"),
+    };
+  };
 
   it("states the pending-claims window the same on /claims and /sources", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -823,16 +836,29 @@ describe("two surfaces over one read describe it the same way", () => {
       }
 
       scriptDatabase(populatedScript(claims));
-      const onClaims = lineText(await renderSurface(claims), "pending");
+      const onClaims = windowShape(await renderSurface(claims), "pending");
       scriptDatabase(populatedScript(sources));
-      const onSources = lineText(await renderSurface(sources), "awaiting_row");
+      const onSources = windowShape(await renderSurface(sources), "awaiting_row");
 
-      expect(onClaims, "/claims published no gauge window line").not.toBe("");
-      expect(onSources, "/sources published no gauge window line").not.toBe("");
+      expect(onClaims.lines, "/claims published no gauge window line").toBe(1);
+      expect(onSources.lines, "/sources published no gauge window line").toBe(1);
+      /*
+       * `held` is deliberately NOT compared, and that is a finding rather than
+       * a convenience. Each surface here is scripted with its OWN fixture
+       * (`populatedScript(claims)` vs `populatedScript(sources)`), so the two
+       * reads come back with 9 and 10 rows — the row counts were never equal.
+       * The old assertion compared the two SENTENCES, and the sentence did not
+       * include the count, so it passed over a difference it could not see:
+       * this case was weaker than its name for as long as it was green.
+       *
+       * What it actually means, and now says: the two surfaces describe the
+       * same window SHAPE — the same time bounds, the same cap, the same
+       * truncation verdict — for the one read they share.
+       */
       expect(
         onClaims,
         "the same pending-claims window is described differently on the two pages that read it",
-      ).toBe(onSources);
+      ).toEqual(onSources);
     } finally {
       vi.useRealTimers();
     }

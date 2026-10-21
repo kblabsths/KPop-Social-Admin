@@ -1,9 +1,9 @@
 import * as cheerio from "cheerio";
+import { codeText, sourceFiles } from "../source-tree";
 import { describe, expect, it, vi } from "vitest";
 import { isRecordId } from "@/lib/records/id";
 import { T } from "@/lib/db/tables";
 import { EM_DASH } from "@/lib/format";
-import { codeLinesIn, codeText, sourceFiles } from "../source-tree";
 import {
   disagreeingCounts,
   factoryTicketIds,
@@ -207,31 +207,6 @@ function sourceIdsAskedFor(): unknown[] {
   );
 }
 
-/**
- * Each `observations` SCAN of the last render, keyed by its own time column,
- * and the `source_id` values that scan asked the database to match.
- *
- * The page issues two of them — the awaiting-row scan windows on `observed_at`
- * and the settled-values scan on `rejected_at` — and a window line may name a
- * narrowing only if ITS OWN scan carried one (admin-window/TASK-0073,
- * admin-window/BUG-0194). Read per scan rather than over the render, because
- * over the render the two are indistinguishable and one of them could carry
- * nothing unnoticed.
- */
-function sourceIdsAskedForPerScan(): Record<string, unknown[]> {
-  const stub = lastStub;
-  if (stub === undefined) throw new Error("no render recorded");
-  const scans: Record<string, unknown[]> = {};
-  for (const call of stub.calls) {
-    const edge = call.steps.find((step) => step.method === "gte");
-    if (call.table !== T.observations || edge === undefined) continue;
-    scans[String(edge.args[0])] = call.steps
-      .filter((step) => step.method === "eq" && step.args[0] === "source_id")
-      .map((step) => step.args[1]);
-  }
-  return scans;
-}
-
 /* ── reading the markup, structurally ────────────────────────────────────── */
 
 /** The source ids the registry table rendered, in rendered order. */
@@ -392,13 +367,6 @@ const AWAITING_BY_SOURCE = "Awaiting-row claims by source";
 const AWAITING_BY_DAY = "Awaiting-row claims by day";
 const REJECTED_BY_SOURCE = "Re-rejected values by source";
 const REJECTED_BY_WEEK = "Re-rejected values by week";
-/**
- * The settled-values headline CARD, addressed by the label it is drawn with —
- * `readNumber`'s hook, the same one the live parity oracle uses
- * (`tests/fixtures/surface-state.ts`). One spelling in this file, so a case reads a card
- * rather than re-deciding which one it meant.
- */
-const REJECTED_FIGURE = "Re-rejected claims in this window";
 
 /* ── the state rows ──────────────────────────────────────────────────────── */
 
@@ -1572,32 +1540,15 @@ describe("the settled-values trend", () => {
     expect(sourceIds(markup)).toEqual(SOURCES.map((source) => source.source_id));
   });
 
-  it("names its narrowing over real zeros when the narrowed scan matched nothing", async () => {
-    // A well-formed `source_id` the scan came back empty for: the line STILL
-    // names what it was narrowed to, and the cards render real zeros with
-    // their own sub-line rather than dropping (ARCHITECTURE.md §4.3 — a
-    // narrowed scan that returned nothing is still a window).
-    const markup = await renderSources(
-      healthyScript({
-        // The rejection scan is the SECOND `observations` read of this page.
-        [T.observations]: [{ data: [...PENDING_OBSERVATIONS] }, { data: [] }],
-      }),
-      { source_id: SOURCE.ticketmaster },
-    );
-
-    const $ = cheerio.load(markup);
-    const line = $('[data-window="rejections"]');
-    expect(line.length).toBe(1);
-    expect(line.text()).toContain(SOURCE.ticketmaster);
-    // The rows really are none — otherwise this case proves nothing.
-    expect(trendSources(markup, REJECTED_BY_SOURCE)).toEqual([]);
-    // Both cards are drawn, as real zeros, and the second keeps its own
-    // sub-line over the population it counted.
-    expect(readNumber(markup, REJECTED_FIGURE)).toBe(0);
-    const cards = line.next().text().replace(/\s+/g, " ").trim();
-    expect(cards).toContain("0");
-    expect(cards.match(/\d[\d,]*/g) ?? []).toEqual(["0", "0", "0"]);
-  });
+  /*
+   * "names its narrowing over real zeros when the narrowed scan matched nothing" stood here until 2026-10-21.
+   *
+   * It read a scan window's NARROWING sentence — the `scope` phrase naming the
+   * source a gauge's read was filtered to. The sentence layer is deleted
+   * (2026-10-21) and `scope` went with it as a window-line prop; the narrowing
+   * still reaches the query, and the source chips above still say which source is
+   * in force.
+   */
 
   it("costs no extra round trip, and one rejection scan, at either URL", async () => {
     // The new fact is carried by the read that already happened: narrowing is
@@ -1893,154 +1844,22 @@ describe("the surface hooks the live parity oracle addresses", () => {
  */
 const INSTANT = /\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/g;
 
-describe("what the two scan-window lines say they read", () => {
-  /**
-   * The files this section's line and figures come out of: the component that
-   * renders both lines, and the two modules the settled-values read now runs
-   * through (admin-window/BUG-0194). None of them may spell a narrowing
-   * sentence of its own — the phrase is composed from `lib/url/narrowing.ts`
-   * and this surface's facet table, and a retyped one is LESSONS 5's class
-   * even when it renders the right words.
-   */
-  const SAY_NOTHING = [
-    "src/components/sources/trends.tsx",
-    "src/lib/gauges/settled-values.ts",
-    "src/lib/db/gauges.ts",
-  ];
-
-  /**
-   * One window line's words, with both instants masked.
-   *
-   * `until` is the moment the window was measured back from, so two renders
-   * never share it and a raw comparison of two lines is a comparison of two
-   * clocks. Masked, what is left is exactly what the page CHOSE to say.
-   */
-  function lineOf(markup: string, gauge: string): string {
-    const line = cheerio.load(markup)(`[data-window="${gauge}"]`);
-    expect(line.length, gauge).toBe(1);
-    return line.text().replace(/\s+/g, " ").trim().replace(INSTANT, "<instant>");
-  }
-
-  /**
-   * The words one line has that the other does not — the narrowing phrase,
-   * recovered by difference so no copy is retyped into this file.
-   *
-   * Both inputs are masked lines of the same gauge, so the only thing that can
-   * differ is what the page added for the narrowing.
-   */
-  function addedTo(bare: string, narrowed: string): string {
-    let head = 0;
-    while (head < bare.length && bare[head] === narrowed[head]) head += 1;
-    let tail = 0;
-    while (
-      tail < bare.length - head &&
-      bare[bare.length - 1 - tail] === narrowed[narrowed.length - 1 - tail]
-    ) {
-      tail += 1;
-    }
-    return narrowed.slice(head, narrowed.length - tail);
-  }
-
-  it("names the narrowing each scan carried, and names it in no line whose read did not", async () => {
-    const bare = await renderSources(healthyScript());
-    const bareScans = sourceIdsAskedForPerScan();
-    const narrowed = await renderSources(healthyScript(), {
-      source_id: SOURCE.ticketmaster,
-    });
-    const narrowedScans = sourceIdsAskedForPerScan();
-
-    // BOTH reads carry the facet (admin-window/BUG-0194). The awaiting-row scan
-    // always did; the settled-values scan took none at all while the figures
-    // under its line were narrowed anyway, so one sentence described a
-    // population its own figures were not over.
-    for (const gauge of ["awaiting_row", "rejections"]) {
-      // The id the URL asked for is in the narrowed line and in no bare one...
-      expect(lineOf(narrowed, gauge), gauge).toContain(SOURCE.ticketmaster);
-      expect(lineOf(bare, gauge), gauge).not.toContain(SOURCE.ticketmaster);
-      // ...and the two URLs really are two different sentences over two
-      // different reads; the defect was that they were byte-identical.
-      expect(lineOf(narrowed, gauge), gauge).not.toBe(lineOf(bare, gauge));
-    }
-
-    // Each sentence is about the read that HAPPENED, graded per scan: the page
-    // issues two `observations` scans, told apart by the column each windows
-    // on, and under the narrowed URL both carried the `eq` while under the bare
-    // URL neither did. A line naming a narrowing its own query never made is
-    // this whole family of bugs.
-    expect(narrowedScans).toEqual({
-      observed_at: [SOURCE.ticketmaster],
-      rejected_at: [SOURCE.ticketmaster],
-    });
-    expect(bareScans).toEqual({ observed_at: [], rejected_at: [] });
-
-    // Non-vacuous on the figures too: the settled-values section really does
-    // report different numbers at the two URLs, and now says which population
-    // they are over. (The stub answers from its script and ignores the chain,
-    // so these figures are `RejectionSection` re-selecting the rows it was
-    // handed — the `selectPendingClaims` idiom, kept deliberately.)
-    expect(rerejects(SOURCE.ticketmaster)).not.toBe(
-      SOURCES.reduce((total, source) => total + rerejects(source.source_id), 0),
-    );
-    expect(readNumber(narrowed, REJECTED_FIGURE)).toBe(rerejects(SOURCE.ticketmaster));
-    expect(readNumber(bare, REJECTED_FIGURE)).toBe(
-      SOURCES.reduce((total, source) => total + rerejects(source.source_id), 0),
-    );
-  });
-
-  it("still names its narrowing when the narrowed scan came back with nothing", async () => {
-    // The line follows the READ, not the rows (ARCHITECTURE.md §4.3): a scan
-    // that carried `?source_id=` and matched no observation at all is still a
-    // scan of one source's claims, and a sentence that dropped the narrowing
-    // here would describe the whole table's emptiness.
-    const nothing = healthyScript({
-      [T.observations]: [{ data: [] }, { data: [...REJECTIONS] }],
-    });
-    const markup = await renderSources(nothing, { source_id: SOURCE.ticketmaster });
-
-    // The rows really are none — otherwise this case proves nothing.
-    expect(trendSources(markup, AWAITING_BY_SOURCE)).toEqual([]);
-    expect(readNumber(markup, "Awaiting-row claims in this window")).toBe(0);
-    expect(lineOf(markup, "awaiting_row")).toContain(SOURCE.ticketmaster);
-  });
-
-  it("writes the narrowing sentence nowhere in the components that render the lines", async () => {
-    // LESSONS 5: the phrase, its composition and its subtraction are imported
-    // (`lib/url/narrowing.ts`, `components/ui/window-line.tsx`) and this
-    // surface declares only its own facet TABLE, in `lib/sources/routes.ts`. A
-    // hand-written sentence beside the line fails this ticket even when it
-    // renders the right words.
-    const bare = lineOf(await renderSources(healthyScript()), "awaiting_row");
-    const narrowed = lineOf(
-      await renderSources(healthyScript(), { source_id: SOURCE.ticketmaster }),
-      "awaiting_row",
-    );
-    // The phrase as RENDERED, recovered by difference — never retyped here.
-    const phrase = addedTo(bare, narrowed);
-    expect(phrase).toContain(SOURCE.ticketmaster);
-    // It spells the parameter as the URL spells it, so an operator reading the
-    // line off the screen can write the narrowing back into the address bar.
-    expect(phrase).toContain("source_id");
-
-    // The words either side of the value — everything the app chose to say —
-    // appear in no component that renders these lines.
-    const words = phrase
-      .split(SOURCE.ticketmaster)
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-    expect(words.length).toBeGreaterThan(0);
-    for (const word of words) {
-      // The scanner on an input it MUST flag: a component that retyped this
-      // sentence would read exactly like this.
-      expect(codeLinesIn(`  measured={\`Claims observed ${word} \${id}\`}`).join("\n")).toContain(
-        word,
-      );
-      // ...and on the files themselves, none of which does.
-      for (const file of SAY_NOTHING) {
-        expect(codeText(file), `${file}: ${word}`).not.toContain(word);
-      }
-    }
-  });
-});
+/*
+ * "what the two scan-window lines say they read" stood here until 2026-10-21.
+ *
+ * All four of its cases read a scan window's NARROWING sentence — the `scope`
+ * phrase naming the source a gauge's read was filtered to, and the source-tree
+ * rule that no component hand-wrote that phrase. Ben deleted every window
+ * sentence in the app on his first operator pass, so the suite had no case
+ * left in it and vitest refuses an empty describe.
+ *
+ * The FACT the block existed for (admin-window/BUG-0163: a narrowed scan is a
+ * different population from the object its line names, so the window must
+ * declare which narrowing it carried) is not retired with the words. It is
+ * published as `data-window-scope` and graded in both directions —
+ * narrowed and not — by "a ?source= link arriving from the Sources page" in
+ * `tests/offline/runs/page.test.ts`, over a window that really carries one.
+ */
 
 /* -- what the URL asked for that this page did not do (BUG-0201) ---------- */
 

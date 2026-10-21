@@ -365,7 +365,15 @@ describe("the runs the adapters filed", () => {
 
     expect(line.attr("data-window-held")).toBe(String(RUNS.length));
     expect(line.attr("data-window-truncated")).toBe("false");
-    expect(line.text().replace(/\s+/g, " ")).toContain(absoluteUtc(oldest));
+    // An unnarrowed read declares no scope at all, so this floor IS the
+    // table's — the other direction of the fact pinned below.
+    expect(line.attr("data-window-scope")).toBeUndefined();
+    // Graded on the HOOK since 2026-10-21: the sentence that stated this floor
+    // ("runs recorded since …; nothing earlier is retained") is deleted with
+    // the rest of the window prose, and `data-window-oldest` was added so the
+    // FACT did not leave with the English. The instant is still the
+    // population's own; no copy is pinned.
+    expect(line.attr("data-window-oldest")).toBe(oldest);
   });
 
   it("says so when the window filled its cap", async () => {
@@ -458,17 +466,21 @@ describe("a ?source= link arriving from the Sources page", () => {
     const tableOldest = NEWEST_FIRST[NEWEST_FIRST.length - 1].started_at;
     expect(Date.parse(tableOldest)).toBeLessThan(Date.parse(facetOldest));
 
-    const text = line.text().replace(/\s+/g, " ");
-    // The sentence the unfaceted window makes about the table is not made here…
-    expect(text).not.toContain("nothing earlier is retained");
-    // …and wherever this window names its floor, it names whose floor it is.
-    expect(text).toContain(`runs from ${SOURCE.ticketmaster} recorded since`);
-    expect(text).toContain(
-      `${absoluteUtc(facetOldest)}; nothing earlier from ${SOURCE.ticketmaster} is retained`,
-    );
-    // The facet's own bottom is what it names — never the table's floor, which
-    // this read never saw.
-    expect(text).not.toContain(absoluteUtc(tableOldest));
+    // Graded on the HOOK since 2026-10-21. BUG-0114's defect was a SENTENCE
+    // claiming the facet's bottom row was the point before which the TABLE
+    // retains nothing; Ben deleted every window sentence, so that claim can no
+    // longer be made in words. The fact it turned on is still published, and
+    // still worth pinning: the floor this window carries is the floor of the
+    // population the read covered, which is this source's and not the table's.
+    expect(line.attr("data-window-oldest")).toBe(facetOldest);
+    expect(line.attr("data-window-oldest")).not.toBe(tableOldest);
+    // ...and the window DECLARES the narrowing that makes that true, which is
+    // the half of BUG-0114 that was never about the wording: a floor is only
+    // meaningful against the population the read covered, so the window says
+    // which population that was. `data-window-scope` carries it.
+    expect(line.attr("data-window-scope")).toBe(`from ${SOURCE.ticketmaster}`);
+    // And the line says nothing, so it cannot say anything false about either.
+    expect(line.text()).toBe("");
   });
 
   it("says a facet that filled its cap is a window of THAT source's runs", async () => {
@@ -488,11 +500,18 @@ describe("a ?source= link arriving from the Sources page", () => {
       { source: SOURCE.ticketmaster },
     );
     const line = cheerio.load(markup)('[data-window="runs"]');
+    // A filled window has no floor to offer, faceted or not — and that is what
+    // `truncated` is FOR. Since 2026-10-21 the window says nothing in words,
+    // so the honest reading is the PAIR: `oldest` is the oldest row in the
+    // window (always true), and `truncated` says whether that row is also the
+    // population's floor (here it is not). An oracle that read `oldest` alone
+    // as a floor would be wrong about a filled window, which is why the two
+    // are published together and asserted together.
     expect(line.attr("data-window-truncated")).toBe("true");
-    const text = line.text().replace(/\s+/g, " ");
-    expect(text).toContain(`runs from ${SOURCE.ticketmaster}`);
-    // A filled window has no floor to offer, faceted or not.
-    expect(text).not.toContain(absoluteUtc(capped[capped.length - 1].started_at));
+    expect(line.attr("data-window-oldest")).toBe(
+      capped[capped.length - 1].started_at,
+    );
+    expect(line.text()).toBe("");
   });
 
   it("renders the empty state with a stated 0 when the name matches nothing", async () => {

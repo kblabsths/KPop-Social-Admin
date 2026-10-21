@@ -27,7 +27,13 @@ import { cx } from "./cx";
 export type ChipFace = "words" | "value";
 
 const FACE: Record<ChipFace, string> = {
-  words: "type-body",
+  // `font-medium` on top of the step, not a sixth step: Geist Mono at 400 and
+  // Geist Sans at 400 are not equally dark — a monospace glyph carries thicker,
+  // more uniform stems to fill a fixed advance width — so the chips read THINNER
+  // after the mono/sans fix even at the larger size, which is what Ben saw
+  // ("it feels too thin", 2026-10-21). The weight is the fix; the face and the
+  // size were both already right.
+  words: "type-body font-medium",
   // `data` does not uppercase, so the identifier's own case survives with no
   // `normal-case` of its own — but it is spelled out here because the rule is
   // the identifier's, not this step's: Voice bar 5 holds whatever the step

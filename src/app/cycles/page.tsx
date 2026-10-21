@@ -17,7 +17,6 @@ import {
   DataTable,
   DroppedParamsLine,
   Empty,
-  Identifier,
   Page,
   Section,
   StateOf,
@@ -42,7 +41,6 @@ import {
   RUN_WINDOW,
   readRuns,
 } from "@/lib/db/runs";
-import { duration } from "@/lib/format";
 import { droppedParams } from "@/lib/url/dropped-params";
 import { CYCLE_OUTCOME_KEYS, readCycleHealth } from "@/lib/gauges/cycle-health";
 import { RESOLVER_CADENCE_SECONDS, secondsBetween } from "@/lib/gauges/gauge";
@@ -392,25 +390,20 @@ export default async function CyclesPage({
           <WindowLine
             gauge={CYCLES_WINDOW}
             window={{
-              limit: CYCLE_WINDOW,
-              held: rows.length,
-              truncated: cyclesTruncated,
-              over: CYCLES_OBJECT,
-              // Newest first, so the last row is the oldest cycle the read
-              // came back with — the object's own floor on a window that did
-              // not fill (admin-window/BUG-0109).
-              oldest: oldestIn(rows, (row) => row.started_at),
-              // Unnarrowed, and it stays unnarrowed under `?source=`:
-              // `resolution_runs` carries no source column, so the facet
-              // narrows the runs half below and nothing here. The floor this
-              // line names really is the object's own (admin-window/BUG-0114).
-              scope: null,
-            }}
-            shows={{
-              of: "newest",
-              lede: "The resolver’s newest cycles, newest first",
-              rows: "cycles",
-            }}
+                limit: CYCLE_WINDOW,
+                held: rows.length,
+                truncated: cyclesTruncated,
+                over: CYCLES_OBJECT,
+                // Newest first, so the last row is the oldest cycle the read
+                // came back with — the object's own floor on a window that did
+                // not fill (admin-window/BUG-0109).
+                oldest: oldestIn(rows, (row) => row.started_at),
+                // Unnarrowed, and it stays unnarrowed under `?source=`:
+                // `resolution_runs` carries no source column, so the facet
+                // narrows the runs half below and nothing here. The floor this
+                // line names really is the object's own (admin-window/BUG-0114).
+                scope: null,
+              }}
           />
         ) : null}
         {askedFor === undefined ? null : (
@@ -449,16 +442,6 @@ export default async function CyclesPage({
             }
           />
         )}
-        <p className="type-body text-ink-secondary">
-          A cycle with no end and no outcome is still running — until it is
-          older than the resolver&rsquo;s{" "}
-          {duration(RESOLVER_CADENCE_SECONDS)} cadence, at which point it is a
-          cycle that died: nothing rewrites its row and no completion is
-          guessed. <Identifier>skipped</Identifier>{" "}
-          means the cycle found the advisory lock held and did nothing, which is
-          a healthy
-          outcome, not a failure.
-        </p>
       </Section>
 
       {/* The page's two halves, adjacent — spec §4 names them in one breath,

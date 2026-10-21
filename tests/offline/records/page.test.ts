@@ -5,7 +5,6 @@ import {
   EDITABLE_TABLES,
   EDIT_CONFIG,
   mappedColumns,
-  writePathFor,
 } from "@/lib/edit/config";
 import { FN, T } from "@/lib/db/tables";
 import { EM_DASH, isAbsent } from "@/lib/format";
@@ -1665,500 +1664,49 @@ describe("a resolver-owned record", () => {
 
   /* ── the legend that says what an empty provenance cell means ──────────── */
 
-  /**
-   * Campaign admin-window/BUG-0053: a resolver-owned record drew a whole
-   * PROVENANCE column of the app's absence marker with no line anywhere
-   * saying what one means, while the pre-cutover branch of the same page
-   * explained its own. Both document-blind user-sims hit it independently.
+  /*
+   * "the legend under the table" stood here until 2026-10-21.
    *
-   * These assert the legend as BEHAVIOUR rather than as a sentence: how many
-   * times it is said, where it stands, that it does not vary with the record's
-   * data (a legend, not a verdict the rows could contradict), that the dash it
-   * explains is untouched, and which states own the explanation instead. The
-   * only literals are the app's own em dash and the table name from the one
-   * registry — both read from the source of truth, so a change to either moves
-   * copy and test together.
+   * It graded ProvenanceLegend — the paragraph saying what an empty Provenance cell meant
+   * ("a — in Provenance means no field provenance is recorded for that field").
+   * It was the asymmetry admin-window/BUG-0126 fixed: the branch needing no
+   * explanation had one. Ben deleted it on 2026-10-21 as exactly the kind of
+   * caption an info bubble should carry, and he writes the bubbles.
+   *
+   * Retired rather than inverted: there is no markup left to assert about,
+   * and the page's own structure (the heading, the table, the provenance
+   * column) is pinned by the cases above this one.
    */
-  describe("the legend under the table", () => {
-    /** Every rendering of the legend on the page, whitespace-normalised. */
-    function legend(markup: string): string[] {
-      const $ = cheerio.load(markup);
-      return $('[data-note="provenance-absence"]')
-        .toArray()
-        .map((node) => $(node).text().replace(/\s+/g, " ").trim());
-    }
-
-    /** A provenance row per displayed column — the most-sourced record there is. */
-    function everyDisplayColumnSourced(): Script {
-      return withProvenance(
-        EDIT_CONFIG.events.display.map((field, index) =>
-          decided({
-            field,
-            provenance_id: `01920000-0000-7000-8000-00000000050${index}`,
-          }),
-        ),
-        [{ source_id: TICKETMASTER, source: "ticketmaster" }],
-      );
-    }
-
-    it("says once what an empty provenance cell means, and leaves the dash alone", async () => {
-      const markup = await renderRecord("events");
-      const said = legend(markup);
-      // Once per record — never per row (Ben's ruling on TASK-0025).
-      expect(said.length).toBe(1);
-      // It explains the app's own absence marker, read from the one place
-      // that character is spelled, so copy and marker cannot drift apart.
-      expect(said[0]).toContain(EM_DASH);
-      // ...and it is a sentence, not a bare glyph repeated above the table.
-      expect(said[0].length).toBeGreaterThan(40);
-      // The table name is this page's signal that a LEG FAILED (`LegNote`
-      // prints it); the ordinary case must not borrow that signal.
-      expect(said[0]).not.toContain(T.fieldProvenance);
-
-      // ...and the table is still the OK state: rows, each with the dash.
-      const drawn = lines(markup);
-      expect(drawn.length).toBeGreaterThan(1);
-      for (const line of drawn) {
-        expect(line.provenanceAbsent, line.name).toBe(true);
-      }
-    });
-
-    it("stands above the table, never inside a row", async () => {
-      const $ = cheerio.load(await renderRecord("events"));
-      expect($('[data-note="provenance-absence"]').length).toBe(1);
-      expect($('tbody [data-note="provenance-absence"]').length).toBe(0);
-      expect($('td [data-note="provenance-absence"]').length).toBe(0);
-    });
-
-    it("reads the same however much of the record is sourced", async () => {
-      // A legend describes the COLUMN. One that varied with the data would be
-      // a claim about this record — and on the partly-sourced record below it
-      // would be a false one ("nothing here is traceable" beside a line that
-      // names ticketmaster).
-      const none = await renderRecord("events");
-      const some = await renderRecord(
-        "events",
-        withProvenance(
-          [decided()],
-          [{ source_id: TICKETMASTER, source: "ticketmaster" }],
-        ),
-      );
-      const most = await renderRecord("events", everyDisplayColumnSourced());
-      expect(legend(some)).toEqual(legend(none));
-      expect(legend(most)).toEqual(legend(none));
-    });
-
-    it("stands beside real provenance without denying it", async () => {
-      // The contrast case the user-sim opened second: some fields sourced,
-      // some not, on one record.
-      const markup = await renderRecord(
-        "events",
-        withProvenance(
-          [decided()],
-          [{ source_id: TICKETMASTER, source: "ticketmaster" }],
-        ),
-      );
-      expect(legend(markup).length).toBe(1);
-      const sourced = lineFor(markup, "title");
-      expect(sourced.provenanceAbsent).toBe(false);
-      expect(sourced.provenance).toContain("ticketmaster");
-      expect(lineFor(markup, "description").provenanceAbsent).toBe(true);
-    });
-
-    it("says nothing on a directly-written record, whose regime note already explains it", async () => {
-      // The other fixture of the guard above, and the asymmetry the ticket is
-      // about: the branch that needed no legend is not given a second one.
-      const table = DIRECT_WRITE_TABLE;
-      expect(EDIT_CONFIG[table].regime, table).toBe("sandbox");
-      expect(legend(await renderRecord(table)), table).toEqual([]);
-    });
-
-    it("leaves a provenance leg that failed to explain its own dashes", async () => {
-      // Same column of dashes, a completely different reason — and the leg
-      // says that reason in the database's own words. Claiming "no row stands
-      // behind this value" over a read that never happened would be a lie.
-      const absent = await renderRecord("events", {
-        events: { data: scriptedRecord("events") },
-        field_provenance: { error: tableNotInSchemaCache(T.fieldProvenance) },
-      });
-      expect(legend(absent)).toEqual([]);
-      expect(cheerio.load(absent)('[data-state="not_provisioned"]').length)
-        .toBeGreaterThan(0);
-
-      const refused = await renderRecord("events", {
-        events: { data: scriptedRecord("events") },
-        field_provenance: { error: permissionDenied(T.fieldProvenance) },
-      });
-      expect(legend(refused)).toEqual([]);
-      expect(cheerio.load(refused)('[data-state="error"]').length).toBeGreaterThan(0);
-    });
-
-    it("says nothing when there is no field table to read", async () => {
-      // The unknown-id state draws no PROVENANCE column, so there is no dash
-      // on screen for a legend to be about.
-      const markup = await renderRecord("events", {
-        ...defaultScript("events"),
-        events: { data: null },
-      });
-      expect(lines(markup)).toEqual([]);
-      expect(legend(markup)).toEqual([]);
-    });
-
-    /* ── QA (admin-window/BUG-0053): the criterion's other named surface, and
-       the state the gate's third clause owns ─────────────────────────────── */
-
-    it("says it on EVERY resolver-owned table, not only the one the ticket named", async () => {
-      // The criterion names `/records/venues/<id>` beside `/records/events/<id>`,
-      // and the gate keys on the REGIME rather than on a table name — so every
-      // table on that side of the cutover owes the operator the same sentence,
-      // and a future table added to the map inherits it without a test edit.
-      const resolverOwned = EDITABLE_TABLES.filter(
-        (table) => EDIT_CONFIG[table].regime === "resolver_owned",
-      );
-      expect(resolverOwned.length).toBeGreaterThan(1);
-      const said = legend(await renderRecord("events"));
-      for (const table of resolverOwned) {
-        const markup = await renderRecord(table);
-        // Same sentence, said once — the anatomy does not change per table.
-        expect(legend(markup), table).toEqual(said);
-        // ...and it is not vacuous there either: the primary key carries no
-        // decision on any table, so there is always a dash to explain.
-        expect(lineFor(markup, EDIT_CONFIG[table].pk).provenanceAbsent, table).toBe(
-          true,
-        );
-      }
-    });
-
-    it("says nothing when the RECORD read failed, though the provenance leg answered", async () => {
-      // The gate's third clause. Every leg answers for itself, so a healthy
-      // provenance leg does not entitle the page to caption a column that was
-      // never drawn: the record's own refusal is the whole page here, and a
-      // legend about an empty cell beside it would describe nothing on screen.
-      for (const failure of [
-        { error: permissionDenied("events") },
-        { error: tableNotInSchemaCache("events") },
-      ]) {
-        const markup = await renderRecord("events", {
-          ...defaultScript("events"),
-          events: failure,
-        });
-        expect(lines(markup)).toEqual([]);
-        expect(legend(markup)).toEqual([]);
-        // ...and the record's own leg still reports, so the page is not silent.
-        const $ = cheerio.load(markup);
-        expect(
-          $('[data-state="error"], [data-state="not_provisioned"]').length,
-        ).toBeGreaterThan(0);
-      }
-    });
-  });
 });
 
 /* ── the regime note: whose words are whose ───────────────────────────────── */
 
-/**
- * The note above the field table names the table, and a table name is the
- * machine's word — campaign admin-window/BUG-0112, designer's M2 endgame walk.
+/*
+ * "the regime note" stood here until 2026-10-21.
  *
- * LOOK_AND_FEEL's type split is the whole typographic idea: mono carries every
- * value the database produced, sans carries every word the app wrote, "so the
- * operator can always see which words are the machine's" (Voice bar 5: machine
- * identifiers "render verbatim in mono"). The walk read THREE table names on
- * one record screen — the heading's, the not-provisioned card's and the regime
- * note's — and only the note's was set in the app's own voice, in the same face
- * as the prose around it, underscore and all (`walk_sandbox` was the loudest).
+ * It graded regimeNote — the sentence under each record's heading explaining what the
+   * table's edit regime meant ("is resolver-owned: its values change through
+   * the …", "is a staging fixture table, edited directly: …"). Deleted with
+   * the rest of the explanatory captions on 2026-10-21.
  *
- * These assertions take their yardstick off the page itself rather than naming
- * a face: the note's identifier must read in whatever face the HEADING above it
- * gives the same name, and the words around it must read in whatever the page's
- * other prose note is drawn in. No literal class, no pinned sentence — a later
- * restyle of either face moves both sides of the comparison together, and the
- * only way to go red is to make one of the three names on the screen disagree
- * with the others again.
+ * Retired rather than inverted: there is no markup left to assert about,
+ * and the page's own structure (the heading, the table, the provenance
+ * column) is pinned by the cases above this one.
  */
-describe("the regime note", () => {
-  /** The note, addressed by name like this page's other two (ARCHITECTURE §10). */
-  function note($: cheerio.CheerioAPI, table: string) {
-    const found = $('[data-note="regime"]');
-    expect(found.length, `${table} draws one regime note`).toBe(1);
-    return found;
-  }
-
-  /** The span inside `scope` whose whole text is the table's name, verbatim. */
-  function namesTheTable(
-    $: cheerio.CheerioAPI,
-    scope: ReturnType<cheerio.CheerioAPI>,
-    table: string,
-    what: string,
-  ) {
-    const found = scope
-      .find("span")
-      .toArray()
-      .filter((element) => $(element).text() === table);
-    expect(found.length, `${what} sets ${table} in one element of its own`).toBe(1);
-    return $(found[0]);
-  }
-
-  it("sets the table's name in the face the heading above it uses, in both regimes", async () => {
-    // Both write paths are represented, so this is not one regime's guard
-    // wearing a loop (LESSONS 3): `walk_sandbox` is the underscored name the
-    // walk called loudest, `events`/`venues` the pair either side of it.
-    expect(
-      new Set(EDITABLE_TABLES.map((table) => writePathFor(EDIT_CONFIG[table].regime))).size,
-    ).toBeGreaterThan(1);
-    for (const table of EDITABLE_TABLES) {
-      const $ = cheerio.load(await renderRecord(table));
-      const paragraph = note($, table);
-      const inTheNote = namesTheTable($, paragraph, table, "the note");
-      const inTheHeading = namesTheTable($, $("h1"), table, "the heading");
-      // The defect: the note's name in the paragraph's own prose face, on a
-      // page whose heading sets the same name as the machine's word.
-      expect(
-        faceOf(classesOf(inTheNote)),
-        `${table} reads differently in the note than in the heading above it`,
-      ).toEqual(faceOf(classesOf(inTheHeading)));
-      // ...and that agreement is not reached by the heading drifting into the
-      // prose face: the identifier is drawn in something the paragraph is not.
-      expect(faceOf(classesOf(inTheNote)), table).not.toEqual(
-        faceOf(classesOf(paragraph)),
-      );
-      // Verbatim, which is the other half of Voice bar 5 — the case and the
-      // underscore survive the wrapping.
-      expect(inTheNote.text(), table).toBe(table);
-    }
-  });
-
-  it("leaves the words the app wrote around it exactly as the page's other prose", async () => {
-    // The yardstick is the page's own second note, so this pins no face, no
-    // type step and no ink of its own: the regime note must be drawn in
-    // whatever the provenance legend beside it is drawn in, which is what
-    // "only the face of one word changed" means here.
-    const $ = cheerio.load(await renderRecord("events"));
-    const legend = $('[data-note="provenance-absence"]');
-    expect(legend.length).toBe(1);
-    expect(classesOf(note($, "events"))).toEqual(classesOf(legend));
-  });
-
-  it("keeps the sentence whole: the name leads it once, with the app's words after", async () => {
-    for (const table of EDITABLE_TABLES) {
-      const $ = cheerio.load(await renderRecord(table));
-      const text = note($, table).text().replace(/\s+/g, " ").trim();
-      // Wrapping a word is not rewriting a sentence: the name still opens the
-      // note, separated by one space from the words that follow it, and it is
-      // not repeated by a wrap that left the old copy behind.
-      expect(text.startsWith(`${table} `), `${table} no longer opens its note`).toBe(
-        true,
-      );
-      expect(text.split(table).length - 1, `${table} is said more than once`).toBe(1);
-      // ...and the app's own sentence is still there after it.
-      expect(text.slice(table.length).trim().length, table).toBeGreaterThan(40);
-    }
-  });
-
-  /**
-   * The two paragraphs at the top of a resolver-owned record, read in the order
-   * a reader meets them — campaign admin-window/BUG-0205, from the M3 user-sim
-   * walk of Tomas Berg.
-   *
-   * The note described the override in the present tense ("an edit here is
-   * recorded as an admin override") unconditionally, one paragraph above
-   * `override-unavailable` saying no field here can be edited. The sim read the
-   * first, went looking for the control, found none, and learned from the
-   * second that there had never been one. Both sentences are true; the closed
-   * one was second.
-   *
-   * What is asserted is the RULE, not the copy: with the path closed the note
-   * is the open note TRUNCATED at a sentence end (so a reworded closed note is
-   * caught, and a later rewording of both is the designer's business, not a
-   * red suite), the sentence it drops is said nowhere ahead of the paragraph
-   * that names the closure, and with the path open nothing is withdrawn. The
-   * one word either side is asked for by name is `override` — a glossary noun,
-   * like the `read-only` and `resolution pipeline` the closure's own guard
-   * reads — because "does this page describe an override here" is the whole
-   * question the sim's thirty seconds were spent on.
-   */
-  it("states the closed override path before it describes an edit", async () => {
-    /** The note, whitespace-normalised, with the table name it opens on gone. */
-    function said(markup: string, table: string): string {
-      const $ = cheerio.load(markup);
-      return note($, table)
-        .text()
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(table.length)
-        .trim();
-    }
-
-    for (const table of ["events", "venues"]) {
-      expect(EDIT_CONFIG[table].regime, table).toBe("resolver_owned");
-      const openMarkup = await renderRecord(table);
-      const closedMarkup = await renderRecord(table, {
-        ...defaultScript(table),
-        ...OVERRIDE_ABSENT,
-      });
-      const open = said(openMarkup, table);
-      const closed = said(closedMarkup, table);
-
-      // The closed note is the open one stopped at a sentence end — same words
-      // as far as it goes, and shorter. A rewrite rather than a truncation, or
-      // a closed page still saying the whole thing, both fail here.
-      expect(open.startsWith(closed), `${table}: the closed note is not the open one truncated`).toBe(true);
-      expect(closed.length, table).toBeLessThan(open.length);
-      expect(closed.endsWith("."), `${table}: the closed note stops mid-sentence`).toBe(true);
-
-      // The sentence the closed page does not say, taken off the open page
-      // rather than typed here.
-      const dropped = open.slice(closed.length).trim();
-      expect(dropped.length, table).toBeGreaterThan(0);
-      expect(dropped.toLowerCase(), table).toContain("override");
-      expect(closed.toLowerCase(), `${table}: the closed note still describes an override`).not.toContain("override");
-
-      // THE RULE. Wherever the page does describe an edit being recorded while
-      // the path is closed, it does so AFTER the line saying no field here can
-      // be edited — and saying it nowhere at all satisfies it too. Read off the
-      // rendered page's own text in document order, so what is graded is what a
-      // reader meets and not which of the two paragraphs the fix moved.
-      const closed$ = cheerio.load(closedMarkup);
-      const page = closed$.root().text().replace(/\s+/g, " ").trim();
-      const closure = closed$('[data-note="override-unavailable"]')
-        .text()
-        .replace(/\s+/g, " ")
-        .trim();
-      expect(closure.length, `${table}: nothing on the closed page names the closure`).toBeGreaterThan(0);
-      const closureAt = page.indexOf(closure);
-      expect(closureAt, table).toBeGreaterThanOrEqual(0);
-      const describedAt = page.indexOf(dropped);
-      expect(
-        describedAt === -1 || describedAt > closureAt,
-        `${table}: the page describes the edit before it says no field can be edited`,
-      ).toBe(true);
-
-      // The open arm: nothing was withdrawn where the path is there. The note
-      // still describes the override, and no closure line stands over it.
-      expect(open.toLowerCase(), `${table}: the open note no longer describes the override`).toContain("override");
-      expect(cheerio.load(openMarkup)('[data-note="override-unavailable"]').length, table).toBe(0);
-
-      // ...and a state that asked the database nothing claims nothing: the
-      // malformed address renders the regime in full, exactly as before.
-      expect(said(await renderRecord(table, defaultScript(table), "not-an-id"), table), table).toBe(open);
-    }
-
-    // The direct-write regime is not touched by the readiness answer at all:
-    // its note reads the same whether or not the override object is there.
-    expect(EDIT_CONFIG[DIRECT_WRITE_TABLE].regime, DIRECT_WRITE_TABLE).toBe("sandbox");
-    expect(
-      said(await renderRecord(DIRECT_WRITE_TABLE), DIRECT_WRITE_TABLE),
-    ).toBe(
-      said(
-        await renderRecord(DIRECT_WRITE_TABLE, {
-          ...defaultScript(DIRECT_WRITE_TABLE),
-          ...OVERRIDE_ABSENT,
-        }),
-        DIRECT_WRITE_TABLE,
-      ),
-    );
-  });
-});
 
 /* ── the scope of the field table ─────────────────────────────────────────── */
 
-/**
- * The field table draws a SUBSET of the row's columns, and says so — campaign
- * admin-window/BUG-0126, from both M2 user-sims.
+/*
+ * "the scope of the field table" stood here until 2026-10-21.
  *
- * Priya read a `venues.timezone` claim on the signal page and then found no
- * timezone line on the venue record; Devin found no line for `events.status`
- * after Cycles had shown him a `column "venue" does not exist` error. Nothing
- * on the page separated the three states that share "no line here": a column
- * that is null (which HAS a line, and a dash), a column the map does not carry,
- * and a column the database does not have. The map's subset is Ben's ruling of
- * 2026-09-02 and is not the defect — the silence about it was.
+ * It graded DrawnColumns — "These N columns are the ones Admin works with for <table>: a
+   * column with no line here is one this page does not draw, and its absence
+   * says nothing about what the database holds." Deleted 2026-10-21.
  *
- * These assertions pin the LINE's behaviour, never its wording: that it is said
- * once per drawn table, that its figure is the number of lines the table
- * actually drew (LESSONS 2 — a figure reads the same narrowing the surface
- * renders), that it names the table in the face the heading gives it (Voice
- * bar 5), that it names no column at all, and that it is absent wherever no
- * field table was drawn.
+ * Retired rather than inverted: there is no markup left to assert about,
+ * and the page's own structure (the heading, the table, the provenance
+ * column) is pinned by the cases above this one.
  */
-describe("the scope of the field table", () => {
-  /** Every rendering of the scope line, whitespace-normalised. */
-  function scopeLine(markup: string): string[] {
-    const $ = cheerio.load(markup);
-    return $('[data-note="drawn-columns"]')
-      .toArray()
-      .map((node) => $(node).text().replace(/\s+/g, " ").trim());
-  }
-
-  it("names the table in the face the heading above it uses, verbatim", async () => {
-    for (const table of EDITABLE_TABLES) {
-      const $ = cheerio.load(await renderRecord(table));
-      const note = $('[data-note="drawn-columns"]');
-      expect(note.length, table).toBe(1);
-      const named = note
-        .find("span")
-        .toArray()
-        .filter((element) => $(element).text() === table);
-      expect(named.length, `${table} is set in one element of its own`).toBe(1);
-      const heading = $("h1")
-        .find("span")
-        .toArray()
-        .filter((element) => $(element).text() === table);
-      expect(heading.length, `${table} names itself in the heading`).toBe(1);
-      expect(faceOf(classesOf($(named[0]))), table).toEqual(
-        faceOf(classesOf($(heading[0]))),
-      );
-      // ...and the agreement is not the note drifting into the machine's face:
-      // the words the app wrote are drawn in something the identifier is not.
-      expect(faceOf(classesOf($(named[0]))), table).not.toEqual(
-        faceOf(classesOf(note)),
-      );
-    }
-  });
-
-  it("is drawn in the same prose as the page's other notes", async () => {
-    // The yardstick is the page's own dash legend, so nothing here pins a
-    // face, a type step or an ink: one line, no card, no colour, no icon.
-    const $ = cheerio.load(await renderRecord("events"));
-    const legend = $('[data-note="provenance-absence"]');
-    expect(legend.length).toBe(1);
-    const note = $('[data-note="drawn-columns"]');
-    expect(classesOf(note)).toEqual(classesOf(legend));
-    expect(note.is("p")).toBe(true);
-    expect(note.find("svg, img").length).toBe(0);
-  });
-
-  it("stands inside the Fields section, above the table and never in a row", async () => {
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table);
-      const $ = cheerio.load(markup);
-      expect($('[data-surface="fields"] [data-note="drawn-columns"]').length, table).toBe(1);
-      expect($('tbody [data-note="drawn-columns"]').length, table).toBe(0);
-      expect($('td [data-note="drawn-columns"]').length, table).toBe(0);
-      // Above the table the operator is about to read, not under it.
-      expect(
-        markup.indexOf('data-note="drawn-columns"'),
-        table,
-      ).toBeLessThan(markup.indexOf("<tbody"));
-    }
-  });
-
-  it("claims nothing about the columns it does not draw", async () => {
-    // It cannot: the page never read them. So it names a count and no column —
-    // not the drawn ones (which are on screen), and above all not the absent
-    // ones, whose names this page has no source for.
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table);
-      const said = scopeLine(markup)[0];
-      for (const line of lines(markup)) {
-        expect(said, `${table} enumerates ${line.name}`).not.toContain(line.name);
-      }
-      // Exactly one figure in the sentence: the number of columns drawn. A
-      // second one could only be a claim about columns the page never read.
-      expect(said.match(/\d+/g), table).toEqual([String(lines(markup).length)]);
-    }
-  });
-});
 
 /* ── the four worlds of the §9 handoff, rendered (BUG-0223) ──────────────── */
 
@@ -2292,148 +1840,16 @@ describe("the four worlds the settlement handoff can leave a database in", () =>
 
 /* ── the scope line, on the shapes a real read hands back ─────────────────── */
 
-/**
- * The scope line above the field table, driven on the row shapes the app
- * actually serves — campaign admin-window/BUG-0126, QA pass 2026-09-09.
+/*
+ * "the scope line on the shapes a real read hands back" stood here until 2026-10-21.
  *
- * Every assertion the fix landed with renders the one offline fixture, whose
- * row carries a column outside the map (`spotify_id`) on purpose. That shape is
- * deliberate and it is the shape NO operator meets: `readRecord` selects
- * `mappedColumns` explicitly (`lib/db/records.ts`), so the row Priya and Devin
- * were reading carried the mapped columns and nothing else, and the figure on
- * their screen was the map's own length — 6 on `events`, 5 on `venues`, 6 on
- * `walk_sandbox`. Nothing pinned that number against a reading of the map, and
- * an off-by-one there is invisible to a fixture that is off-map by exactly one.
+ * It graded The same DrawnColumns sentence, graded against the shapes a real read hands
+   * back — the mapped count, extra lines, fewer lines. Deleted with it.
  *
- * The map is read HERE from `pk` / `editable` / `display` rather than through
- * `mappedColumns`, so the page's helper and the yardstick are two readings and
- * not one: a change to what that helper returns must move the rows on screen to
- * pass, not merely agree with itself.
- *
- * Two more shapes the landed guard leaves open, both of them states the app
- * really serves: the override path CLOSED (the graded normal case — every
- * assertion above renders with `verdicts` present, so the read-only page M1
- * ships is unpinned), and the no-table states of the two RESOLVER-OWNED
- * tables, where the landed guard loops the sandbox alone and the extra legs a
- * resolver-owned record reads do not run at all.
- *
- * Behaviour only: a figure against the rows an operator can count in `tbody`,
- * and the line's presence or absence. No wording is asserted here.
+ * Retired rather than inverted: there is no markup left to assert about,
+ * and the page's own structure (the heading, the table, the provenance
+ * column) is pinned by the cases above this one.
  */
-describe("the scope line on the shapes a real read hands back", () => {
-  /** The map's columns for `table`, read from the entry and not from `mappedColumns`. */
-  function mapColumns(table: string): string[] {
-    const config = EDIT_CONFIG[table];
-    return [config.pk, ...config.editable, ...config.display];
-  }
-
-  /** A row exactly as the read serves it: the map's columns, and nothing else. */
-  function servedRow(table: string): Record<string, unknown> {
-    const config = EDIT_CONFIG[table];
-    const row: Record<string, unknown> = {};
-    for (const column of mapColumns(table)) row[column] = `stored ${column}`;
-    row[config.pk] = IDS[table];
-    if (config.editable.includes("tally")) row.tally = 4;
-    if (config.editable.includes("note")) row.note = null;
-    return row;
-  }
-
-  /** The default script with the served row in place of the off-map fixture. */
-  function servedScript(table: string, extra: Script = {}): Script {
-    return {
-      ...defaultScript(table),
-      [table]: { data: servedRow(table) },
-      ...extra,
-    };
-  }
-
-  /** The one figure the scope line states, or a failure saying why there is not one. */
-  function statedFigure(markup: string, table: string): number {
-    const $ = cheerio.load(markup);
-    const note = $('[data-note="drawn-columns"]');
-    expect(note.length, `${table} says its scope once`).toBe(1);
-    const figures = note.text().replace(/\s+/g, " ").match(/\d+/g) ?? [];
-    expect(figures.length, `${table} states one figure`).toBe(1);
-    return Number(figures[0]);
-  }
-
-  /** The rows an operator can count in the field table. */
-  function drawnRows(markup: string): number {
-    return cheerio.load(markup)("tbody tr").length;
-  }
-
-  it("states the map's own column count on the row the read actually serves", async () => {
-    const stated: Record<string, number> = {};
-    for (const table of EDITABLE_TABLES) {
-      const markup = await renderRecord(table, servedScript(table));
-      // The rows on screen are the map's columns: nothing extra came back.
-      expect(drawnRows(markup), table).toBe(mapColumns(table).length);
-      stated[table] = statedFigure(markup, table);
-      expect(stated[table], table).toBe(mapColumns(table).length);
-    }
-    // ...and the figure is read per table, not a constant that happens to fit:
-    // the map's entries are not all the same length.
-    expect(new Set(Object.values(stated)).size).toBeGreaterThan(1);
-  });
-
-  it("counts the extra lines when the read hands back more than the map", async () => {
-    const table = "events";
-    const markup = await renderRecord(
-      table,
-      servedScript(table, {
-        [table]: {
-          data: {
-            ...servedRow(table),
-            spotify_id: "not in the map",
-            setlist_url: "not in the map either",
-            ends_at: "2027-05-01T22:00:00+00:00",
-          },
-        },
-      }),
-    );
-    expect(drawnRows(markup)).toBe(mapColumns(table).length + 3);
-    expect(statedFigure(markup, table)).toBe(drawnRows(markup));
-  });
-
-  it("counts every mapped line when the read hands back fewer", async () => {
-    // A row that came back with the key alone still draws a line per mapped
-    // column — absence is a state, not a reason to drop the line — so the
-    // figure follows the rows, not the row's keys.
-    const table = "venues";
-    const markup = await renderRecord(
-      table,
-      servedScript(table, { [table]: { data: { venue_id: IDS[table] } } }),
-    );
-    expect(drawnRows(markup)).toBe(mapColumns(table).length);
-    expect(statedFigure(markup, table)).toBe(mapColumns(table).length);
-  });
-
-  it("says nothing on any mapped table where no field table was drawn", async () => {
-    // The landed guard loops the sandbox alone here, and a resolver-owned
-    // record reads three more legs before it decides what to draw.
-    for (const table of EDITABLE_TABLES) {
-      const drawnNothing: [string, string][] = [];
-      const notAnId = await renderRecord(table, servedScript(table), "not-an-id");
-      drawnNothing.push([`${table} at a malformed address`, notAnId]);
-      drawnNothing.push([
-        `${table} with no such row`,
-        await renderRecord(table, servedScript(table, { [table]: { data: null } })),
-      ]);
-      drawnNothing.push([
-        `${table} refused`,
-        await renderRecord(table, servedScript(table, { [table]: { error: permissionDenied(table) } })),
-      ]);
-      drawnNothing.push([
-        `${table} not in the database`,
-        await renderRecord(table, servedScript(table, { [table]: { error: tableNotInSchemaCache(table) } })),
-      ]);
-      for (const [what, markup] of drawnNothing) {
-        expect(drawnRows(markup), what).toBe(0);
-        expect(cheerio.load(markup)('[data-note="drawn-columns"]').length, what).toBe(0);
-      }
-    }
-  });
-});
 
 /* ── the same table name, one card lower ──────────────────────────────────── */
 

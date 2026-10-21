@@ -2389,3 +2389,89 @@ and reddens it); `queues/page.test.ts`'s "states its sort on screen" is
 retired with its reason in place, since `QueueList` has no `sort` prop for
 `tsc` to miss. The row ORDER is still pinned, by `shapes.test.ts`, which
 grades rows rather than a sentence about them.
+
+## 2026-10-21 (second pass) — the window lines, and the rest of the prose
+
+Ben looked at the first pass running locally and ruled twice more. Both
+rulings are his; the costs below are recorded, not hedged.
+
+**1. "I don't think I like mono sans. It feels too thin."** Diagnosed as
+neither the family nor the size but the WEIGHT. Geist Mono at 400 and Geist
+Sans at 400 are not equally dark — a monospace glyph carries thicker, more
+uniform stems to fill a fixed advance width — so moving chips from mono to
+sans made them lighter even at the larger size, and inactive chips compound it
+with secondary ink. App-word chips are now `font-medium`. LOOK_AND_FEEL's
+"weights: 400 and 600 only" is amended to license 500 **for that one job**;
+prose stays 400 and headings stay 600.
+
+**2. The window lines are deleted, app-wide.** Ben quoted three of them back —
+the Dashboard's cycles and runs windows, and the standing paragraph under the
+attention cards — and said these and "anything else that is similar to these
+across the website" should go.
+
+They were one shared component on twenty surfaces, which is why this was a
+day's work rather than three deletions. `ui/window-line.tsx` went from 1,126
+lines to ~390: the five sentence arms (`newest`, `matched`, `catalog`,
+`alphabetical`, and the scan's `measured`/`scope`/`answersFor`) and every
+clause helper under them are gone, along with `DrawnSentence`, `THE_REST`,
+both `SORT_STATEMENT`s and the `shows`/`measured`/`scope`/`answersFor` props at
+all nineteen call sites.
+
+Also deleted, as "similar to these": twelve standing explanatory captions —
+the Provenance-dash legend, the regime note, the drawn-columns scope sentence,
+`State, not configuration` on /sources, the Tier-drifts note, the
+`stuck_pattern` dial notes on /claims and /sources, the cycle-still-running
+and run-with-no-end explanations, the claim-to-apply wait definition, and the
+latest-run "repeated here so…" note.
+
+**What was deliberately KEPT, against a literal reading of "delete".**
+- **The hook set.** Every window still publishes `data-window-*`. Those
+  attributes were never read by an operator; they are what the offline suites
+  and live oracles read a window back by, and keeping them cost no pixels.
+- **Two facts promoted INTO hooks rather than dropped**: `data-window-oldest`
+  (the object's own floor, bar 13's other half — BUG-0109) and
+  `data-window-scope` (which narrowing the read carried — BUG-0163,
+  BUG-0114). Without these two, `DrawnWindow.scope` would have become dead
+  data and three resolved bugs would have become ungradeable. Both have real
+  readers in `tests/offline/runs/page.test.ts`.
+- **One link, restored.** Deleting the latest-run paragraph also deleted the
+  only anchor from the "Newest run" card down to the runs window — the two
+  absence arms kept theirs, so the ok arm was the single state that lost its
+  way back. A link is a control, not a description. It is back as four words
+  with no explanation around it.
+- **State and diagnostic lines**, which are not descriptions: "Run X is marked
+  in the table below", "is not among the 6 newest runs", "Showing only the
+  review items of source X" with its exit, "This item is already settled",
+  the dropped-parameter line, the evidence-ids finding, and every refusal.
+  Each answers a question the operator asked or reports something that
+  happened — none of them restates what the screen already shows.
+
+**The cost.** LOOK_AND_FEEL bar 13 is STRUCK, not reinterpreted. A table of
+six rows and a table of six-of-twelve-hundred now look the same to a reader;
+both M1 user-sims named that statement as why they trusted the tool. Ben made
+the call twice, knowing it. Info bubbles are his to write.
+
+**Tests: 88 reddened, and not one was deleted to go green.**
+- `primitives.test.ts`'s 1,094-line `WindowLine` suite — one case per sentence
+  arm — is replaced by 92 lines pinning the hook set attribute by attribute
+  **and the silence itself**, so a sentence creeping back is a decision that
+  reddens a test rather than a drift nobody sees.
+- Four `records/page.test.ts` describes (629 lines) retired with the captions
+  they graded; the empty `sources/page.test.ts` scan-narrowing describe too.
+- Seven cases re-pinned to hooks instead of retired, because the FACT survived
+  the words: both BUG-0114 floor cases, the Dashboard and /cycles and /browse
+  floors, and the two-surfaces-one-read comparison.
+- Every retirement leaves a comment in place naming the case, what it graded,
+  and why it is gone — so the next reader finds the history, not a gap.
+
+**One finding fell out of it.** `absence/pages.test.ts`'s "states the
+pending-claims window the same on /claims and /sources" compared the two
+SENTENCES, and the sentence never contained the row count — so it passed for
+as long as it was green over reads that return 9 rows and 10. Each surface is
+scripted with its own fixture. It now compares the window's SHAPE (bounds,
+cap, truncation verdict), with the discrepancy recorded in the test.
+
+**Still not done, and named so it is not lost:** `DataTable` puts every cell
+in `type-data` mono by category — the same defect `Chip` had, one level down.
+Left alone until Ben names the columns that read wrong off a screen. The 4px
+spacing scale also still has not followed the type scale up.

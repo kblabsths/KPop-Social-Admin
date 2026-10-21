@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { GaugeCard, TrendTable, type TrendMeasure } from "@/components/gauges";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Identifier, WindowLine } from "@/components/ui";
+import { WindowLine } from "@/components/ui";
 import { count, counted, pluralise } from "@/lib/format";
 import { isSourceNamed, sourceLabel, sourceNamesOf } from "@/lib/sources/names";
 import { sourcesHref, type SourceNarrowing } from "@/lib/sources/routes";
@@ -73,7 +73,6 @@ export function AwaitingRowTrendSection({
   trend,
   filter,
   names,
-  scope,
 }: {
   trend: AwaitingRowTrend;
   filter: SourceNarrowing;
@@ -86,20 +85,6 @@ export function AwaitingRowTrendSection({
    * (admin-window/BUG-0158).
    */
   names: ReadonlyMap<string, string>;
-  /**
-   * What the read BELOW this line was narrowed to, as the phrases the line
-   * says — `null` for a read that covered the whole object
-   * (admin-window/TASK-0073).
-   *
-   * Composed by the page, from the filter this read was GIVEN and from the one
-   * facet table `/sources` owns (`SOURCES_NARROWING_FACETS`,
-   * `lib/sources/routes.ts`), through the phrase shape every surface shares
-   * (`lib/url/narrowing.ts`). **This file declares no narrowing phrase and
-   * spells none**: a sentence retyped beside the line it belongs to is the
-   * class LESSONS 5 names, and the model one page over is `/claims`, which
-   * says this by import (admin-window/BUG-0163).
-   */
-  scope: readonly string[] | null;
 }) {
   const { window: info, series } = trend;
   const claims = series.reduce((total, one) => total + one.claims, 0);
@@ -138,12 +123,7 @@ export function AwaitingRowTrendSection({
 
   return (
     <>
-      <WindowLine
-        gauge="awaiting_row"
-        window={info}
-        measured="Claims observed"
-        scope={scope}
-      />
+      <WindowLine gauge="awaiting_row" window={info} />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Awaiting-row claims in this window"
@@ -205,15 +185,6 @@ export function AwaitingRowTrendSection({
           }}
         />
       )}
-      {dialled.length === 0 ? (
-        <p className="type-body text-ink-secondary">
-          No threshold line is drawn. The per-source{" "}
-          <Identifier>stuck_pattern</Identifier>{" "}
-          dial lives only in the scraper repo&rsquo;s source registry, and where
-          Admin may read it is an open question — so no default is substituted
-          here.
-        </p>
-      ) : null}
     </>
   );
 }
@@ -230,24 +201,9 @@ export function AwaitingRowTrendSection({
 export function RejectionSection({
   gauge,
   filter,
-  scope,
 }: {
   gauge: SettledValues;
   filter: SourceNarrowing;
-  /**
-   * What the read BELOW this line was narrowed to, as the phrases the line
-   * says — `null` for a read that covered the whole object
-   * (admin-window/TASK-0073).
-   *
-   * Composed by the page, from the filter this read was GIVEN and from the one
-   * facet table `/sources` owns (`SOURCES_NARROWING_FACETS`,
-   * `lib/sources/routes.ts`), through the phrase shape every surface shares
-   * (`lib/url/narrowing.ts`). **This file declares no narrowing phrase and
-   * spells none**: a sentence retyped beside the line it belongs to is the
-   * class LESSONS 5 names, and the model one page over is `/claims`, which
-   * says this by import (admin-window/BUG-0163).
-   */
-  scope: readonly string[] | null;
 }) {
   const { window: info, bySource } = gauge;
   // The names map THIS section labels by is the gauge's own: `bySource` was
@@ -316,12 +272,7 @@ export function RejectionSection({
 
   return (
     <>
-      <WindowLine
-        gauge="rejections"
-        window={info}
-        measured="Claims adjudicated"
-        scope={scope}
-      />
+      <WindowLine gauge="rejections" window={info} />
       <div className="grid grid-cols-2 gap-4">
         <GaugeCard
           label="Re-rejected claims in this window"

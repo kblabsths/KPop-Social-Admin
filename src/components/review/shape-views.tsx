@@ -429,7 +429,7 @@ function Dial({ label, series, window: read, empty, state }: DialProps) {
         // The window line follows the READ: `window` is null on exactly the
         // states where the dial's read did not happen, so the line's absence
         // means that and nothing else (ARCHITECTURE.md §4.3).
-        <WindowLine gauge={DIAL_WINDOW} window={read} measured="Claims observed" />
+        <WindowLine gauge={DIAL_WINDOW} window={read} />
       )}
       <p className="type-body text-ink-secondary">
         {series === null || series.threshold === null

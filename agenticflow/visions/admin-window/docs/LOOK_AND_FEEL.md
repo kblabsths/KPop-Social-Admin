@@ -133,7 +133,12 @@ database's).
   `text-xl` and `text-2xl` do not survive.
 - `micro` never carries information needed to act — only the label above a
   value that carries it.
-- Weights: 400 and 600 only.
+- Weights: 400, 500 and 600 only. *(500 added 2026-10-21, for ONE job: a chip
+  carrying the app's words. Mono at 400 and sans at 400 are not equally dark —
+  a monospace glyph carries thicker, more uniform stems to fill a fixed
+  advance width — so the chips read thinner after the mono/sans fix even at
+  the larger size. The weight was the fix. 500 is not licensed anywhere else;
+  prose stays 400 and headings stay 600.)*
 
 ### Spacing, borders, density
 
@@ -344,18 +349,38 @@ header's `animate-pulse` stale dot is gone).
     item's chrome-inverse fill carries primary text only, and the
     disabled/placeholder/null gray is exempt by job (see the palette). No
     browser-console error or warning on load.
-13. **Every windowed list states its window on screen** — which read produced
-    the rows, the cap it carried, and whether it filled — including where the
-    window's bottom is the data's own floor rather than its cap: a list that
-    did **not** fill its cap has the oldest row the object holds, and its line
-    says so ("runs recorded since 2026-08-31; nothing earlier is retained")
-    instead of letting a three-day history read like a long one. The line
-    follows the **read**, not the rows: a read that returned keeps its line at
-    zero rows; a read that was refused, absent or never made drops the line
-    whole and lets the surface's state say why (DECISIONS 2026-09-04).
-    *(VISION: "real staging rows whose numbers match what the database says".
-    Both M1 sims named this behaviour as the reason they trusted the tool, and
-    the one place it was missing is the only number a sim could not check.)*
+13. ~~**Every windowed list states its window on screen**~~ — **STRUCK
+    2026-10-21, by Ben, on his first operator pass of the deployed app.**
+
+    The bar required every windowed list to say, in prose, which read produced
+    the rows, the cap it carried, whether it filled, and — where it did not
+    fill — that its bottom row was the object's own floor. It produced lines
+    like *"The resolver's newest cycles, newest first — a window of at most 6,
+    not a count of the cycles that exist. The window filled its cap, so cycles
+    older than the ones below are not shown. Open Cycles & runs for the
+    rest."* Ben quoted that back and said delete it, and everything like it
+    across the website. It is gone from all twenty surfaces.
+
+    **What replaces it is not nothing.** Every window still publishes its
+    facts as `data-window-*` attributes — `limit`, `held`, `truncated`,
+    `since`/`until` for a scan, `from`/`drawn` for a page window, plus
+    `oldest` and `scope`, which were added on the same day precisely so the
+    two facts the prose carried alone did not leave with it: the object's own
+    floor, and which narrowing the read was made under. So an oracle can
+    still ask every question this bar was written to answer; a reader cannot.
+
+    **The cost, stated plainly.** A table of six rows and a table of
+    six-of-twelve-hundred now look identical to an operator. Both M1 user-sims
+    named this behaviour as the reason they trusted the tool. That is a real
+    trade and it was made deliberately and twice; the honest place for it, if
+    it returns, is the info bubble Ben reserved for himself — never a
+    paragraph above the table.
+
+    The line still follows the **read**, not the rows: a read that returned
+    keeps its (now silent) element at zero rows; a read that was refused,
+    absent or never made drops it whole and lets the surface's state say why
+    (DECISIONS 2026-09-04). That part of the rule is unchanged, and the hooks
+    are what make it checkable.
 14. **Nothing the operator must find sits below a long list.** A list is
     long when its rows can run past the fold at 1440×900 — the viewport bar 1
     is graded at. On such a surface every element that is not a row — the

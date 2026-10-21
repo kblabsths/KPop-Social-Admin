@@ -146,14 +146,18 @@ export function LatestRun({
           rowKey={(row) => row.run_id}
         />
       </div>
+      {/* The LINK, without the paragraph that used to carry it.
+          Ben's 2026-10-21 pass deleted the sentence here ("The first row of
+          the adapter-runs window below, repeated here so the last thing that
+          ran is on screen without scrolling the cycles…") — and took this
+          anchor down with it, which was a navigation loss rather than a prose
+          one: the two ABSENCE arms above still link down, so the ok arm was
+          the only state that lost its way to the window the row came from.
+          A link is a control. It comes back as four words and no explanation. */}
       <p className="type-body text-ink-secondary">
-        The first row of the{" "}
         <a href={`#${RUNS_ANCHOR}`} className={IN_PAGE_LINK}>
-          adapter-runs window below
+          the runs window below
         </a>
-        , repeated here so the last thing that ran is on screen without
-        scrolling the cycles. It is that one row and nothing else: what the
-        window holds, and what it does not, is stated with the table itself.
       </p>
     </Section>
   );

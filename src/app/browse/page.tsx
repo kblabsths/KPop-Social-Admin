@@ -300,8 +300,6 @@ export default async function BrowsePage({
           from: firstRowOf(window.window),
         })
       : null;
-  const shows = { of: "catalog", rows: "events" } as const;
-
   // The Section's children, in the order this page has always rendered them.
   // On the paged arm they are handed to `PagingProvider` — which emits no
   // markup of its own — so the line, the selector and the leg notes stay
@@ -311,13 +309,13 @@ export default async function BrowsePage({
   const sectionBody = (
     <>
       {eventsWindow === null ? null : drawn === null ? (
-        <WindowLine gauge={EVENTS_WINDOW} window={eventsWindow} shows={shows} />
+        <WindowLine gauge={EVENTS_WINDOW} window={eventsWindow} />
       ) : (
         // The same element in the same place, rendered inside client-land so
         // that every fact in it is a fact of the read the operator NOW holds:
         // a press is a read on this surface, and a server-rendered constant
         // above rows a press changes is the contradiction QA measured.
-        <PagedWindowLine gauge={EVENTS_WINDOW} shows={shows} />
+        <PagedWindowLine gauge={EVENTS_WINDOW} />
       )}
       <ColumnSelector
         label="Columns"

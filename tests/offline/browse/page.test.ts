@@ -629,6 +629,7 @@ function windowLine(markup: string) {
     truncated: line.attr("data-window-truncated"),
     from: line.attr("data-window-from"),
     drawn: line.attr("data-window-drawn"),
+    oldest: line.attr("data-window-oldest"),
     text: line.text().replace(/\s+/g, " ").trim(),
   };
 }
@@ -667,12 +668,15 @@ describe("the events window states whether it filled", () => {
     expect(line.held).toBe(String(population().length));
     expect(line.truncated).toBe("false");
     // The bottom of the list is the CATALOG's floor, not the window's, so the
-    // line names the oldest arrival it holds — the fixture's own instant,
-    // rendered the way this app renders one.
+    // window carries the oldest arrival it holds — the fixture's own instant.
+    // Graded on `data-window-oldest` since 2026-10-21: the sentence that said
+    // this is deleted with the rest of the window prose, and the hook was
+    // added so the fact did not leave with the English.
     const oldest = [...population()].sort((a, b) =>
       (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
     )[0].created_at;
-    expect(line.text).toContain(absoluteUtc(oldest));
+    expect(line.oldest).toBe(oldest);
+    expect(line.text).toBe("");
   });
 
   it("says the window filled its cap, and names no floor of its own", async () => {

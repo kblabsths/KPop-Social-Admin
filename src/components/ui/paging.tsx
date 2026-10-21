@@ -46,7 +46,7 @@ import { AuthoredAccount } from "./error-line";
 // and answers 500 in production (admin-window/BUG-0094).
 import { NotProvisionedClause } from "./not-provisioned";
 import { ARRIVES_WITH } from "./state-of";
-import { type DrawnSentence, type DrawnWindow, WindowLine } from "./window-line";
+import { type DrawnWindow, WindowLine } from "./window-line";
 
 /**
  * The paging affordance — campaign admin-window/TASK-0064, SPEC F14,
@@ -410,15 +410,9 @@ export function usePaging<Row>(): PagingSurface<Row> {
  * (admin-window/BUG-0172). It renders the SURFACE's window and composes
  * nothing.
  */
-export function PagedWindowLine({
-  gauge,
-  shows,
-}: {
-  gauge: string;
-  shows: DrawnSentence;
-}): ReactNode {
+export function PagedWindowLine({ gauge }: { gauge: string }): ReactNode {
   const { window: surface } = usePaging();
-  return <WindowLine gauge={gauge} window={surface} shows={shows} />;
+  return <WindowLine gauge={gauge} window={surface} />;
 }
 
 /**

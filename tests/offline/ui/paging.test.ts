@@ -17,7 +17,7 @@ import {
 import { NARROW_THE_VIEW, PagedClaimList } from "@/components/claims/paged-claim-list";
 import { PagedBrowseTable } from "@/components/browse/paged-browse-table";
 import { RECENT_EVENTS, configuredKeys } from "@/lib/browse/views";
-import { WindowLine, type DrawnSentence, type DrawnWindow } from "@/components/ui/window-line";
+import { WindowLine, type DrawnWindow } from "@/components/ui/window-line";
 import {
   MAX_PAGE_OFFSET,
   PAGE_PARAM,
@@ -123,7 +123,7 @@ function surface(
         return h(
           "div",
           null,
-          h(PagedWindowLine, { gauge: "claims", shows: { of: "matched", lede: "Longest-waiting first.", rows: HOLDS } }),
+          h(PagedWindowLine, { gauge: "claims" }),
           h(WindowControls, { holds: HOLDS, nextStep: NARROW_THE_VIEW }),
         );
       }),
@@ -394,14 +394,13 @@ describe("usePageWindows binds the driver to the browser's history", () => {
 });
 
 describe("PagingProvider publishes one surface's state, and draws nothing", () => {
-  const CATALOG: DrawnSentence = { of: "catalog", rows: "events" };
   const WINDOW: DrawnWindow = { limit: SIZE, held: SIZE, truncated: true, over: "view", oldest: null, scope: null, drawn: SIZE, continues: true };
   const line = (initial: PageState<Row>, window: DrawnWindow = WINDOW): string =>
     render(
       h(
         PagingProvider<Row>,
         { initial, window, deps: { ...DEPS, route: PAGE_ROUTES.browse, path: "/browse", params: "" }, children: null },
-        h(PagedWindowLine, { gauge: "events", shows: CATALOG }),
+        h(PagedWindowLine, { gauge: "events" }),
       ),
     );
   const hook = (html: string, name: string): string | undefined => $of(html)("[data-window]").attr(name);
@@ -412,7 +411,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
     // The server screen for an address is what the client draws for it: the
     // provider combines the page's facts with a state the page itself seeded,
     // so the line it renders is the line the page would render alone.
-    expect(line(state())).toBe(render(h(WindowLine, { gauge: "events", window: { ...WINDOW, from: 1 }, shows: CATALOG })));
+    expect(line(state())).toBe(render(h(WindowLine, { gauge: "events", window: { ...WINDOW, from: 1 } })));
   });
 
   it.each([
@@ -441,7 +440,7 @@ describe("PagingProvider publishes one surface's state, and draws nothing", () =
   });
 
   it("refuses to draw a paged surface outside its provider", () => {
-    expect(() => render(h(PagedWindowLine, { gauge: "events", shows: CATALOG }))).toThrow();
+    expect(() => render(h(PagedWindowLine, { gauge: "events" }))).toThrow();
     expect(() => render(h(WindowControls, { holds: HOLDS, nextStep: null }))).toThrow();
     expect(() =>
       render(

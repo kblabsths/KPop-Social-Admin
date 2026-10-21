@@ -669,7 +669,12 @@ describe("the cycles the resolver filed", () => {
     const line = cheerio.load(markup)('[data-window="cycles"]');
 
     expect(line.attr("data-window-held")).toBe(String(CYCLES.length));
-    expect(line.text().replace(/\s+/g, " ")).toContain(absoluteUtc(oldest));
+    // Graded on the HOOK since 2026-10-21: the sentence that stated this floor
+    // ("runs recorded since …; nothing earlier is retained") is deleted with
+    // the rest of the window prose, and `data-window-oldest` was added so the
+    // FACT did not leave with the English. The instant is still the
+    // population's own; no copy is pinned.
+    expect(line.attr("data-window-oldest")).toBe(oldest);
   });
 
   it("says so when the window filled its cap", async () => {
@@ -3341,8 +3346,19 @@ describe("the ?source= a render QUERIED is the ?source= that render SPELLED", ()
     ["blanks only", "   ", null],
   ];
 
+  /** The runs window's published facts — what an unnarrowed read looks like. */
+  const windowFacts = ($: cheerio.CheerioAPI) => {
+    const line = $('[data-window="runs"]');
+    return {
+      limit: line.attr("data-window-limit"),
+      held: line.attr("data-window-held"),
+      truncated: line.attr("data-window-truncated"),
+      oldest: line.attr("data-window-oldest"),
+    };
+  };
+
   it.each(SHAPES)(
-    "%s: the .eq value, the facet hook, the rendered box and the window line are ONE string",
+    "%s: the .eq value, the facet hook and the rendered box are ONE string",
     async (_label, asked, narrows) => {
       const markup = await renderCycles(
         healthyScript({ [T.runs]: { data: [...RUNS] } }),
@@ -3351,7 +3367,6 @@ describe("the ?source= a render QUERIED is the ?source= that render SPELLED", ()
       const $ = cheerio.load(markup);
       const facet = $("[data-source-facet]");
       const eq = runsEq();
-      const line = laidOut($('[data-window="runs"]').text());
 
       if (narrows === null) {
         // The refusing arm. The page must not have QUERIED by a value it then
@@ -3360,12 +3375,14 @@ describe("the ?source= a render QUERIED is the ?source= that render SPELLED", ()
         expect(eq).toEqual([]);
         expect(facet).toHaveLength(0);
         expect(dropped($)).toContain("source");
-        // ...and the window it describes is the unnarrowed one -- compared
-        // against a second render of this same page, never against a literal.
+        // ...and the window it read is the unnarrowed one -- compared against a
+        // second render of this same page, never against a literal. Graded on
+        // the window's FACTS since 2026-10-21: the line's sentence is deleted,
+        // so comparing two empty strings would pass against anything.
         const plain = await renderCycles(
           healthyScript({ [T.runs]: { data: [...RUNS] } }),
         );
-        expect(line).toBe(laidOut(cheerio.load(plain)('[data-window="runs"]').text()));
+        expect(windowFacts($)).toEqual(windowFacts(cheerio.load(plain)));
         return;
       }
 
@@ -3376,8 +3393,11 @@ describe("the ?source= a render QUERIED is the ?source= that render SPELLED", ()
       expect(facet.attr("data-source-facet")).toBe(narrows);
       // ...it is what an operator READS in that paragraph's own box...
       expect(laidOut(facet.find('[dir="ltr"]').text())).toBe(narrows);
-      // ...and the window line's scope clause names the same string, laid out.
-      expect(line).toContain(narrows);
+      // The window line used to be the fourth leg: its scope clause named this
+      // same string ("runs from ticketmaster"). Ben deleted that prose on
+      // 2026-10-21, so there is no fourth rendering of the value to agree
+      // with — the three above are the whole round trip now, and the line
+      // carries the read's FACTS rather than its words.
       // A page that answered the parameter never also reports it dropped.
       expect(dropped($)).not.toContain("source");
     },

@@ -1,7 +1,3 @@
-import type { ReactNode } from "react";
-
-import { absoluteUtc, count, pluralise } from "@/lib/format";
-
 /**
  * What kind of database object a window ran over — the word a sentence that
  * names it ends on ("…not the whole table.").
@@ -53,6 +49,12 @@ export interface ReadWindow extends WindowFacts {
   since: string;
   /** The instant the window was measured back from. */
   until: string;
+  /**
+   * What the SCAN was narrowed to, where its call site has that to declare —
+   * the same fact `DrawnWindow.scope` carries, optional here because the scan
+   * arm was converted surface by surface (admin-window/BUG-0194).
+   */
+  scope?: readonly string[] | null;
 }
 
 /**
@@ -266,91 +268,63 @@ export function drawnWindow(read: {
 }
 
 /**
- * What a DRAWN window's line says — one arm per shape of list the app draws,
- * spelled here so that four hand-rolled paragraphs in four page files become
- * four sentences a reader can see side by side (admin-window/DEBT-0006).
- *
- * The arm names the READ, not the page: `newest` is "the newest N rows of an
- * object, newest first" — whatever the object, so `/cycles`'s cycles and runs
- * and `/queues`'s verdict log all take it — `matched` is "the first N of a
- * complete matching set, longest-waiting first", `catalog` is "the N newest
- * arrivals in a catalog".
- * Only the page's own words about its own subject (`lede`, `rows`) come from
- * the call site — every fact of the read comes from the window, which is the
- * line admin-window/BUG-0077 drew and this file keeps.
- */
-export type DrawnSentence =
-  /** `/cycles`'s cycles and runs tables, and `/queues`'s verdict log. */
-  | {
-      of: "newest";
-      lede: string;
-      rows: string;
-      /**
-       * Where the REST of this list is, in the page's own words — rendered
-       * only when there is a rest, which is to say only on a window that
-       * filled its cap.
-       *
-       * The Dashboard's runs panel is why it rides on the window rather than
-       * on the page's optimism: it promised "Open Cycles & runs for the rest"
-       * over five runs that ARE every run recorded, and `/cycles` then showed
-       * the operator the same five (admin-window/BUG-0109).
-       */
-      more?: string;
-    }
-  /**
-   * `/claims`'s list: a complete read, drawn a window at a time.
-   *
-   * It carries no way for the call site to word the end of the truncated
-   * clause. It briefly did (`reach`, admin-window/BUG-0160): the shared clause
-   * pointed at "the filters above", which is a claim about the PAGE's controls
-   * that this file cannot check, so the one state where the narrowing in force
-   * has no chip row needed its own words. admin-window/BUG-0162 removed the
-   * claim instead — the clause now names what is not shown and says nothing
-   * about how to reach it, which is true from every call site and in every
-   * narrowing, so there is nothing left for a page to override.
-   */
-  | { of: "matched"; lede: string; rows: string }
-  /** `/browse`'s recent events. */
-  | { of: "catalog"; rows: string }
-  /**
-   * The entity picker's choices: the first N rows of the referenced table BY
-   * NAME (campaign admin-window/TASK-0055).
-   *
-   * Its own arm because none of the three above states this read: the picker's
-   * window is neither newest-first nor a complete matching set nor a catalog
-   * arrival order, and its truncation costs rows LATER IN THE ALPHABET rather
-   * than older ones. Naming that is the whole job of the line — a picker that
-   * showed the first thousand venues and said nothing would read as "these are
-   * the venues", which is the total claim §4.3 forbids.
-   */
-  | { of: "alphabetical"; rows: string };
-
-/**
  * A DRAWN window's stated position or row count as a hook value, or nothing:
  * a scan has neither, and a drawn window that states neither publishes
  * neither (React omits an `undefined` attribute).
  */
-function drawnFact(info: ReadWindow | DrawnWindow, fact: "from" | "drawn"): string | undefined {
+function drawnFact(
+  info: ReadWindow | DrawnWindow,
+  fact: "from" | "drawn" | "oldest",
+): string | undefined {
   if (!(fact in info)) return undefined;
   const value = (info as DrawnWindow)[fact];
   return value === undefined || value === null ? undefined : String(value);
 }
 
 /**
- * The one paragraph, and the one hook set, every window line in this app is.
+ * A window's FACTS, as hooks, and nothing visible — campaign admin-window,
+ * rewritten 2026-10-21 on Ben's ruling.
+ *
+ * It used to render a sentence. Three of them, on the Dashboard alone:
+ *
+ *   "The resolver's newest cycles, newest first — a window of at most 6, not
+ *    a count of the cycles that exist. The window filled its cap, so cycles
+ *    older than the ones below are not shown. Open Cycles & runs for the
+ *    rest."
+ *
+ * Ben quoted that back on his first operator pass and said delete it, and
+ * everything like it across the website. So the sentence layer is gone — about
+ * 700 lines of it, one arm per shape of list (`newest`, `matched`, `catalog`,
+ * `alphabetical`, and the scan), with the clause helpers that composed them.
+ *
+ * **What is deliberately kept: the hook set.** Every window still publishes
+ * `data-window-*`, because those attributes are the contract the offline
+ * suites and the live oracles read a window back by — the cap it carried, how
+ * many rows it held, whether it filled, and a scan's time bounds. They were
+ * never what the operator read; they are what a test reads. Deleting the
+ * prose does not cost a single assertion about whether a read was honest, and
+ * the facts themselves (`DrawnWindow`, `drawnWindow`, `oldestIn`, `scope`)
+ * are untouched above.
+ *
+ * **What is knowingly lost.** LOOK_AND_FEEL bar 13 required every windowed
+ * list to SAY on screen that it was a window. Nothing says it now: a table of
+ * six cycles and a table of six-of-twelve-hundred look identical to a reader.
+ * Two M1 user-sims named that statement as the reason they trusted the tool,
+ * so this is a real trade and it is Ben's to make — he made it, twice, and
+ * the bar is struck in LOOK_AND_FEEL rather than quietly contradicted here.
+ * The honest place for it, if it comes back, is the info bubble Ben reserved
+ * for himself — not a paragraph above the table.
  *
  * React omits an attribute whose value is `undefined`, so a drawn window —
  * which has no `since` — publishes no `data-window-since`, and the hook set a
- * surface publishes is a property of the read rather than of the page.
+ * surface publishes stays a property of the read rather than of the page.
  */
-function WindowParagraph({
+export function WindowLine({
   gauge,
   window: info,
-  children,
 }: {
   gauge: string;
   window: ReadWindow | DrawnWindow;
-  children: ReactNode;
 }) {
   return (
     <p
@@ -362,10 +336,33 @@ function WindowParagraph({
       data-window-truncated={info.truncated ? "true" : "false"}
       data-window-from={drawnFact(info, "from")}
       data-window-drawn={drawnFact(info, "drawn")}
-      className="type-body text-ink-secondary"
-    >
-      {children}
-    </p>
+      /* The OBJECT's own floor, where the window has one — the instant the
+         oldest row in a drawn window carries. It used to reach the operator
+         as a clause ("runs recorded since 2026-08-31; nothing earlier is
+         retained"), which is bar 13's other half and is now deleted; the
+         FACT is still a fact of the read, so it is published here rather than
+         dropped. A window with no instant to name (an empty read, or an order
+         that is not in time) publishes nothing, as before. */
+      data-window-oldest={drawnFact(info, "oldest")}
+      /* WHAT THE READ WAS NARROWED TO, as the phrases the call site declared,
+         joined once here.
+
+         It reached the operator as a clause ("runs from ticketmaster", "Claims
+         observed in the events domain") until 2026-10-21. With the sentence
+         deleted, `DrawnWindow.scope` had become dead data — set by every call
+         site, read by nothing — and the choice was to delete it from the type
+         or publish it. Published, for the reason `oldest` is: a narrowed read
+         is a DIFFERENT POPULATION from the object it ran over
+         (admin-window/BUG-0163, admin-window/BUG-0114), so which narrowing a
+         window carried is a fact about that window and worth keeping
+         observable. `null` — an unnarrowed read — publishes nothing. */
+      data-window-scope={
+        info.scope === undefined || info.scope === null || info.scope.length === 0
+          ? undefined
+          : info.scope.join(", ")
+      }
+      hidden
+    />
   );
 }
 
@@ -387,78 +384,6 @@ function WindowParagraph({
  * would say twice.
  */
 export const NARROWED_BY_FILTERS = "matching these filters";
-
-/**
- * How a filled `matched` window ends: naming what it is NOT showing, and
- * nothing else — spelled once for both of its branches.
- *
- * It used to end by telling the operator to narrow with the filters above —
- * a remedy no state of the page can perform (admin-window/BUG-0162). `/claims`
- * draws a hard `limit 50` window, so narrowing reveals a row past the 50th
- * only where it takes the matching count BELOW 50, and no combination of the
- * controls it renders gets near that: measured on staging 2026-09-10, the
- * narrowest state the two chip rows can reach still held 108 claims against
- * the same 50 rows. A window line states the read (ARCHITECTURE.md §4.3) —
- * the count, the cap, and what is not below — and paging past the cap is a
- * capability this app does not have yet (admin-window/BUG-0138), so the line
- * names its absence by not offering a way around it rather than by inventing
- * one.
- *
- * It names no NUMBER for the rows it held back, deliberately: `held` and
- * `limit` are established by two different reads (`/claims` counts the
- * population and draws the window separately), so their difference is a third
- * figure no read produced, and it goes to zero or negative in exactly the
- * states truncation is interesting in.
- */
-const THE_REST_IS_NOT_SHOWN = "the rest are not shown.";
-
-/**
- * Which side of its CAP a window's ROWS landed on — the one clause this file
- * gains (admin-window/BUG-0186), spelled beside the vocabulary it completes.
- *
- * It is `didNotFill`'s opening in the not-reached direction, word for word and
- * figure for figure, and its complement in the other: a window that drew as
- * many rows as its cap allowed may be hiding more, and that is a fact of the
- * ROW read alone — the number of rows it came back with, against the number it
- * was allowed. No second read is consulted here, which is the whole point: the
- * clause it replaces took its verdict from a separate COUNT, so a count that
- * came back smaller than the rows made a window that drew its whole cap say it
- * did not fill.
- *
- * It states no relationship to the count and asserts no rest. What the count
- * read established is stated as the count's own fact, in the clause beside
- * this one.
- */
-function rowsAgainstCap(below: number, limit: number): string {
-  return below < limit
-    ? `The window did not fill — ${count(below)} of at most ${count(limit)}.`
-    : `The window reached its cap — ${count(below)} of at most ${count(limit)}.`;
-}
-
-/**
- * How a scope of several narrowings is joined into the words the line says —
- * one spelling, used in exactly ONE place (`scopeWords` below), which is the
- * moment the sentence is written.
- *
- * It used to be seen by the composition AND by a subtraction that split the
- * joined string back apart, so the round trip was only as sound as the values
- * that went through it: a facet value carrying `", "` forged a segment nobody
- * composed. A scope is a list now (`DrawnWindow.scope`), so there is nothing
- * to read back apart and this constant is render vocabulary and nothing else
- * (admin-window/TASK-0072).
- */
-const NARROWING_JOIN = ", ";
-
-/**
- * The scope as the WORDS a clause says — the one join, at render.
- *
- * Every clause that puts a scope into a sentence comes through here, so the
- * app has one spelling of "several narrowings, read as one phrase" and no
- * clause can invent a second separator.
- */
-function scopeWords(scope: readonly string[] | null): string | null {
-  return scope === null ? null : scope.join(NARROWING_JOIN);
-}
 
 /**
  * The `scope` of a read narrowed by more than one thing — the phrases in the
@@ -485,642 +410,4 @@ export function narrowedTo(
 ): readonly string[] | null {
   const named = narrowings.filter((phrase): phrase is string => phrase !== null);
   return named.length === 0 ? null : named;
-}
-
-/**
- * The window's narrowing MINUS the one a clause's own words already state —
- * what `population()` should see from inside a clause that names a narrowing
- * itself, so the sentence states it once and states the rest (bar 13's
- * requirement is that the clause name the population, not that it name it
- * twice).
- */
-function besides(
-  scope: readonly string[] | null,
-  stated: string,
-): readonly string[] | null {
-  if (scope === null) return null;
-  return narrowedTo(scope.filter((phrase) => phrase !== stated));
-}
-
-/**
- * Does this window's read really carry that narrowing?
- *
- * The other half of `besides`, and the reason both live here: a clause that
- * states a narrowing IN ITS OWN WORDS may only do so when the read actually
- * carried it. `besides` subtracts a phrase whether or not it was there, so on
- * an unnarrowed window it answered `null` and the clause went on asserting the
- * narrowing anyway — "877 claims match these filters" over a read no filter
- * touched, byte-identical to the same page with a chip set
- * (admin-window/BUG-0123). Asked of the same `scope` the subtraction reads, so
- * the two cannot come to disagree about what the window was narrowed by.
- */
-function narrows(scope: readonly string[] | null, stated: string): boolean {
-  return scope !== null && scope.includes(stated);
-}
-
-/**
- * The population a clause is about: the rows the arm names, carrying whatever
- * the read was narrowed to (`DrawnWindow.scope`).
- *
- * EVERY clause that names the rows goes through here, so one line cannot state
- * its cap over the facet and its floor over the object — the split that made
- * `/cycles?source=<name>` say "runs recorded since <one source's oldest>;
- * nothing earlier is retained" of a table that retains older runs from other
- * sources (admin-window/BUG-0114). An unnarrowed window answers the bare noun,
- * so its sentences are the ones the app rendered before a facet existed, to the
- * byte.
- */
-function population(rows: string, scope: readonly string[] | null): string {
-  const words = scopeWords(scope);
-  return words === null ? rows : `${rows} ${words}`;
-}
-
-/**
- * The SINGULAR of a plural noun a caller handed this file — the inverse of the
- * one rule `counted` (`lib/format.ts`) already relies on in the other
- * direction.
- *
- * `counted(n, "source")` spells its plural `source + "s"` "because every noun
- * this app counts is regular"; read backwards, that is this. A plural that is
- * not the regular `-s` form of anything — `"ss"`, `"us"`, `"is"`, `"ies"`, or
- * a word with no `s` at all — is handed BACK UNCHANGED, because guessing
- * "entitie" out of "entities" is the same bug `counted`'s doc refuses to write
- * forwards. No noun that reaches the phrases below is irregular today
- * (`"claims"`, `"events"`), and an irregular one arriving here reads as it
- * always has rather than as a word this file invented.
- *
- * It is a spelling rule and not an agreement rule: WHICH form a quantity takes
- * is `pluralise`'s, the app's one answer to that question.
- */
-function singularNoun(plural: string): string {
-  if (!plural.endsWith("s")) return plural;
-  if (/(?:ss|us|is|ies)$/.test(plural)) return plural;
-  return plural.slice(0, -1);
-}
-
-/**
- * A COUNT WEARING THE POPULATION IT COUNTED, agreeing with it — composed here,
- * once, and never by the call sites that pass the noun
- * (campaign admin-window/DEBT-0022, admin-window/BUG-0197 residual).
- *
- * The callers of this file hand it ONE noun, in the plural (`rows: "claims"`),
- * and the clauses below put a count in front of it. Over a window holding one
- * row that read "1 claims in all" — the defect `counted` removed from the
- * app's gauge cards (admin-window/BUG-0046) reaching the window line through a
- * noun that arrives from outside. The agreement belongs where the phrase is
- * composed, so a seventh call site cannot get it wrong, and the WORDS stay the
- * surface's: nothing here rewrites a noun, and a count of 0 or of 2 renders
- * exactly the plural the caller wrote.
- *
- * The narrowing rides OUTSIDE the noun, as it does everywhere in this file:
- * "1 claim in the events domain", never "1 claims in the events domain".
- */
-function countedPopulation(
-  held: number,
-  rows: string,
-  scope: readonly string[] | null,
-): string {
-  return `${count(held)} ${population(pluralise(held, singularNoun(rows), rows), scope)}`;
-}
-
-/**
- * What a DRAWN window says about its own bottom when it did NOT fill its cap —
- * the other half of quality bar 13 (admin-window/BUG-0109).
- *
- * Three of the four arms carried a `truncated === true` clause and none of them
- * carried its complement, so a window that filled and one that did not read
- * IDENTICALLY: `/cycles` showed five adapter runs against a cap of 200 — every
- * run the framework has ever recorded — under a sentence that said only "a
- * window of at most 200", and a three-day history read like the top of a long
- * one. The complement is not decoration: a read that came back under its cap
- * returned everything it matched, so the last row on screen IS the object's own
- * floor, and that is a fact only the app can state.
- *
- * **Which clause renders is decided by `truncated` and by nothing else.** That
- * flag is established where the cap actually applied — `windowOf`
- * (`lib/gauges/gauge.ts`), `readRuns` (`lib/db/runs.ts`), `drawnWindow` above —
- * never by this file comparing the rows it was handed against a number.
- */
-function didNotFill(info: DrawnWindow, rows: string): string {
-  const of = population(rows, info.scope);
-  // An empty window is still a window (ARCHITECTURE.md §4.3): the read happened
-  // and found nothing, which is a different claim from "everything is below".
-  // What it found nothing OF is the narrowed population, never the object: a
-  // `?source=` read that matched no row found no runs FROM THAT SOURCE, above
-  // an empty card that says the same (admin-window/BUG-0114).
-  if (info.held === 0) {
-    return ` The window did not fill: the read happened and found no ${of} at all.`;
-  }
-  // "nothing earlier is retained" is a claim about everything the read could
-  // have seen, so it is only ever made about the population the read covered.
-  // Unnarrowed, that is the object and the sentence is the one bar 13 wrote;
-  // narrowed, the same words carry the facet — nothing earlier FROM THAT
-  // SOURCE is retained, which is true, where the bare sentence was not
-  // (admin-window/BUG-0114).
-  const scoped = scopeWords(info.scope);
-  const earlier =
-    scoped === null ? "nothing earlier" : `nothing earlier ${scoped}`;
-  const floor =
-    info.oldest === null
-      ? ""
-      : `: ${of} recorded since ${absoluteUtc(info.oldest)}; ${earlier} is retained`;
-  return ` The window did not fill — ${count(info.held)} of at most ${count(
-    info.limit,
-  )} — so it holds all the ${of} the read found${floor}.`;
-}
-
-/**
- * THE ROW THIS WINDOW ENDS AT — `from + drawn - 1`, the last 1-based index on
- * screen — or `null` where the window states no rows on screen.
- *
- * It is the one figure the paged sentences and `readsAgree` compare a count
- * to: a count larger than the last row on screen means rows exist past this
- * window; a count equal to it means this window ends where the set does.
- * `from` absent is row 1, so an unpaged window's last row is its row count
- * and nothing about those lines moves.
- */
-function lastOnScreen(info: DrawnWindow): number | null {
-  const below = onScreen(info);
-  return below === null ? null : (info.from ?? 1) + below - 1;
-}
-
-/**
- * Is this window one the operator can MOVE — a page-windowed surface?
- *
- * On such a surface the sentences name the rows by their position in the
- * order ("rows 51–100 are below") and the first window keeps the sentence the
- * unpaged line always rendered.
- *
- * It reads the page's own statement (`DrawnWindow.continues`) and NOTHING
- * else. It used to ask whether `drawn` was present — a fact about the rows on
- * screen, standing in for a fact about a control — so the only way for a
- * surface to state what it had drawn was to claim a press it cannot make
- * (admin-window/BUG-0183, ARCHITECTURE.md §4.3 rule 4).
- */
-function pageable(info: DrawnWindow): boolean {
-  return info.continues === true;
-}
-
-/**
- * The rows that are ON SCREEN, for the clauses that name them
- * (admin-window/BUG-0174, admin-window/BUG-0183).
- *
- * ONE source and one only: `drawn`, which whoever drew the rows states — on a
- * paged surface the driver's own `held`, on an unpaged one the rows the page
- * rendered. `null` where the window states none, and then no clause names
- * them at all.
- *
- * **`limit` is not an answer here, in any arm or any state.** The cap is the
- * size of a window; it is never a description of a screen. The fallback this
- * function used to carry claimed one true use — the unpaged window, "where
- * the clause is rendered only over a read that filled" — and that gate does
- * not exist: on `/claims` the clause is gated on `truncated`, which comes from
- * a separate COUNT read and not from the rows filling the cap, so screens
- * holding 37, 10 and 49 claims all said "the 50 longest-waiting are below"
- * (admin-window/BUG-0183). The same fallback on the paged arm rendered the
- * cap's number over an exhausted screen that had appended zero rows
- * (admin-window/BUG-0174).
- */
-function onScreen(info: DrawnWindow): number | null {
-  return info.drawn ?? null;
-}
-
-/**
- * DO THIS WINDOW'S TWO READS AGREE? The ONE derivation
- * (admin-window/BUG-0174, admin-window/BUG-0180).
- *
- * A count and a window read are TWO reads (`/claims` counts the matching set
- * and draws its rows separately), and only where they agree has ONE read
- * established a relationship between them that a sentence may assert
- * (LESSONS 2). The two readings, which is the whole of the expression below:
- *
- *  - a window still offering more agrees while the count is LARGER than the
- *    last row on screen (`lastOnScreen`) — that is what makes "the rest are
- *    not shown" a statement of the count rather than an invention;
- *  - a window the read has ENDED agrees where the last row on screen IS the
- *    count, and then the set really ends where this window does.
- *
- * It decides which SENTENCE is sayable and nothing else: `truncated` keeps its
- * own one derivation (the paging state's status, LESSONS 11) and nothing here
- * re-derives it by counting rows.
- *
- * **It is EXPORTED** so the offline tier can grade the one derivation the
- * matched arm reads (admin-window/BUG-0180 closed the second copy that lived
- * in the control's terminal sentence; under page windows the control draws no
- * terminal sentence at all and reads `endsHere` beside this). It is asked of
- * the ONE `DrawnWindow` the page composed — never re-derived beside it, and
- * never a size heuristic under a new name (admin-window/BUG-0174).
- *
- * A window whose `held` counts its OWN rows has no second read to disagree
- * with, so once its read has ended (`truncated` false) `onScreen` IS `held`
- * and this answers `true` by construction — which is why `/browse` cannot
- * reach the diverged sentence at all.
- *
- * A window that states NO rows on screen answers the DISAGREE verdict: there
- * is one read here and not two, so there is no agreement to assert
- * (admin-window/BUG-0183).
- */
-export function readsAgree(info: DrawnWindow): boolean {
-  const last = lastOnScreen(info);
-  if (last === null) return false;
-  return info.truncated ? last < info.held : last === info.held;
-}
-
-/**
- * MAY THIS WINDOW SAY IT DID NOT FILL? The one place the `matched` arm's fill
- * verdict is decided (admin-window/BUG-0186).
- *
- * The verdict is the ROW read's, against its own cap, and it is never the
- * COUNT read's. `/claims` issues two reads — a count over the matching set and
- * the window that draws the rows — and the arm's gate was `truncated`, which
- * that page derives from the COUNT alone (`listCount.data > listed.length`).
- * A count that comes back SMALLER than the rows drawn turns that gate off, so
- * the did-not-fill clause rendered over a screen holding 50 claims under a cap
- * of 50, naming the count's 30: a window that drew its whole cap saying it did
- * not fill, and a sentence describing the screen with a number about something
- * else. Two screens holding 50 and 37 claims said the same thing, byte for
- * byte (measured on a988b00; the other direction of admin-window/BUG-0174 and
- * admin-window/BUG-0183's divergence, which those tickets fixed for the clause
- * next door).
- *
- * So both halves must hold, and both come from facts the window already
- * carries — no field is added and no call site passes a new prop:
- *
- *  - the window's own rows fell SHORT of its cap (`drawn < limit`, which
- *    `drawn` states since admin-window/BUG-0183) — a window that reached its
- *    cap may be hiding rows, whatever any other read says;
- *  - the two reads AGREE (`readsAgree`, the one derivation) — the clause ends
- *    by asserting that the window holds everything the read found, which is a
- *    relationship between the count and the rows, and only agreement
- *    establishes it (LESSONS 2).
- *
- * A window that states NO rows on screen answers `true`: there is ONE read
- * here and not two (`held` is that read's own rows, `heldFrom` absent meaning
- * "this window"), so there is no second read to fall short of the cap against
- * and nothing to disagree with — its sentence is the one it has always
- * rendered, which is what admin-window/BUG-0183 left standing and this ticket
- * pins byte for byte. It is asked only where the window is NOT truncated and
- * no press can continue it; the other two states are the clauses beside it.
- */
-function maySayItDidNotFill(info: DrawnWindow): boolean {
-  const below = onScreen(info);
-  if (below === null) return true;
-  return below < info.limit && readsAgree(info);
-}
-
-/**
- * How a continued window that has reached the end of its set ends — the read's
- * own verdict, in the app's voice.
- *
- * The WINDOW's own verdict, in one place: two sentences about one question
- * read as a page arguing with itself when they differ and as a stutter when
- * they agree (LESSONS 11), which is why the controls beside the line draw no
- * terminal sentence of their own under page windows.
- */
-const THE_READ_FOUND_NO_MORE = "the read found no more.";
-
-/**
- * How a continued window whose read has NOT ended the set ends, where the
- * window's two reads disagree about how many rows there are
- * (admin-window/BUG-0174).
- *
- * `THE_REST_IS_NOT_SHOWN` asserts that a rest EXISTS, which on `/claims` is
- * the COUNT's statement — true while the count is larger than the rows drawn
- * and an invention once it is not (staging's count moved 877 -> 878 between
- * two sessions of this campaign, and a stale count under a grown screen is the
- * same divergence the other way). This says only what the paging state itself
- * established: the read has not reached the end.
- */
-const THE_SET_HAS_NOT_ENDED = "the read has not said the set has ended.";
-
-/**
- * The window line a surface carries — which window, and whether it filled
- * (ARCHITECTURE.md §4.3, read kind 2: "the caller's own `.order()` +
- * `.limit()` define a NAMED window and the surface says which window it is
- * showing").
- *
- * ONE definition, for every page (admin-window/DEBT-0003, admin-window/DEBT-0006).
- * The sentence stood three times when DEBT-0003 folded it and six more times
- * outside that fold — including `/queues`'s, which stated a window in prose and
- * published no `data-window*` hook at all, so the rule below was unenforceable
- * on exactly one surface.
- *
- * **The word the sentence ends on names what the window was read over, and it
- * is not a prop.** Copies said "not the whole table" twice and "not the whole
- * view" once, which reads as one sentence and is two; DEBT-0003 folded them
- * but left the word a REQUIRED `over` prop, so the split was parameterised
- * rather than settled — `/claims` and `/sources` kept describing one and the
- * same `WindowInfo` (the pending-claims window, over `observations`) as "view"
- * and "table" (admin-window/BUG-0077). It now rides on the window itself, so
- * two call sites rendering one window cannot disagree, because neither is
- * asked.
- *
- * **The line follows the READ, not the rows**: a caller renders it on an `ok`
- * result — with rows or with none — and on no other state, so the absence of
- * the line means "this read did not happen" on every surface
- * (ARCHITECTURE.md §4.3; admin-window/BUG-0063, BUG-0067, BUG-0070, graded for
- * every surface at once in `tests/offline/absence/pages.test.ts`).
- *
- * Two call shapes, because the app makes two kinds of windowed read and their
- * sentences are not interchangeable: a SCAN takes `measured` (the app's words
- * for what it counted) and states its time bounds; a DRAWN list takes `shows`,
- * whose arm names the shape of list it is. Neither shape lets a call site
- * spell a fact of the read.
- */
-export function WindowLine(
-  props: { gauge: string } & (
-    | {
-        window: ReadWindow;
-        /** What the window is over, in the app's voice: "Cycles started", … */
-        measured: string;
-        /**
-         * What the SCAN was narrowed to, in the app's words, as a phrase that
-         * reads straight after `measured` — `"in the events domain"`, so
-         * "Claims observed" becomes "Claims observed in the events domain" —
-         * or `null`/absent where the scan covered the whole object.
-         *
-         * The same fact `DrawnWindow.scope` carries for a drawn list, and it
-         * is here for the same reason (admin-window/BUG-0163): a scan narrowed
-         * at the query is a different population from the object its sentence
-         * names, so `/claims?domain=events` moved every figure on the gauge
-         * card while this line said, to the byte, what it says over the whole
-         * table. It is filled from the SAME narrowing the query carried, never
-         * from a second reading of the URL.
-         *
-         * **It is the one narrowing declaration in this file that is
-         * OPTIONAL**, and that is a fact about this arm's other call sites
-         * rather than a licence to default it. Every DRAWN call site was
-         * converted when `scope` landed, so that one is required; the scan arm
-         * was converted surface by surface, as each surface's read was given a
-         * narrowing to declare. `/claims`' two lines pass `narrowing.scope`;
-         * `/sources`' two — the awaiting-row trend and the settled-values
-         * gauge — pass `scopeOf(<the read's own options>)`, read off the SAME
-         * object their read was handed, so the filter a read carried and the
-         * words its line says cannot come to disagree
-         * (admin-window/BUG-0194, admin-window/TASK-0073).
-         *
-         * So an omission HERE says one thing only: that read carried no
-         * narrowing. It is never a call site's licence to keep a narrowing to
-         * itself — a scan narrowed at the query is a different population from
-         * the object its sentence names, whichever page it is on.
-         */
-        scope?: readonly string[] | null;
-        /**
-         * WHAT THIS READ ANSWERS FOR — one SENTENCE the surface ends its
-         * window line on, where the page carries a facet this read does not
-         * apply (admin-window/BUG-0204).
-         *
-         * It is the complement of `scope` and never a member of it: `scope`
-         * names what the read CARRIED, this names a facet it did NOT, and the
-         * two are said in different places for that reason — a phrase in
-         * `scope` qualifies the population ("Claims observed in the events
-         * domain"), which is the one thing a dropped facet may not be made to
-         * do.
-         *
-         * `/claims`'s gauges are why it exists: they scan `observations`,
-         * which has no bucket column, so `?bucket=escalated` left an empty
-         * claim list one screen above a gauge reading 877, and the gauge's
-         * line — alone among that page's captions — said nothing about the
-         * chip standing active above it. A window line states the read
-         * (ARCHITECTURE.md §4.3), and "the read did not apply that" is a
-         * statement about the read.
-         *
-         * The WORDS are the surface's, as `measured` and `scope` are: this
-         * file owns the window's facts (its bounds, its cap, whether it
-         * filled) and never a page's vocabulary for its own facets. Absent or
-         * `null` — which is every other call site in the app — renders
-         * nothing at all, so every other window line is byte-identical to what
-         * it was.
-         */
-        answersFor?: string | null;
-        shows?: undefined;
-      }
-    | {
-        window: DrawnWindow;
-        shows: DrawnSentence;
-        measured?: undefined;
-        scope?: undefined;
-        answersFor?: undefined;
-      }
-  ),
-): ReactNode {
-  if (props.shows === undefined) {
-    const info = props.window;
-    return (
-      <WindowParagraph gauge={props.gauge} window={info}>
-        {/* The narrowing rides through the same `population` the drawn arms'
-            clauses use, so a scan and a list state one narrowing in one
-            spelling, and an unnarrowed scan renders the sentence it always
-            did, to the byte. */}
-        {population(props.measured, props.scope ?? null)} since{" "}
-        {absoluteUtc(info.since)}, read to {absoluteUtc(info.until)} — a window
-        of at most {count(info.limit)} rows, not the whole {info.over}.
-        {info.truncated
-          ? " The window filled its cap, so every count here is a floor."
-          : ""}
-        {/* Last, and after the cap clause: the facts of the READ are stated
-            first and in one place, and what the read answers for is the
-            sentence a reader is left holding (admin-window/BUG-0204). */}
-        {props.answersFor === undefined || props.answersFor === null
-          ? ""
-          : ` ${props.answersFor}`}
-      </WindowParagraph>
-    );
-  }
-
-  const info = props.window;
-  const shows = props.shows;
-  if (shows.of === "newest") {
-    return (
-      <WindowParagraph gauge={props.gauge} window={info}>
-        {shows.lede} — a window of at most {count(info.limit)}, not a count of
-        the {population(shows.rows, info.scope)} that exist.
-        {info.truncated
-          ? // Arm-generic, because the arm is: `newest` is "the newest N rows
-            // of an object, newest first", and the object may be cycles, runs
-            // or verdicts. The clause said "older X ran than the ones below",
-            // which is true of a resolver cycle and false of every other
-            // newest-first window the arm serves (admin-window/TASK-0058).
-            ` The window filled its cap, so ${population(
-              shows.rows,
-              info.scope,
-            )} older than the ones below are not shown.`
-          : didNotFill(info, shows.rows)}
-        {info.truncated && shows.more !== undefined ? ` ${shows.more}` : ""}
-      </WindowParagraph>
-    );
-  }
-  if (shows.of === "matched") {
-    // A window the operator can MOVE states which rows are below it, and
-    // takes its held-back verdict from `truncated` alone (admin-window/BUG-0172,
-    // admin-window/BUG-0174; page windows since 2026-10-16). The count and the
-    // rows are TWO reads (`/claims` counts the matching set and draws the
-    // window separately), so where they disagree each is stated as its own
-    // read and no clause asserts a relationship between them that no single
-    // read established (LESSONS 2).
-    const of = population(shows.rows, info.scope);
-    // This clause names ONE narrowing in its own words — the filters — and
-    // takes every other one from the window (admin-window/BUG-0118), and only
-    // when they are SET (admin-window/BUG-0123). AGREEMENT is
-    // `countedPopulation`'s (campaign admin-window/DEBT-0022).
-    const counted = narrows(info.scope, NARROWED_BY_FILTERS)
-      ? `${countedPopulation(
-          info.held,
-          shows.rows,
-          besides(info.scope, NARROWED_BY_FILTERS),
-        )} ${pluralise(info.held, "matches", "match")} these filters`
-      : `${countedPopulation(info.held, shows.rows, info.scope)} in all`;
-    // The rows that are below, from the rows this window DREW and never from
-    // the cap (admin-window/BUG-0183). A window that states none names none.
-    const below = onScreen(info);
-    // A window that drew NO ROWS names none either, and holds nothing back
-    // (admin-window/BUG-0197): the line states what the COUNT read found and
-    // stops.
-    const holdsBack =
-      below === null
-        ? ""
-        : below === 0
-          ? ` ${counted}.`
-          : ` ${counted}; the ${count(below)} longest-waiting are below — ${THE_REST_IS_NOT_SHOWN}`;
-
-    // What the line says where `didNotFill` may not speak: EACH READ AS ITS
-    // OWN FACT (admin-window/BUG-0186), and then the rows against their cap.
-    const eachReadsOwnFact =
-      below === null
-        ? ""
-        : readsAgree(info)
-          ? ` ${counted}, and every one of them is below. ${rowsAgainstCap(
-              below,
-              info.limit,
-            )}`
-          : ` A count of ${of} answered ${count(info.held)}. ${rowsAgainstCap(
-              below,
-              info.limit,
-            )}`;
-
-    const capClause = ` A window of at most ${count(info.limit)} rows, not the whole ${info.over}.`;
-    if (below === null || !pageable(info)) {
-      // Unchanged, element for element and byte for byte: every window no
-      // move can reach — the unpaged surface, and the paged surface's
-      // not-provisioned, refused and empty-first-window arms.
-      return (
-        <WindowParagraph gauge={props.gauge} window={info}>
-          {shows.lede}
-          {capClause}
-          {info.truncated
-            ? holdsBack
-            : maySayItDidNotFill(info)
-              ? didNotFill(info, shows.rows)
-              : eachReadsOwnFact}
-        </WindowParagraph>
-      );
-    }
-
-    // A PAGE-WINDOWED surface: the rows below are named by their position in
-    // the order, from the window the paging state drew. `from` is stated by
-    // that state (ARCHITECTURE.md §4.3 rule 4); the last row is derived from
-    // it and the rows drawn, by the one function `readsAgree` reads too.
-    const from = info.from ?? 1;
-    const last = lastOnScreen(info) ?? from;
-    const agree = readsAgree(info);
-    // `truncated` here is the surface's one verdict on whether the set ends
-    // with this window — the read's short answer, or the count reached
-    // (`endsHere`, `./paging.tsx`) — so an ended window never attributes
-    // the end to one read: it says the set ends, or it states each read and
-    // stops.
-    let verdict: string;
-    if (below === 0) {
-      // An EMPTY WINDOW is still a window (§4.3): the read happened, at a
-      // position the address named, and found nothing there. The count is
-      // stated as the count's own fact beside it, and nothing ranks anything.
-      verdict = ` ${counted}; the read at rows ${count(from)}–${count(
-        from + info.limit - 1,
-      )} found none.`;
-    } else if (!info.truncated && from === 1 && agree) {
-      // The whole set is on this one window: the sentence the unpaged line
-      // has always rendered, to the byte — a short window says it did not
-      // fill, a full one that every claim the count found is below it.
-      verdict =
-        below < info.limit
-          ? didNotFill(info, shows.rows)
-          : ` ${counted}, and every one of them is below. ${rowsAgainstCap(below, info.limit)}`;
-    } else if (agree) {
-      verdict = info.truncated
-        ? ` ${counted}; rows ${count(from)}–${count(last)} are below — ${THE_REST_IS_NOT_SHOWN}`
-        : ` ${counted}; rows ${count(from)}–${count(last)} are below, and the set ends with them.`;
-    } else {
-      // Where they disagree, each read is stated as its own and nothing
-      // asserts a relationship between them (admin-window/BUG-0174) — and an
-      // ended window claims no end for either read.
-      verdict = info.truncated
-        ? ` A count of ${of} answered ${count(info.held)}; the read returned rows ${count(
-            from,
-          )}–${count(last)} below, and ${THE_SET_HAS_NOT_ENDED}`
-        : ` A count of ${of} answered ${count(info.held)}; the read returned rows ${count(
-            from,
-          )}–${count(last)} below.`;
-    }
-    return (
-      <WindowParagraph gauge={props.gauge} window={info}>
-        {shows.lede}
-        {capClause}
-        {verdict}
-      </WindowParagraph>
-    );
-  }
-  if (shows.of === "alphabetical") {
-    return (
-      <WindowParagraph gauge={props.gauge} window={info}>
-        The first {count(info.limit)} {population(shows.rows, info.scope)} by
-        name — a window, not the whole {info.over}.
-        {info.truncated
-          ? ` The window filled its cap, so ${population(
-              shows.rows,
-              info.scope,
-            )} later in the alphabet are not in it.`
-          : didNotFill(info, shows.rows)}
-      </WindowParagraph>
-    );
-  }
-  // The clauses of a catalog window, and which read produces each
-  // (admin-window/BUG-0172, admin-window/BUG-0174; page windows since
-  // 2026-10-16). A window nothing has moved — the unpaged line and the FIRST
-  // window of a paged surface — says whether it filled, exactly as it always
-  // has, cap clause included. A window the operator moved TO states which
-  // rows are below by their position in arrival order and no cap of its own
-  // beyond the window's size; where the read has said the set ends inside it,
-  // it says so.
-  const catalogOf = population(shows.rows, info.scope);
-  const catalogBelow = onScreen(info);
-  const catalogFrom = info.from ?? 1;
-  const catalogCap = ` — a window of at most ${count(info.limit)}, not the whole catalog.`;
-  if (catalogBelow === null || !pageable(info) || (catalogFrom === 1 && catalogBelow > 0)) {
-    return (
-      <WindowParagraph gauge={props.gauge} window={info}>
-        {/* The cap is stated as a cap ("at most"), not as the row count
-            (admin-window/BUG-0109). */}
-        The newest {catalogOf} by arrival, newest first
-        {catalogCap}
-        {info.truncated
-          ? ` The window filled its cap, so ${catalogOf} that arrived before the ones below are not shown.`
-          : didNotFill(info, shows.rows)}
-      </WindowParagraph>
-    );
-  }
-  const catalogLast = lastOnScreen(info) ?? catalogFrom;
-  return (
-    <WindowParagraph gauge={props.gauge} window={info}>
-      The newest {catalogOf} by arrival, newest first
-      {catalogCap}
-      {catalogBelow === 0
-        ? // An EMPTY WINDOW is still a window: the read happened at the rows
-          // the address named and found nothing there.
-          ` The read at rows ${count(catalogFrom)}–${count(
-            catalogFrom + info.limit - 1,
-          )} found no ${catalogOf} — ${THE_READ_FOUND_NO_MORE}`
-        : info.truncated
-          ? ` Rows ${count(catalogFrom)}–${count(catalogLast)} are below, and ${catalogOf} that arrived before them are not shown.`
-          : ` Rows ${count(catalogFrom)}–${count(catalogLast)} are below — ${THE_READ_FOUND_NO_MORE}`}
-    </WindowParagraph>
-  );
 }

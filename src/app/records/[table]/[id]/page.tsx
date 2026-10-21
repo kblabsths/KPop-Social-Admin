@@ -15,7 +15,6 @@ import {
   writePathFor,
   type TableEditConfig,
 } from "@/lib/edit/config";
-import { EM_DASH, counted } from "@/lib/format";
 import { isRecordId } from "@/lib/records/id";
 
 /**
@@ -84,79 +83,6 @@ import { isRecordId } from "@/lib/records/id";
  */
 
 /**
- * What the operator is told about how this table is written — the regime's
- * consequence, in the app's voice, and the same distinction the write path
- * makes (`writePathFor` in `src/lib/edit/config.ts`).
- *
- * The direct line states the provenance fact plainly: `field_provenance`
- * carries rows for resolver-owned entities and this table has none, so no
- * source stands beside its values. That is a fact about the data, not a
- * placeholder value in the provenance slot — and it is said ONCE per record
- * rather than repeated on every line, which is what Ben confirmed on
- * admin-window/TASK-0025 (2026-09-02: keep this rendering; the resolver-owned
- * tables get real per-field provenance, admin-window/TASK-0029).
- *
- * **It no longer says "to the catalog", and that is the point of the rename**
- * (ARCHITECTURE §9.1 item 5, re-ruled 2026-09-08). The only table left with a
- * direct write is the walk sandbox, a staging-only fixture in nobody's
- * ecosystem domain: a value written there reaches no catalog and never did,
- * and the old wording was an inaccuracy the regime name was carrying. Since
- * Ben's strike, no catalog table has a direct write path at all.
- *
- * **The table's NAME is not in this string** (admin-window/BUG-0112). A table
- * name is a value the database produced, not a word the app wrote, so it is
- * drawn by the caller in the app's one identifier-in-prose spelling — the same
- * one `NotProvisioned` gives the table it names and `Page` gives this page's
- * own heading — and what this function returns is only the words the app wrote
- * about it. The sentence on screen is unchanged: it still opens with the name,
- * followed by these words.
- *
- * **The override sentence is said only where the override path is OPEN**
- * (admin-window/BUG-0205, from the M3 user-sim walk of Tomas Berg). It
- * describes a control — "an edit here is recorded as an admin override" — in
- * the present tense, and this note used to say it unconditionally, one
- * paragraph above `OVERRIDE_UNAVAILABLE` saying no field here can be edited.
- * The sim read the first, went looking for the control, found none, and
- * learned from the second that there was never one to find. Both sentences are
- * true; the closed one was second. So while the path is closed the note stops
- * after the ownership sentence — which is a fact about the REGIME and stays
- * true in every state — and `OVERRIDE_UNAVAILABLE` carries what an edit would
- * be, first, together with the reason there is none. Where the path is open
- * the string is byte-identical to what it always was: when `verdicts` lands,
- * the override sentence is exactly right and comes back with it.
- */
-function regimeNote(
-  config: TableEditConfig,
-  /**
-   * Has this page ESTABLISHED that the override path is closed? False wherever
-   * it has not asked — a malformed address, a failed read, a row that is not
-   * there — because the note may not claim the path is shut on a question
-   * nobody put to the database. It is only ever true beside the paragraph that
-   * says so, from the one derivation both of them read.
-   */
-  overrideClosed: boolean,
-): string {
-  if (writePathFor(config.regime) === "direct") {
-    return (
-      `is a staging fixture table, edited directly: a value ` +
-      `changed here is written to it as it stands and reaches no catalog ` +
-      `record. No field provenance is recorded for it, so no source is ` +
-      `shown beside a value.`
-    );
-  }
-  const ownership =
-    `is resolver-owned: its values change through the ` +
-    `resolution pipeline, never by a direct edit.`;
-  return overrideClosed
-    ? ownership
-    : ownership +
-        ` An edit here is ` +
-        `recorded as an admin override — a claim at the admin tier, ` +
-        `applied through the pipeline and logged — and the pipeline then ` +
-        `leaves that field alone.`;
-}
-
-/**
  * What stands in for the controls when the override path is CLOSED — campaign
  * admin-window/TASK-0054, FEAT-0011 criterion 2.
  *
@@ -182,118 +108,6 @@ const OVERRIDE_UNAVAILABLE =
   "No field here can be edited: an edit is recorded through the resolution " +
   "pipeline, and what records it is not present in this database. Every " +
   "value below is read-only until it is.";
-
-/**
- * What an EMPTY provenance cell means, said once above the table — campaign
- * admin-window/BUG-0053.
- *
- * The resolver-owned branch of `regimeNote` explains how the values are
- * written and says nothing about the column beside them, so a record whose
- * fields carry no `field_provenance` row rendered a whole column of the app's
- * absence marker with no line anywhere saying what one means. Both
- * document-blind user-sims reached that independently (2026-09-03): one read
- * the column as "we lost the data", the other worked the meaning out only by
- * opening a SECOND event and comparing. The dash itself is right — it is the
- * Look's mandated null rendering — so what was missing is a legend, not a
- * state change, and the field table keeps its rows.
- *
- * Three things about it are deliberate:
- *
- *  - it is a statement about a CELL, not about this record, so it stays true
- *    on a record where three of six fields are sourced and three are not (the
- *    contrast case the sim hit). It never varies with the data, which is what
- *    makes it a legend rather than a verdict the rows could contradict;
- *  - it is said ONCE, above the table, beside the regime note — never per row,
- *    and never in place of the `—` (Ben's ruling on admin-window/TASK-0025:
- *    the reason stands with the record, not repeated on every line);
- *  - it is only said when the provenance leg ANSWERED. A leg that refused or
- *    found no table produces the same column of dashes for a completely
- *    different reason, and `LegNote` already says that reason in the
- *    database's own words; claiming "no row stands behind this value" over a
- *    read that never happened would be the page inventing a fact.
- *
- * It says nothing on a directly-written table: `regimeNote` already explains that
- * column there ("No field provenance is recorded for it"), and the asymmetry
- * this ticket is about was that the branch needing no explanation had one.
- *
- * It says "field provenance" in prose rather than naming the table, exactly as
- * the direct-write note two functions up does. That is not squeamishness about
- * a machine identifier: on THIS page the string `field_provenance` is what a
- * failed or unprovisioned leg prints (`LegNote`), and an operator who has
- * learned that the table name appears when something went wrong should not
- * meet it in a line about the ordinary case.
- */
-function ProvenanceLegend() {
-  return (
-    <p data-note="provenance-absence" className="type-body text-ink-secondary">
-      A{" "}
-      {EM_DASH}
-      {" "}in Provenance means no field provenance is recorded for that field:
-      the value has no source behind it, rather than a source this page failed
-      to read.
-    </p>
-  );
-}
-
-/**
- * What the field table below is a table OF, said once above it — campaign
- * admin-window/BUG-0126, from both M2 user-sims.
- *
- * The page draws the columns the ONE map names for this table (`mappedColumns`,
- * Ben's ruling of 2026-09-02) plus whatever else the read handed back, and it
- * used to say nothing about that being a set. So three states shared the one
- * rendering the Feel's Emptiness principle forbids them to share — nothing on
- * the page: a column that is null (which does have a line, and a dash in it), a
- * column this window deliberately does not draw, and a column the database does
- * not have. Priya was shown a `venues.timezone` claim on the signal page and
- * then found no timezone line on the venue record; Devin found no line for
- * `events.status` a page after Cycles had shown him `column "venue" does not
- * exist`. Neither could tell which of the three they were looking at.
- *
- * The subset itself is right and is not what changed here. What was missing is
- * a legend, exactly as it was for the dash one column over (`ProvenanceLegend`,
- * admin-window/BUG-0053), and this is that legend for the table as a whole.
- *
- * Four things about it are deliberate:
- *
- *  - the figure is the number of lines the table ACTUALLY DREW, handed in from
- *    the same array the table is built from — never `mappedColumns(config)`
- *    recited a second time. A read that hands back a column outside the map
- *    draws a read-only line for it (`fields.ts`), and a sentence reciting the
- *    map would then state a number one short of the rows on screen (LESSONS 2:
- *    a figure reads the same narrowing the surface renders);
- *  - it names NO column. Not the drawn ones — they are on screen, and the line
- *    is a statement about the set, not a second copy of it — and above all not
- *    the absent ones: this page never read them, so it has no source for their
- *    names, their number, or why they are out. Saying any of that would be the
- *    page inventing a fact about a read it did not make;
- *  - the closing clause is about what the ABSENCE of a line means, and stops
- *    exactly there. "This page does not draw it" is a fact about the window; a
- *    claim that the column exists, or does not, would be a fact about the
- *    database that nothing here established;
- *  - it stands only where a field table stands. A failed read, an absent table,
- *    an unknown id and a malformed address draw no lines at all, and a sentence
- *    about the columns below it would describe nothing on screen — the same
- *    gate the dash legend keeps, for the same reason. It rides INSIDE the body
- *    it describes so the two cannot come apart.
- */
-function DrawnColumns({
-  config,
-  drawn,
-}: {
-  config: TableEditConfig;
-  /** How many lines the table below this sentence draws. */
-  drawn: number;
-}) {
-  return (
-    <p data-note="drawn-columns" className="type-body text-ink-secondary">
-      {`These ${counted(drawn, "column")} are the ones Admin works with for `}
-      <Identifier>{config.table}</Identifier>
-      {`: a column with no line here is one this page does not draw, and its ` +
-        `absence says nothing about what the database holds.`}
-    </p>
-  );
-}
 
 /**
  * What actually fills a record page the operator asked for by id and did not
@@ -403,21 +217,11 @@ function notAnId(config: TableEditConfig): ReactNode {
 function RecordFrame({
   config,
   id,
-  overrideClosed,
   children,
 }: {
   config: TableEditConfig;
   /** The id segment as the URL carried it, whether or not it is an id. */
   id: string;
-  /**
-   * Has the page established that this record's override path is CLOSED? The
-   * frame composes the regime note and the page owns the settlement answer, so
-   * the fact travels as one prop from the one derivation that also gates the
-   * paragraph naming the closure (admin-window/BUG-0205, LESSONS 11: one row,
-   * one verdict). A frame that was never told renders the regime in full,
-   * which is what every state that asked the database nothing gets.
-   */
-  overrideClosed: boolean;
   children: ReactNode;
 }) {
   // The table name is a machine identifier, so it is handed to `Page` as one —
@@ -448,10 +252,6 @@ function RecordFrame({
             empty cards' — now reads alike, from the shared `Identifier`
             primitive (LOOK_AND_FEEL Voice bar 5; admin-window/BUG-0112,
             admin-window/DEBT-0011). */}
-        <p data-note="regime" className="type-body text-ink-secondary">
-          <Identifier>{config.table}</Identifier>{" "}
-          {regimeNote(config, overrideClosed)}
-        </p>
         {children}
       </Section>
     </Page>
@@ -487,7 +287,7 @@ export default async function RecordPage({
       // knows whether the override path is open (admin-window/BUG-0205): the
       // regime note stays whole, and no line on this state describes a control
       // for a record that is not on screen at all.
-      <RecordFrame config={config} id={id} overrideClosed={false}>
+      <RecordFrame config={config} id={id}>
         <Empty
           holds={
             <>
@@ -578,7 +378,6 @@ export default async function RecordPage({
     );
     body = (
       <>
-        <DrawnColumns config={config} drawn={fields.length} />
         <RecordFields
           table={config.table}
           id={id}
@@ -589,11 +388,6 @@ export default async function RecordPage({
     );
   }
 
-  // The legend under the regime note explains the column the table draws, so
-  // it stands only when there IS such a table and the provenance leg answered
-  // for it — see `ProvenanceLegend`.
-  const provenanceLegend =
-    config.regime === "resolver_owned" && provenance.note === null && record !== null;
 
   // Derived ONCE and read twice: the paragraph below names the closure, and the
   // regime note above it stops before describing an override while it holds —
@@ -602,7 +396,7 @@ export default async function RecordPage({
   const overrideClosed = settlement !== null && settlement.kind !== "ok";
 
   return (
-    <RecordFrame config={config} id={id} overrideClosed={overrideClosed}>
+    <RecordFrame config={config} id={id}>
       {overrideClosed ? (
         <>
           <p
@@ -614,7 +408,6 @@ export default async function RecordPage({
           <StateOf result={settlement} />
         </>
       ) : null}
-      {provenanceLegend ? <ProvenanceLegend /> : null}
       {provenance.note ? <StateOf result={provenance.note} /> : null}
       {reference.note ? <StateOf result={reference.note} /> : null}
       {choices?.note ? <StateOf result={choices.note} /> : null}

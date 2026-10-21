@@ -313,32 +313,27 @@ export function AdapterRuns({
         <WindowLine
           gauge={RUNS_WINDOW}
           window={{
-            limit,
-            held: rows.length,
-            truncated,
-            over,
-            // The read is newest-first, so the LAST row is the oldest run it
-            // came back with. On a window that did not fill, that row is the
-            // object's own floor rather than the window's, and the line says
-            // so — five runs against a cap of 200 are every run recorded, not
-            // the top of a long list (admin-window/BUG-0109).
-            oldest: oldestIn(rows, (row) => row.started_at),
-            // What the read was narrowed to, taken from the read itself. A
-            // `?source=` window holds every run of ONE source, so the floor it
-            // names is that source's and never the table's — the table
-            // retains older runs from other sources and this same page
-            // renders them without the facet (admin-window/BUG-0114).
-            // One phrase, composed through the app's one scope composer
-            // rather than handed over as a bare string: a window's scope is a
-            // phrase LIST, and this read carries exactly one narrowing or none
-            // (admin-window/TASK-0072).
-            scope: narrowedTo([runsScope(runs.data.source)]),
-          }}
-          shows={{
-            of: "newest",
-            lede: "The adapters’ newest runs, newest first",
-            rows: "runs",
-          }}
+              limit,
+              held: rows.length,
+              truncated,
+              over,
+              // The read is newest-first, so the LAST row is the oldest run it
+              // came back with. On a window that did not fill, that row is the
+              // object's own floor rather than the window's, and the line says
+              // so — five runs against a cap of 200 are every run recorded, not
+              // the top of a long list (admin-window/BUG-0109).
+              oldest: oldestIn(rows, (row) => row.started_at),
+              // What the read was narrowed to, taken from the read itself. A
+              // `?source=` window holds every run of ONE source, so the floor it
+              // names is that source's and never the table's — the table
+              // retains older runs from other sources and this same page
+              // renders them without the facet (admin-window/BUG-0114).
+              // One phrase, composed through the app's one scope composer
+              // rather than handed over as a bare string: a window's scope is a
+              // phrase LIST, and this read carries exactly one narrowing or none
+              // (admin-window/TASK-0072).
+              scope: narrowedTo([runsScope(runs.data.source)]),
+            }}
         />
       ) : null}
       {/* The facet sentence answers the URL, so it renders whatever the read
@@ -396,19 +391,6 @@ export function AdapterRuns({
           />
         )}
       </div>
-      {/* What the columns mean — for a table that is on screen. With no window
-          read there is nothing for it to explain. */}
-      {runs.kind === "ok" ? (
-        <p className="type-body text-ink-secondary">
-          A run with no end is still going: the row is written when the adapter
-          wakes and nothing rewrites it, so no completion is guessed.{" "}
-          <Identifier>failure_class</Identifier>{" "}
-          says whose problem a failure is, and{" "}
-          <Identifier>source</Identifier>{" "}
-          is the run&rsquo;s own text — a run filed under a name the registry
-          does not carry still appears here.
-        </p>
-      ) : null}
     </Section>
   );
 }

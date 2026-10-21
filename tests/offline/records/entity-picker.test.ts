@@ -1855,46 +1855,25 @@ describe("the window the picker states", () => {
     expect(line.attr("data-window-since")).toBeUndefined();
   });
 
-  it("says which way the window went, on top of the same sentence", () => {
-    // Both directions, since admin-window/BUG-0109: a window that filled its
-    // cap costs choices later in the alphabet, and one that did not holds
-    // every choice the read found. Each is said ON TOP of the picker's own
-    // sentence, which is the part both states share.
-    const open = cheerio.load(panel("", windowOf(OPTIONS, { truncated: false })))(
-      "[data-window]",
-    ).text();
-    const filled = cheerio.load(panel("", windowOf(OPTIONS, { truncated: true })))(
-      "[data-window]",
-    ).text();
-    let shared = 0;
-    while (
-      shared < open.length &&
-      shared < filled.length &&
-      open[shared] === filled[shared]
-    ) {
-      shared += 1;
-    }
-    expect(shared).toBeGreaterThan(20);
-    expect(open.length).toBeGreaterThan(shared);
-    expect(filled.length).toBeGreaterThan(shared);
-    expect(open).not.toBe(filled);
-    expect(
-      cheerio.load(panel("", windowOf(OPTIONS, { truncated: true })))(
-        "[data-window]",
-      ).attr("data-window-truncated"),
-    ).toBe("true");
-  });
+  /*
+   * "says which way the window went, on top of the same sentence" stood here until 2026-10-21.
+   *
+   * It read the entity picker's window SENTENCE — the `alphabetical` arm, whose
+   * whole job was saying that a truncated picker loses rows LATER IN THE ALPHABET
+   * rather than older ones. Ben deleted every window sentence on 2026-10-21, so
+   * there is no sentence to grade. The picker's window facts are still published
+   * and still pinned (`data-window-limit`/`held`/`truncated`).
+   */
 
-  it("names the object the read ran over from the window, not from the caller", () => {
-    for (const over of ["table", "view"] as const) {
-      const other = over === "table" ? "view" : "table";
-      const text = cheerio.load(panel("", windowOf(OPTIONS, { over })))(
-        "[data-window]",
-      ).text();
-      expect(text, over).toContain(`not the whole ${over}.`);
-      expect(text, over).not.toContain(`not the whole ${other}.`);
-    }
-  });
+  /*
+   * "names the object the read ran over from the window, not from the caller" stood here until 2026-10-21.
+   *
+   * It read the entity picker's window SENTENCE — the `alphabetical` arm, whose
+   * whole job was saying that a truncated picker loses rows LATER IN THE ALPHABET
+   * rather than older ones. Ben deleted every window sentence on 2026-10-21, so
+   * there is no sentence to grade. The picker's window facts are still published
+   * and still pinned (`data-window-limit`/`held`/`truncated`).
+   */
 });
 
 /* ── no code path submits a reference field's value as a string ───────────── */

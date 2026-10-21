@@ -15,11 +15,9 @@ import {
   DataTable,
   DroppedParamsLine,
   Empty,
-  Identifier,
   Page,
   Section,
   StateOf,
-  narrowedTo,
 } from "@/components/ui";
 import { canonicalRecordId } from "@/lib/records/id";
 import {
@@ -32,9 +30,7 @@ import { readAwaitingRowTrend } from "@/lib/gauges/pending-claims";
 import { readRejectionStampGauge } from "@/lib/gauges/settled-values";
 import { sourceNamesOf } from "@/lib/sources/names";
 import {
-  SOURCES_NARROWING_FACETS,
   SOURCE_FACET,
-  type SourceNarrowing,
 } from "@/lib/sources/routes";
 // The narrowing vocabulary itself — the SHAPE of a facet table and the two
 // functions over it — from the leaf that owns URL meaning, so this page and
@@ -43,8 +39,6 @@ import {
 // `lib/sources/routes.ts`; nothing of the phrase is written here.
 import {
   isSurfaceNarrowed,
-  unchippedNarrowings,
-  unchippedPhrase,
 } from "@/lib/url/narrowing";
 // What the URL asked for that this page did not do, from the ONE module that
 // owns that rule for every route (admin-window/BUG-0141). Imported, never
@@ -171,33 +165,6 @@ function filterFrom(params: SearchParams): SourcesFilter {
 }
 
 /* ── the narrowing the WINDOW LINES name ────────────────────────── */
-
-/**
- * What a windowed read was NARROWED TO, as the phrases its window line says —
- * `null` for a read that covered the whole object (campaign
- * admin-window/TASK-0073, SPEC F15).
- *
- * Asked of the filter that read was GIVEN, never of the URL: a window line
- * states the read that HAPPENED (ARCHITECTURE.md §4.3), so a facet this page
- * dropped — `?source_id=` carrying something that is not a uuid, or a
- * parameter this route does not read at all — never reaches a filter and so
- * appears in no scope, and a facet that did reach one appears in every line
- * whose read carried it and in no line whose read did not. Nothing here asks
- * what came back: a narrowed scan that returned no rows still names its
- * narrowing, exactly as `/claims`' gauge line does
- * (admin-window/BUG-0163, admin-window/BUG-0123).
- *
- * Every word of it is imported. The phrase SHAPE and its composition are
- * `lib/url/narrowing.ts`' and `components/ui/window-line.tsx`'; the facet
- * table is this surface's own, in `lib/sources/routes.ts`. This page writes no
- * narrowing sentence and neither does `components/sources/trends.tsx` — the
- * two lines are handed the answer (LESSONS 5).
- */
-function scopeOf(given: SourceNarrowing): readonly string[] | null {
-  return narrowedTo(
-    unchippedNarrowings(given, SOURCES_NARROWING_FACETS).map(unchippedPhrase),
-  );
-}
 
 /* ── the page ────────────────────────────────────────────────────────────── */
 
@@ -345,14 +312,6 @@ export default async function SourcesPage({
                 sources.kind === "error" ? <StateOf result={sources} /> : undefined
               }
             />
-            <p className="type-body text-ink-secondary">
-              State, not configuration: what the registry holds about a source —
-              its description, the domains it feeds, its dials and its legal
-              status — lives in the scraper repo and is not read here. Tier is
-              the source&rsquo;s current tier, which drifts. Last run is the
-              newest run whose <Identifier>source</Identifier>{" "}
-              name matches this row; a source that has never run shows no run.
-            </p>
           </>
         )}
       </Section>
@@ -363,7 +322,6 @@ export default async function SourcesPage({
             trend={trend.data}
             filter={filter}
             names={names}
-            scope={scopeOf(awaitingRead.filter)}
           />
         ) : (
           <StateOf result={trend} eyebrow={AWAITING_LABEL} />
@@ -375,7 +333,6 @@ export default async function SourcesPage({
           <RejectionSection
             gauge={rejections.data}
             filter={filter}
-            scope={scopeOf(rejectionsRead.filter)}
           />
         ) : (
           <StateOf result={rejections} eyebrow={REJECTION_LABEL} />
