@@ -564,3 +564,61 @@ function canonicalSideOf(
     },
   };
 }
+
+/* ── the source's own listing ─────────────────────────────────────────────── */
+
+/** One source's listing for an event: who published it, and where. */
+export interface EventListingRow {
+  event_id: string;
+  source: string;
+  source_url: string | null;
+}
+
+const EVENT_LISTING_COLUMNS = ["event_id", "source", "source_url"] as const;
+
+/**
+ * Where each source PUBLISHED an event — `event_sources.source_url`, the
+ * schema's "Direct URL to the event page on the source platform".
+ *
+ * Ben, 2026-10-21: *"Probably the most valuable information is a link to the
+ * actual Ticketmaster listing. Do we have that available?"* We do, for an
+ * event that exists: `event_sources` is one row per source per event and
+ * `event_id` is NOT NULL, so this answers for a review item whose subject is a
+ * canonical event and answers nothing for one opened before the row exists.
+ * That limit is the table's, not this function's, and the caller renders no
+ * link rather than inventing one (LOOK_AND_FEEL bar 10's honest half).
+ *
+ * `readRowsByIds`, for the reason `readSourceNames` is: the caller asked about
+ * a named id, there is nothing to be partial about, and **a refusal here costs
+ * a LINK and nothing else** — every claim, value and verdict control on the
+ * page still renders, and the refusal is reported where the link would have
+ * been. No ids means no round trip.
+ *
+ * A row whose `source_url` is null is a real answer and kept: it says this
+ * source published the event and recorded no address, which is different from
+ * "no source published it".
+ */
+export function readEventListings(
+  eventIds: readonly string[],
+  db?: SupabaseClient,
+): Promise<DbResult<EventListingRow[]>> {
+  return readRowsByIds<EventListingRow>(
+    T.eventSources,
+    EVENT_LISTING_COLUMNS,
+    eventIds,
+    (client, chunkIds) =>
+      client
+        .from(T.eventSources)
+        .select(selectList(EVENT_LISTING_COLUMNS))
+        .in("event_id", chunkIds)
+        // One row per SOURCE per event, so the cap is the id count times the
+        // registry's size rather than the id count. Spelled as a generous
+        // multiple rather than a join on `sources`: this leg may not refuse a
+        // listing because a source appeared, and a truncated read here would
+        // silently drop a source's link.
+        .limit(chunkIds.length * 32) as unknown as PromiseLike<
+        DbResponse<EventListingRow[]>
+      >,
+    db,
+  );
+}

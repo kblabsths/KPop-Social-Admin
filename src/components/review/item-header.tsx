@@ -56,6 +56,17 @@ export interface ItemLink {
   label: string;
   href: string;
   /**
+   * Does this leave the app?
+   *
+   * The first links here that do: a source's own listing for the event
+   * (`event_sources.source_url`, Ben 2026-10-21). An external destination
+   * opens in a new tab and carries `rel="noreferrer noopener"` — the operator
+   * is mid-decision and must not lose the page, and a source platform has no
+   * business being handed this app's address. Absent or false is every
+   * in-app link, which is unchanged.
+   */
+  external?: boolean;
+  /**
    * WHAT it is narrowed to, as the app names it — shown beside the label.
    *
    * The caller resolves it, and this component prints exactly what it is
@@ -167,6 +178,9 @@ export function ItemHeader({
               key={link.href}
               href={link.href}
               data-out={link.href}
+              data-external={link.external === true ? "true" : undefined}
+              target={link.external === true ? "_blank" : undefined}
+              rel={link.external === true ? "noreferrer noopener" : undefined}
               className={IN_PAGE_LINK}
             >
               {link.label}

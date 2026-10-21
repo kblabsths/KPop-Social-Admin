@@ -26,7 +26,6 @@ import {
   factColumn,
   heldColumn,
   observedColumn,
-  payloadColumn,
   recordColumn,
   sourceColumn,
   statusColumn,
@@ -305,7 +304,6 @@ function ConflictEvidence({
           tierColumn,
           observedColumn,
           statusColumn,
-          payloadColumn,
         ]}
         label="Contending claims"
         empty={empty}
@@ -377,7 +375,6 @@ function StuckFactEvidence({
           tierColumn,
           observedColumn,
           heldColumn,
-          payloadColumn,
         ]}
         label="Stuck claims"
         empty={empty}
@@ -499,23 +496,15 @@ function PatternEvidence({
       className="grid gap-4 lg:grid-cols-[2fr_1fr]"
     >
       <div className="flex min-w-0 flex-col gap-3">
-        <Lede>
-          {rendersClaimsTable(rows) ? (
-            <>
-              One source, many records stuck the same way. The table holds the
-              claims behind this item&rsquo;s evidence ids; the source&rsquo;s own dial is
-              beside it. There is no canonical value to stand them against — the
-              subject is the source, not a fact.
-            </>
-          ) : (
-            <>
-              One source, many records stuck the same way. Below is what this
-              item&rsquo;s evidence ids resolved to; the source&rsquo;s own dial is beside
-              it. There is no canonical value to stand a claim against — the
-              subject is the source, not a fact.
-            </>
-          )}
-        </Lede>
+        {/* Trimmed to the one fact on 2026-10-21, under Ben's standing rule
+            about descriptive sentences ("remove as much of the random
+            descriptive sentences as possible… and anything else that is
+            similar to these across the website"). Both arms said the same
+            three things in two wordings: that the subject is the source, what
+            the table below holds, and that there is no canonical value to
+            compare against. The first is the only one a reader cannot see for
+            themselves — the table is right there and its heading names it. */}
+        <Lede>One source, many records stuck the same way.</Lede>
         <ClaimRows
           rows={rows}
           columns={[
@@ -528,8 +517,7 @@ function PatternEvidence({
             sourceColumn,
             tierColumn,
             observedColumn,
-            payloadColumn,
-          ]}
+            ]}
           label="Folded records"
           empty={empty}
           unresolved={unresolved}

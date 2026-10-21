@@ -1,6 +1,7 @@
 import { type Column, Identifier } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { EM_DASH, isAbsent, orDash, relativeAge } from "@/lib/format";
+import { claimedNames } from "@/lib/review/claim-value";
 import { hasVisibleContent } from "@/lib/verdict/decision";
 
 /**
@@ -233,15 +234,39 @@ export function drawsDash(
  * claim renders in, whichever shape rendered it and wherever in that shape's
  * column order the value sits.
  */
-export const valueColumn: EvidenceColumn = nullableColumn({
+export const valueColumn: EvidenceColumn = {
   key: "value",
   label: "value",
-  hook: "data-evidence",
-  // The hook is the row's key, never the value: `[data-evidence="<id>"]` has to
-  // find the row of a claim that says nothing as surely as one that does.
-  addresses: (row) => row.observationId,
-  value: (row) => row.value,
-});
+  // Absence is still the value's own: a claim with no value dashes, and the
+  // reading below never turns a present value into an absent one.
+  absent: (row) => isAbsent(row.value),
+  /**
+   * The value, read down to the name it carries where it carries one
+   * (`claimedNames`, Ben 2026-10-21) — and VERBATIM otherwise.
+   *
+   * The raw text stays on the `title`, so nothing the database said is lost
+   * from the markup: the cell shows `BE:FIRST` and the element still holds
+   * `[{"ids":{…},"ref":"K8vZ917qJ_0","name":"BE:FIRST"}]`. That is the whole
+   * trade — a jsonb array rendered verbatim in a seven-column table is
+   * obedient to Voice bar 5 and unreadable, so the short form is a reading and
+   * the long form is one hover away rather than deleted.
+   *
+   * The hook is the row's key, never the value: `[data-evidence="<id>"]` has
+   * to find the row of a claim that says nothing as surely as one that does.
+   */
+  cell: (row) => {
+    const read = claimedNames(row.value);
+    return (
+      <Identifier
+        data-evidence={row.observationId}
+        data-value-read={read === null ? undefined : "names"}
+        title={read === null ? undefined : (row.value ?? undefined)}
+      >
+        {orDash(read ?? row.value)}
+      </Identifier>
+    );
+  },
+};
 
 /**
  * The source, in one click (LOOK_AND_FEEL bar 10).
@@ -319,13 +344,17 @@ export const statusColumn: Column<EvidenceRow> = {
   cell: (row) => <Identifier data-claim-status={row.status}>{row.status}</Identifier>,
 };
 
-/** The raw payload's pointer, verbatim. See `EvidenceRow.payloadRef`. */
-export const payloadColumn: EvidenceColumn = nullableColumn({
-  key: "payload",
-  label: "payload",
-  hook: "data-payload",
-  value: (row) => row.payloadRef,
-});
+/*
+ * `payloadColumn` stood here until 2026-10-21.
+ *
+ * It drew `EvidenceRow.payloadRef` — the raw payload's pointer — as a seventh
+ * mono column in a table Ben called "basically unreadable". A pointer into a
+ * payload archive is not something an operator deciding a claim can act on,
+ * and it cost the columns that are (the value, the source, the record) the
+ * width they needed. `payloadRef` is still read and still on the row; nothing
+ * draws it. If it earns a place back it belongs on the record page, not in
+ * the middle of a decision.
+ */
 
 /** What is holding this claim, and what it is waiting for. */
 export const heldColumn: EvidenceColumn = nullableColumn({

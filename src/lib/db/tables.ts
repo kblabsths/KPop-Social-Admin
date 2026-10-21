@@ -27,6 +27,12 @@ export const T = {
   groups: "groups",
   idols: "idols",
   eventPerformers: "event_performers",
+  // The junction linking a canonical event to the source listings it came
+  // from, one row per source per event. Read for ONE column, `source_url` —
+  // "Direct URL to the event page on the source platform" in the schema's own
+  // comment — so an operator deciding a claim about an event can open what the
+  // source actually published (Ben, 2026-10-21).
+  eventSources: "event_sources",
   verdicts: "verdicts",
   // The ONE name here that is NOT the scraper repo's: `walk_sandbox` exists on
   // the staging project only, created by hand, and never in production
@@ -90,6 +96,7 @@ const OBJECT_KIND: Record<TableName, ObjectKind> = {
   [T.groups]: "table",
   [T.idols]: "table",
   [T.eventPerformers]: "table",
+  [T.eventSources]: "table",
   [T.verdicts]: "table",
   [T.walkSandbox]: "table",
 };

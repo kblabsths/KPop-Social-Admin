@@ -34,8 +34,10 @@ import { readPendingClaimRows, type PendingClaimRow } from "@/lib/db/claims";
 import { readLinkChoices } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
+  readEventListings,
   readItemEvidence,
   readReviewItem,
+  type EventListingRow,
   type CanonicalSide,
   type ItemEvidence,
   type ResolvedClaim,
@@ -54,7 +56,12 @@ import {
   type AwaitingRowTrend,
 } from "@/lib/gauges/pending-claims";
 import { recordHref } from "@/lib/records/routes";
-import { kindOfItem, shapeOf, type ReviewItemRow } from "@/lib/review/shapes";
+import {
+  kindOfItem,
+  shapeOf,
+  type ReviewItemRow,
+  type Shape,
+} from "@/lib/review/shapes";
 import { sourceLabel } from "@/lib/sources/names";
 import { factKey } from "@/lib/verdict/decision";
 
@@ -242,6 +249,40 @@ const EVIDENCE_SURFACE = "evidence";
 const CLOSE_SURFACE = "close";
 
 /**
+ * The sources'-listings leg, by name — a sub-surface of the header, not a
+ * surface of its own, because a listing it could not read costs this page a
+ * LINK and never a fact.
+ */
+const LISTINGS_SURFACE = "event_listings";
+
+/**
+ * THE CLOSE'S HEADING, which is the QUESTION the item asks — campaign
+ * admin-window, Ben 2026-10-21: *"'THE CLOSE' I don't like this title; it
+ * doesn't communicate anything."*
+ *
+ * He was right. "The close" named the section's role in the anatomy, which is
+ * a fact about the design document and not about the item in front of the
+ * operator. Each shape asks one question and now the heading is that question,
+ * so the thing the operator is being asked is legible from the heading alone.
+ *
+ * NOT reordered. The close still renders ABOVE the evidence, which is
+ * admin-window/BUG-0096's placement and still right: the source-pattern view
+ * runs to a hundred-odd folded records, and a close under them is a decision
+ * four screenfuls from the question. Ben's complaint was that the section told
+ * him nothing, not that it was in the wrong place — so the answer is for it to
+ * SAY more (this heading, plus `NOTICE_BY_SHAPE`'s per-shape line), never to
+ * push the control down the page.
+ *
+ * A `Record<Shape, …>` so a fourth shape fails to compile rather than
+ * inheriting another's question.
+ */
+const CLOSE_TITLE_BY_SHAPE: Record<Shape, string> = {
+  data_conflict_fact: "Which value is correct?",
+  entity_link_fact: "Which record is this?",
+  entity_link_source_pattern: "Which catalog name is this?",
+};
+
+/**
  * The dial's display window, in days.
  *
  * A choice of THIS PAGE's, stated on screen beside the figures, and not the
@@ -390,6 +431,8 @@ function canonicalCard(side: CanonicalSide): EvidenceCanonical | null {
 function linksOf(
   item: ReviewItemRow,
   names: ReadonlyMap<string, string>,
+  /** The sources' own listings for this event, or none where there are none. */
+  listings: readonly EventListingRow[] = [],
 ): ItemLink[] {
   const links: ItemLink[] = [];
   if (item.source_id !== null) {
@@ -419,6 +462,27 @@ function linksOf(
       label: "Its record",
       href: record,
       value: `${item.domain}/${item.entity_id}`,
+    });
+  }
+
+  /*
+   * One link per source that published this event, labelled with the source's
+   * own name. Last, after the app's own destinations: these leave the app.
+   *
+   * A row whose `source_url` is null is skipped rather than drawn as a dead
+   * link — that row says "this source published the event and recorded no
+   * address", which the page has nowhere to say and nothing to do with. A
+   * REFUSED read draws nothing here either; the refusal is reported beside
+   * the links by the caller, so a missing link never reads as "no listing
+   * exists".
+   */
+  for (const listing of listings) {
+    if (listing.source_url === null) continue;
+    links.push({
+      label: "Listing on",
+      href: listing.source_url,
+      value: listing.source,
+      external: true,
     });
   }
   return links;
@@ -594,9 +658,19 @@ export default async function ReviewItemPage({
 }) {
   const { reviewItemId } = await params;
 
-  // The identity of what was asked for, rendered whatever the read did — and
-  // whether or not a read happened at all: an operator looking at a refusal
-  // still needs to know which item they opened.
+  /*
+   * The identity of what was asked for, rendered whatever the read did — and
+   * whether or not a read happened at all: an operator looking at a refusal
+   * still needs to know which item they opened.
+   *
+   * ON THE TITLE ROW since 2026-10-21 (Ben: "Put the item id in the same row
+   * at the REVIEW ITEM title"). It stood on a line of its own under the h1,
+   * which spent a row of a dense page restating the address bar. `Page`'s
+   * `actions` slot is the title row's right-hand side, so the heading says
+   * what this page is and the id says which one, once, side by side. Every
+   * state passes it — the three refusals included, which is the whole reason
+   * it is composed before the first read.
+   */
   const identity = (
     <Identifier muted data-review-item={reviewItemId}>
       {reviewItemId}
@@ -613,8 +687,7 @@ export default async function ReviewItemPage({
   // (admin-window/BUG-0076).
   if (!isRecordId(reviewItemId)) {
     return (
-      <Page title="Review item">
-        {identity}
+      <Page title="Review item" actions={identity}>
         <Empty
           holds="review item at this address"
           filledBy={NOT_AN_ID}
@@ -628,8 +701,7 @@ export default async function ReviewItemPage({
 
   if (item.kind !== "ok") {
     return (
-      <Page title="Review item">
-        {identity}
+      <Page title="Review item" actions={identity}>
         <StateOf result={item} eyebrow="Review item" />
       </Page>
     );
@@ -639,8 +711,7 @@ export default async function ReviewItemPage({
     // The table answered and holds no such row. A state of this surface, at
     // 200 — not a routing outcome (admin-window/BUG-0017).
     return (
-      <Page title="Review item">
-        {identity}
+      <Page title="Review item" actions={identity}>
         <Empty
           holds={
             <>
@@ -668,6 +739,22 @@ export default async function ReviewItemPage({
       ? evidence.data.claims.map((claim) => claim.observation.observation_id)
       : [];
   const buckets = await readPendingClaimRows(claimIds);
+
+  /*
+   * WHERE THE SOURCES PUBLISHED THIS EVENT — the most useful thing on the page
+   * when it is there (Ben, 2026-10-21: "probably the most valuable information
+   * is a link to the actual Ticketmaster listing").
+   *
+   * Asked only where there is an event to ask about: `event_sources.event_id`
+   * is NOT NULL, so an item opened before its canonical row exists has no
+   * listing to find and no query is issued for one. A read that refuses costs
+   * the LINKS and nothing else — every claim, value and control below still
+   * renders.
+   */
+  const listings =
+    row.domain === "events" && row.entity_id !== null
+      ? await readEventListings([row.entity_id])
+      : null;
 
   // What every source on this page is called — one map, from the evidence
   // read's single registry query, so the header link, the evidence cells and
@@ -736,15 +823,17 @@ export default async function ReviewItemPage({
       : [];
 
   return (
-    <Page title="Review item">
-      {identity}
-
+    <Page title="Review item" actions={identity}>
       <Section title="What happened" surface={HEADER_SURFACE}>
         <ItemHeader
           item={row}
           kind={kind}
           shape={shape}
-          links={linksOf(row, names)}
+          links={linksOf(
+            row,
+            names,
+            listings !== null && listings.kind === "ok" ? listings.data : [],
+          )}
           // What the fold count is stated AGAINST (campaign
           // admin-window/BUG-0124): the ids the evidence read looked at, which
           // is the population the block below lists and the accounting
@@ -754,6 +843,20 @@ export default async function ReviewItemPage({
           // §4.3).
           evidenceIds={evidence.kind === "ok" ? evidence.data.ids.distinct : null}
         />
+        {listings === null || listings.kind === "ok" ? null : (
+          /*
+           * The listing leg alone refused, so it reports ITSELF, on its own
+           * sub-surface, naming its own object — the shape the verdict log's
+           * provenance leg already uses. Without this a refused read and an
+           * event no source recorded an address for would look identical: one
+           * is "the app could not ask", the other is "there is nothing to
+           * open", and an operator deciding a claim should not have to guess
+           * which (LOOK_AND_FEEL state 3).
+           */
+          <div data-surface={LISTINGS_SURFACE}>
+            <StateOf result={listings} />
+          </div>
+        )}
       </Section>
 
       {/* The recommendation slot. It exists in the anatomy and renders nothing
@@ -781,7 +884,7 @@ export default async function ReviewItemPage({
           companion says what the shape WITHHOLDS and why — today only a
           conflict on a reference field, whose value links a row rather than
           carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
-      <Section title="The close" surface={CLOSE_SURFACE}>
+      <Section title={CLOSE_TITLE_BY_SHAPE[shape]} surface={CLOSE_SURFACE}>
         <CloseSlot
           item={row}
           readiness={readiness}

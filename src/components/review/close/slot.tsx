@@ -7,7 +7,7 @@ import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
 import { conflictActions, conflictNotice } from "./conflict-actions";
 import { CloseForm } from "./form";
 import { linkActions, linkNotice } from "./link-actions";
-import { dispositionActions } from "./signal-actions";
+import { dispositionActions, patternNotice } from "./signal-actions";
 
 /**
  * **The close** — the last part of a review item's anatomy (spec §6 step 3,
@@ -88,16 +88,21 @@ export const ACTIONS_BY_SHAPE: Record<Shape, ShapeActions> = {
  * The `entity_link` FACT item answers one too (`linkNotice`, campaign
  * admin-window/TASK-0056): its picker is withheld wherever the item names no
  * whole reference or the rows behind it could not be read, which is the
- * ordinary state of an item opened before the canonical row exists. The signal
- * item names no fact at all and withholds nothing, so its null is the one that
- * is not a placeholder.
+ * ordinary state of an item opened before the canonical row exists.
+ *
+ * The source-pattern item was documented here as naming "no fact at all" and
+ * withholding nothing, which was true of its FACT columns and false about the
+ * thing that matters: it withholds the answer the operator came to give, and
+ * since 2026-10-21 its notice says so.
  */
 export type ShapeNotice = (input: ShapeActionsInput) => ReactNode;
 
 export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
   data_conflict_fact: conflictNotice,
   entity_link_fact: linkNotice,
-  entity_link_source_pattern: () => null,
+  // No longer a null: this shape withholds the ANSWER, and says so
+  // (`patternNotice`, Ben 2026-10-21).
+  entity_link_source_pattern: patternNotice,
 };
 
 /**
