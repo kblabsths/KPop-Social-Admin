@@ -17,7 +17,10 @@ import {
   type ReadWindow,
   WindowLine,
 } from "@/components/ui";
+import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { count, counted, pluralise } from "@/lib/format";
+import type { ReferenceCandidate } from "@/lib/db/review-item";
+import { recordHref } from "@/lib/records/routes";
 import type { Shape } from "@/lib/review/shapes";
 import {
   DASH_MEANS,
@@ -39,7 +42,7 @@ import {
  * admin-window/TASK-0011, spec §6: "the evidence block renders what that
  * shape's evidence IS, not one generic layout".
  *
- * Three views, and `EVIDENCE_VIEW_BY_SHAPE` maps every `Shape` to exactly one
+ * Four views, and `EVIDENCE_VIEW_BY_SHAPE` maps every `Shape` to exactly one
  * of them. The map is a `Record<Shape, …>`, so a fourth shape — which arrives
  * only with the migration that widens `review_items.queue`'s CHECK constraint
  * (ARCHITECTURE.md §6 trap 11) — fails to compile HERE, with no defensive
@@ -145,6 +148,16 @@ export interface ShapeEvidenceProps {
   canonical: EvidenceCanonical | null;
   /** The per-source dial. `null` on every shape but the source pattern. */
   dial: DialProps | null;
+  /**
+   * A REFERENCE item's candidates — the entity rows the resolver proposed for
+   * the name it could not place, best-ranked first, each already carrying what
+   * tells it apart from a namesake.
+   *
+   * `null` on every other shape, and on a reference item whose read refused;
+   * EMPTY on one the resolver proposed nothing for ("no catalog name is
+   * close"), which is a real answer and a different state from a refusal.
+   */
+  candidates: readonly ReferenceCandidate[] | null;
 }
 
 /**
@@ -529,6 +542,91 @@ function PatternEvidence({
 }
 
 /**
+ * A REFERENCE item's evidence: the candidates, and what tells them apart.
+ *
+ * The view this shape never had. Until 2026-10-22 Admin read a reference item
+ * as the source-pattern shape and so drew the pattern's view over it —
+ * resolving its `evidence` as OBSERVATION ids, which match nothing, so the
+ * block rendered the "none of them names a row this database holds" card over
+ * every one of production's 125 reference items. The ids were never
+ * observations; they are candidate entity ids (`20260911000009`).
+ *
+ * **The detail column is the point, not decoration.** The Yeonjun item's ten
+ * candidates read `Yeonjun, Yeonjun, Yeonjun, Yeonjung, …`; what separates
+ * them is the group each belongs to, their real names and their birth years.
+ * A picker showing names alone would be a list of ten identical rows, which is
+ * what Ben meant by not having enough information to decide.
+ *
+ * Ranked best-first, in the resolver's own order, which this view does not
+ * re-sort: the ranking is the resolver's judgment about which match is closest.
+ */
+function ReferenceEvidence({ candidates, unresolved }: ShapeEvidenceProps) {
+  return (
+    <div data-evidence-view="reference" className="flex min-w-0 flex-col gap-3">
+      {candidates === null ? (
+        // The read refused. The surface above this one names it; this block
+        // states no candidate rather than an empty list, which would read as
+        // "the resolver proposed none".
+        <Lede>The candidates could not be read.</Lede>
+      ) : candidates.length === 0 ? (
+        <Empty
+          holds="catalog rows close to this name"
+          filledBy="The resolver proposes one when a name is close enough to rank."
+        />
+      ) : (
+        <DataTable<ReferenceCandidate>
+          label="Candidates"
+          rows={[...candidates]}
+          rowKey={(row) => row.id}
+          columns={[
+            {
+              key: "rank",
+              label: "rank",
+              align: "right",
+              // The resolver's ranking, made visible: best first is the whole
+              // reason the order is not re-sorted here.
+              cell: (row) => count(candidates.indexOf(row) + 1),
+            },
+            {
+              key: "name",
+              label: "name",
+              cell: (row) => <Identifier>{row.name}</Identifier>,
+            },
+            {
+              key: "detail",
+              label: "which one",
+              // The app's own joined reading of the row's own columns, so it is
+              // prose rather than a machine token and takes the body face.
+              cell: (row) => row.detail,
+            },
+            {
+              key: "domain",
+              label: "catalog",
+              cell: (row) => <Identifier>{row.domain}</Identifier>,
+            },
+            {
+              key: "record",
+              label: "record",
+              cell: (row) => {
+                const href = recordHref(row.domain, row.id);
+                return href === null ? null : (
+                  <a href={href} className={`type-data ${IN_PAGE_LINK}`}>
+                    {row.id}
+                  </a>
+                );
+              },
+            },
+          ]}
+        />
+      )}
+      {unresolved.length === 0 ? null : (
+        <Unresolved ids={unresolved} />
+      )}
+    </div>
+  );
+}
+
+/**
  * Shape → its detail view. The compiler requires every `Shape` to have one,
  * which is the whole guard: no default arm, no fallback view, and a fourth
  * shape cannot reach a screen by accident (§6 trap 11).
@@ -539,6 +637,7 @@ export const EVIDENCE_VIEW_BY_SHAPE: Record<
 > = {
   data_conflict_fact: ConflictEvidence,
   entity_link_fact: StuckFactEvidence,
+  entity_link_reference: ReferenceEvidence,
   entity_link_source_pattern: PatternEvidence,
 };
 
@@ -552,5 +651,10 @@ export const EVIDENCE_VIEW_BY_SHAPE: Record<
 export const DIAL_BY_SHAPE: Record<Shape, boolean> = {
   data_conflict_fact: false,
   entity_link_fact: false,
+  // No dial. It reads the source's stuck-record THRESHOLD, which answers
+  // "is this source failing a lot" — a fact about a pattern, not about the one
+  // sighted name this item asks about. Reference items carried it only because
+  // Admin misread them as the pattern shape.
+  entity_link_reference: false,
   entity_link_source_pattern: true,
 };

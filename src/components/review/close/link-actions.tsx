@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { Identifier, StateOf } from "@/components/ui";
 import type { ReviewItemRow } from "@/lib/review/shapes";
-import { factKey, isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
+import { factKey, isReferenceField,
+  type FactVerdictFields,
+} from "@/lib/verdict/decision";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
 
 /**
@@ -60,10 +62,7 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  * them — so this is a real branch, not a type-appeasing cast, and it is the
  * same branch `conflict-actions.tsx` takes for the same columns.
  */
-function factOf(item: ReviewItemRow): Pick<
-  VerdictValue,
-  "domain" | "entity_id" | "field"
-> | null {
+function factOf(item: ReviewItemRow): FactVerdictFields | null {
   const { domain, entity_id, field } = item;
   if (domain === null || entity_id === null || field === null) return null;
   return { domain, entity_id, field };
@@ -87,10 +86,7 @@ function factOf(item: ReviewItemRow): Pick<
  * to link costs no query at all — the same narrowing the record surface makes
  * before it reads the picker's choices.
  */
-export function linkableFact(item: ReviewItemRow): Pick<
-  VerdictValue,
-  "domain" | "entity_id" | "field"
-> | null {
+export function linkableFact(item: ReviewItemRow): FactVerdictFields | null {
   const fact = factOf(item);
   if (fact === null || !isReferenceField(fact.domain, fact.field)) return null;
   return fact;

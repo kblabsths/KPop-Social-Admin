@@ -1,6 +1,3 @@
-import type { ReactNode } from "react";
-
-import { Identifier } from "@/components/ui";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
 
 /**
@@ -66,43 +63,4 @@ export function dispositionActions(input: ShapeActionsInput): readonly ActionSpe
     { label: FIXED_LABEL, action: "fixed", value: null },
     { label: WONT_FIX_LABEL, action: "wont_fix", value: null },
   ];
-}
-
-/**
- * WHAT THIS CLOSE CANNOT DO, said plainly — campaign admin-window, Ben
- * 2026-10-21.
- *
- * The shape's notice was `() => null`, documented as "the signal item names no
- * fact at all and withholds nothing, so its null is the one that is not a
- * placeholder." That was wrong about the one thing that matters. These items
- * ask a question — *"ticketmaster \"TEN\": 3 catalog names match closely, none
- * exactly (Ten, Ten, Ten-X) — which one is this, or none of them"* — and the
- * close offers two dispositions that cannot answer it.
- *
- * It is not a missing control. `settle_review_item` can record a reference
- * link for exactly one field in the whole registry, `events.venue`, and the
- * catalog domains these items are about (`groups`, `idols`) are not registered
- * domains at all. A picker here would have its answer refused with KS029, and
- * a control that cannot be honoured is the one thing SPEC F10 forbids.
- *
- * So the notice says so. The operator is told what the buttons record and what
- * they do NOT, rather than being left to discover that "Mark fixed" quietly
- * discarded the judgment they came here to give. The fix is filed at
- * `agenticflow/tracker/for-human/2026-10-21-the-answer-has-nowhere-to-go.md`
- * and is a migration in the scraper repo, which is Ben's.
- *
- * **Delete this notice the day the link lands.** It describes a gap, not a
- * rule, and a notice that outlives its gap is a lie with a long tail.
- */
-export function patternNotice(input: ShapeActionsInput): ReactNode {
-  void input;
-  return (
-    <>
-      This app cannot record which catalog row this name is: the verdict
-      function links one reference field (<Identifier>events.venue</Identifier>
-      ) and the catalog domains are not registered. Neither button below
-      answers the question — they record only that the condition was handled
-      elsewhere, or that it stands.
-    </>
-  );
 }

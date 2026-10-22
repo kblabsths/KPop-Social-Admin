@@ -7,7 +7,8 @@ import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
 import { conflictActions, conflictNotice } from "./conflict-actions";
 import { CloseForm } from "./form";
 import { linkActions, linkNotice } from "./link-actions";
-import { dispositionActions, patternNotice } from "./signal-actions";
+import { referenceActions, referenceNotice } from "./reference-actions";
+import { dispositionActions } from "./signal-actions";
 
 /**
  * **The close** — the last part of a review item's anatomy (spec §6 step 3,
@@ -69,6 +70,7 @@ import { dispositionActions, patternNotice } from "./signal-actions";
 export const ACTIONS_BY_SHAPE: Record<Shape, ShapeActions> = {
   data_conflict_fact: conflictActions,
   entity_link_fact: linkActions,
+  entity_link_reference: referenceActions,
   entity_link_source_pattern: dispositionActions,
 };
 
@@ -100,9 +102,15 @@ export type ShapeNotice = (input: ShapeActionsInput) => ReactNode;
 export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
   data_conflict_fact: conflictNotice,
   entity_link_fact: linkNotice,
-  // No longer a null: this shape withholds the ANSWER, and says so
-  // (`patternNotice`, Ben 2026-10-21).
-  entity_link_source_pattern: patternNotice,
+  entity_link_reference: referenceNotice,
+  // Back to a null, and this time it is the honest one. `patternNotice` stood
+  // here for a day, saying this app could not record which catalog row a name
+  // was — which was true of the shape Admin THOUGHT these items were. The
+  // reference items moved to their own shape on 2026-10-22 and took the
+  // question with them, so what is left here is the real stuck-record pattern:
+  // a source crossing its threshold, fixed on the surface that owns it, and
+  // withholding nothing.
+  entity_link_source_pattern: () => null,
 };
 
 /**

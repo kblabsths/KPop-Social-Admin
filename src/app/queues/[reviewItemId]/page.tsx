@@ -36,6 +36,7 @@ import type { DbResult, DbUnavailable } from "@/lib/db/result";
 import {
   readEventListings,
   readItemEvidence,
+  readReferenceCandidates,
   readReviewItem,
   type EventListingRow,
   type CanonicalSide,
@@ -279,6 +280,7 @@ const LISTINGS_SURFACE = "event_listings";
 const CLOSE_TITLE_BY_SHAPE: Record<Shape, string> = {
   data_conflict_fact: "Which value is correct?",
   entity_link_fact: "Which record is this?",
+  entity_link_reference: "Which catalog name is this?",
   entity_link_source_pattern: "Which catalog name is this?",
 };
 
@@ -756,6 +758,18 @@ export default async function ReviewItemPage({
       ? await readEventListings([row.entity_id])
       : null;
 
+  /*
+   * A REFERENCE item's candidates — the rows the resolver proposed for the name
+   * it could not place. Read only for that shape, because `evidence` holds
+   * candidate ENTITY ids on a reference item and OBSERVATION ids on every other
+   * one (`20260911000009`); asking the catalog about an observation id resolves
+   * nothing, which is exactly the bug this read replaces.
+   */
+  const candidates =
+    shape === "entity_link_reference"
+      ? await readReferenceCandidates(row.evidence)
+      : null;
+
   // What every source on this page is called — one map, from the evidence
   // read's single registry query, so the header link, the evidence cells and
   // the dial cannot label one source three ways (admin-window/BUG-0043). An
@@ -917,6 +931,9 @@ export default async function ReviewItemPage({
                 unresolved={evidence.data.unresolved}
                 empty={emptyWords(evidence.data)}
                 canonical={canonicalCard(evidence.data.canonical)}
+                candidates={
+                  candidates === null || candidates.kind !== "ok" ? null : candidates.data
+                }
                 dial={
                   dialSource === null || trend === null
                     ? null

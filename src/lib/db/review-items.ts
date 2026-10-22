@@ -56,6 +56,12 @@ export const REVIEW_ITEM_COLUMNS = [
   "domain",
   "entity_id",
   "field",
+  // The third part of an entity-link subject. WITHOUT IT `shapeOf` sees
+  // `undefined` and classifies every reference item as the stuck-record
+  // pattern — which is precisely the bug of 2026-10-21, and adding the field
+  // to `ReviewItemRow` without adding it here would have left the whole fix
+  // inert while compiling perfectly.
+  "external_ref",
   "severity",
   "status",
   "summary",

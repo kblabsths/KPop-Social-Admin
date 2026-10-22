@@ -75,6 +75,22 @@ export interface PickerOption {
   readonly id: string;
   /** Its readable name, or `null` when the row holds none. */
   readonly name: string | null;
+  /**
+   * WHAT TELLS IT APART FROM A NAMESAKE, where the caller has it — an idol's
+   * group, real name and birth year; a venue's city and country.
+   *
+   * Added 2026-10-22, for a case the picker was never shown: the Yeonjun
+   * reference item offers ten candidates whose names read `Yeonjun, Yeonjun,
+   * Yeonjun, Yeonjung, Yeonjung, Yeonju, …`. Ten rows carrying only a name are
+   * not a choice, which is precisely what Ben said when he saw it — "I don't
+   * have enough information to make a decision". Every one of those ten sits in
+   * a different group, so the caller joins that in and the operator can see
+   * which is which.
+   *
+   * Absent or null renders nothing, so the venue picker that shipped without
+   * it is unchanged.
+   */
+  readonly detail?: string | null;
 }
 
 /**

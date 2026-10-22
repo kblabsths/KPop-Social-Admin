@@ -330,13 +330,18 @@ export function tabFrom(params: SearchParams = {}): QueuesTab {
 /**
  * A row that exists only to ask `shapeOf` a question.
  *
- * The two columns the classifier reads carry the case (`queue`, and the
- * `source_id` discriminator migration `20260901000002` defines); every other
- * column is filler it never looks at. Typed in full on purpose — if
- * `ReviewItemRow` grows a column the registry starts classifying by, this stops
- * compiling instead of answering from a probe that has gone stale.
+ * The THREE columns the classifier reads carry the case — `queue`, the
+ * `source_id` discriminator (`20260901000002`) and `external_ref`, the third
+ * part of an entity-link subject (`20260911000002`); every other column is
+ * filler it never looks at. Typed in full on purpose, and it earned that on
+ * 2026-10-22: `external_ref` arrived, this stopped compiling, and the stale
+ * probe was found by the compiler rather than by a wrong answer on screen.
  */
-function probeRow(queue: ReviewQueue, source_id: string | null): ReviewItemRow {
+function probeRow(
+  queue: ReviewQueue,
+  source_id: string | null,
+  external_ref: string | null = null,
+): ReviewItemRow {
   return {
     review_item_id: "",
     queue,
@@ -344,6 +349,7 @@ function probeRow(queue: ReviewQueue, source_id: string | null): ReviewItemRow {
     domain: null,
     entity_id: null,
     field: null,
+    external_ref,
     severity: "low",
     status: "open",
     summary: "",
@@ -354,10 +360,19 @@ function probeRow(queue: ReviewQueue, source_id: string | null): ReviewItemRow {
   };
 }
 
-/** The two states a subject can be in: a FACT (no source) or a SOURCE. */
-const SUBJECTS: readonly (string | null)[] = [
-  null,
-  "00000000-0000-4000-8000-000000000000",
+/**
+ * Every state a subject can be in, as the pair the classifier reads: a FACT
+ * (no source, no reference), a SOURCE (the stuck-record pattern), and a
+ * REFERENCE (a source AND its own reference for one sighted entry).
+ *
+ * Three since 2026-10-22. With two, `queuesOfShape` could not produce the
+ * reference shape at all and the chip vocabulary it feeds would have offered a
+ * facet value no probe could reach.
+ */
+const SUBJECTS: readonly { source_id: string | null; external_ref: string | null }[] = [
+  { source_id: null, external_ref: null },
+  { source_id: "00000000-0000-4000-8000-000000000000", external_ref: null },
+  { source_id: "00000000-0000-4000-8000-000000000000", external_ref: "a-reference" },
 ];
 
 /**
@@ -370,7 +385,10 @@ const SUBJECTS: readonly (string | null)[] = [
  */
 function queuesOfShape(shape: Shape): ReviewQueue[] {
   return REVIEW_QUEUES.filter((queue) =>
-    SUBJECTS.some((source_id) => shapeOf(probeRow(queue, source_id)) === shape),
+    SUBJECTS.some(
+      (subject) =>
+        shapeOf(probeRow(queue, subject.source_id, subject.external_ref)) === shape,
+    ),
   );
 }
 

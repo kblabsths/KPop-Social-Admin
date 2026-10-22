@@ -3,7 +3,9 @@ import type { EvidenceRow } from "@/components/review";
 import { Identifier } from "@/components/ui";
 import { EM_DASH } from "@/lib/format";
 import type { ReviewItemRow } from "@/lib/review/shapes";
-import { factKey, isReferenceField, type VerdictValue } from "@/lib/verdict/decision";
+import { factKey, isReferenceField,
+  type FactVerdictFields,
+} from "@/lib/verdict/decision";
 import type { ActionSpec, ShapeActionsInput } from "./actions";
 
 /**
@@ -62,10 +64,7 @@ import type { ActionSpec, ShapeActionsInput } from "./actions";
  * action offered with a payload the function would refuse is worse than an
  * action not offered — and `keep_current`, which carries no payload, still is.
  */
-function factOf(item: ReviewItemRow): Pick<
-  VerdictValue,
-  "domain" | "entity_id" | "field"
-> | null {
+function factOf(item: ReviewItemRow): FactVerdictFields | null {
   const { domain, entity_id, field } = item;
   if (domain === null || entity_id === null || field === null) return null;
   return { domain, entity_id, field };

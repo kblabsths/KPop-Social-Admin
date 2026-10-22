@@ -188,6 +188,20 @@ export type VerdictAction =
   | "fixed"
   /** Signal disposition: the condition stands. The note is REQUIRED. */
   | "wont_fix"
+  /**
+   * `entity_link` REFERENCE: this sighted name is not a k-pop act at all, so
+   * the catalog will never hold it. Writes a `not_kpop` ruling under `groups`
+   * AND `idols` and no entity (`20261021000002`).
+   *
+   * The note is REQUIRED — by this app, not by the function, which leaves it
+   * optional (Ben, 2026-10-22: "Yes please enforce it in the admin website,
+   * even though it is optional in the function"). "Not a k-pop act" is a
+   * judgment and the why is the half a reader quotes back; a ruling with no
+   * reason is a row nobody can audit.
+   *
+   * Refused on a VENUE reference item and on every non-reference item (KS029).
+   */
+  | "rule_not_kpop"
   /** Item-less, from the record surface: `review_item_id` is null. */
   | "override";
 
@@ -214,6 +228,10 @@ export const VERDICT_ACTIONS: readonly VerdictAction[] = [
   "fixed",
   "wont_fix",
   "override",
+  // Ninth, and last in the list for the reason the eight keep their order:
+  // `tests/offline/handoff/` grades this array against the migration's CHECK
+  // constraint, and the constraint appended it (`20261021000002`).
+  "rule_not_kpop",
 ];
 
 /**
@@ -225,16 +243,55 @@ export const VERDICT_ACTIONS: readonly VerdictAction[] = [
  * `verdicts` declines to carry a `chosen_value` column for (spec §7's
  * Rationale).
  */
-export interface VerdictValue {
-  /** The REGISTRY domain the field belongs to: `events`, `venues`. */
+/**
+ * The three parts of a FACT a verdict writes: which domain, which row, which
+ * field. All three required.
+ *
+ * Its own name since 2026-10-22. The fact-shaped builders used to say
+ * `Pick<VerdictValue, "domain" | "entity_id" | "field">`, which was exactly
+ * right while every verdict wrote a fact — and became wrong the moment
+ * `VerdictValue` learned to express a REFERENCE verdict, which carries no
+ * `entity_id` and no `field`. The `Pick` silently went optional and three
+ * builders lost a guarantee they depend on ("with the fact incomplete, the two
+ * value-carrying actions are not offered at all"). Naming the fact shape keeps
+ * that guarantee where it belongs and lets the envelope widen.
+ */
+export interface FactVerdictFields {
   readonly domain: string;
-  /** The canonical row the value lands on. */
   readonly entity_id: string;
+  readonly field: string;
+}
+
+export interface VerdictValue {
+  /**
+   * The REGISTRY domain the field belongs to: `events`, `venues` — or, on a
+   * REFERENCE verdict, the catalog the chosen row came from (`idols`).
+   */
+  readonly domain: string;
+  /**
+   * The canonical row the value lands on.
+   *
+   * OPTIONAL since 2026-10-22, and only for the reference arm: a verdict on a
+   * reference item carries `{ domain, ref }` and nothing else, because the
+   * answer is a `confirmed_matches` row under the sighting source's own
+   * reference rather than a write to a canonical column. The function REFUSES
+   * `entity_id`, `field`, `observation_id` and `value` on such an item
+   * (`20261021000002`, KS029), so sending them would not be a loose type — it
+   * would be a refused verdict.
+   *
+   * Every FACT verdict still carries it, and `decisionRefusals` grades the
+   * envelope structurally (`factOf`) rather than through this type, so nothing
+   * about a fact verdict's validation is relaxed by the `?`.
+   */
+  readonly entity_id?: string;
   /**
    * The REGISTRY field name — which is the canonical column's own name, except
    * `events.venue`, whose column is `venue_id` (§9.2).
+   *
+   * Optional for the same one reason `entity_id` is: a reference verdict names
+   * no field, and the function refuses one.
    */
-  readonly field: string;
+  readonly field?: string;
   /** `choose_claimed_value`: the observation whose value is adopted. */
   readonly observation_id: string | null;
   /** `supply_value` / a scalar `override`: the operator's own value. */
@@ -315,7 +372,12 @@ export const DECISION_VALUE_KEYS: readonly (keyof VerdictValue)[] = Object.keys(
  * shown a refusal. Everything else takes a note at the admin's discretion.
  */
 export function noteRequired(action: VerdictAction): boolean {
-  return action === "wont_fix";
+  // `rule_not_kpop` joins `wont_fix` here by Admin's choice, not the
+  // function's: the migration leaves its note optional and Ben asked for it to
+  // be enforced on the form. Both actions close a question by asserting
+  // something a later reader cannot re-derive — that a condition stands, that
+  // a name is out of scope — so both owe a reason.
+  return action === "wont_fix" || action === "rule_not_kpop";
 }
 
 /* ── the fact identifier, spelled once ───────────────────────────────────── */
@@ -440,6 +502,9 @@ const PAYLOAD_SLOTS: Readonly<Record<VerdictAction, readonly PayloadSlot[]>> = {
   fixed: [],
   wont_fix: [],
   override: ["value", "ref"],
+  // No payload at all: the ruling IS the answer, and the function refuses a
+  // value on it (KS029).
+  rule_not_kpop: [],
 };
 
 /** Every slot, in the order a refusal reports them. */

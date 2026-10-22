@@ -48,6 +48,23 @@ export interface ReviewItemRow {
   severity: ReviewSeverity;
   status: ReviewStatus;
   summary: string;
+  /**
+   * The SOURCE'S OWN REFERENCE for the entry this item is about — byte for
+   * byte as the ingest gate stored it (`20260911000002`).
+   *
+   * **It is the third part of an entity-link item's subject, and reading it is
+   * what tells a REFERENCE item from a per-source one.** Null on every other
+   * subject: a per-fact item and a stuck-record-pattern item both carry a
+   * null here.
+   *
+   * Admin did not select this column until 2026-10-22 and so could not tell
+   * those two apart — it classified both as `entity_link_source_pattern`,
+   * which put 125 of production's 126 items under the wrong shape, gave them
+   * a close that could not answer them, and resolved their `evidence` as
+   * observation ids when it holds candidate ENTITY ids. That is the whole of
+   * what Ben reported on 2026-10-21.
+   */
+  external_ref: string | null;
   evidence: string[];
   folded_count: number;
   opened_at: string;
@@ -72,12 +89,14 @@ export type Kind = "decision" | "signal";
 export type Shape =
   | "data_conflict_fact"
   | "entity_link_fact"
+  | "entity_link_reference"
   | "entity_link_source_pattern";
 
 /** Every shape, in the order §6 lists them. */
 export const SHAPES: readonly Shape[] = [
   "data_conflict_fact",
   "entity_link_fact",
+  "entity_link_reference",
   "entity_link_source_pattern",
 ];
 
@@ -92,6 +111,13 @@ export const KINDS: readonly Kind[] = ["decision", "signal"];
 const KIND_BY_SHAPE: Readonly<Record<Shape, Kind>> = {
   data_conflict_fact: "decision",
   entity_link_fact: "decision",
+  // A DECISION, and the correction Ben asked for by name: "I just want to
+  // ensure that these become decisions; the worst thing you could do is hide
+  // them from me." These items ask "which one is this, or none of them" — a
+  // question only a person answers — and they were filed as signals only
+  // because Admin could not see `external_ref` and so read them as the
+  // source-pattern shape.
+  entity_link_reference: "decision",
   entity_link_source_pattern: "signal",
 };
 
@@ -120,6 +146,15 @@ export function kindOf(shape: Shape): Kind {
  */
 export function shapeOf(item: ReviewItemRow): Shape {
   if (item.queue === "entity_link") {
+    // `entity_link` is the queue of THREE subjects, and `external_ref` is what
+    // separates the two that carry a source (`20260911000009`'s own words:
+    // "entity_link is the queue of two subjects, a reference and a source").
+    // Asked FIRST, because a reference item carries a `source_id` too and the
+    // source test alone cannot tell them apart — which is exactly how Admin
+    // misfiled every one of them until 2026-10-22.
+    if (item.external_ref !== null && item.external_ref !== undefined) {
+      return "entity_link_reference";
+    }
     return item.source_id === null || item.source_id === undefined
       ? "entity_link_fact"
       : "entity_link_source_pattern";
@@ -167,6 +202,14 @@ export interface ShapeColumns {
    * own rule; that queue has no per-source subject, resolver.md §11).
    */
   sourceIdIsNull: boolean | null;
+  /**
+   * What `external_ref` must be: `true` null, `false` set, `null` for
+   * UNCONSTRAINED.
+   *
+   * The third part of the subject, and the field this interface's own comment
+   * predicted would be needed "the day a fourth shape lands".
+   */
+  externalRefIsNull: boolean | null;
 }
 
 /**
@@ -175,9 +218,27 @@ export interface ShapeColumns {
  * reads and no subtraction from a table total.
  */
 export const SHAPE_COLUMNS: Readonly<Record<Shape, ShapeColumns>> = {
-  data_conflict_fact: { queue: "data_conflict", sourceIdIsNull: null },
-  entity_link_fact: { queue: "entity_link", sourceIdIsNull: true },
-  entity_link_source_pattern: { queue: "entity_link", sourceIdIsNull: false },
+  data_conflict_fact: {
+    queue: "data_conflict",
+    sourceIdIsNull: null,
+    externalRefIsNull: null,
+  },
+  entity_link_fact: {
+    queue: "entity_link",
+    sourceIdIsNull: true,
+    externalRefIsNull: true,
+  },
+  // The two that both carry a source, told apart by the reference alone.
+  entity_link_reference: {
+    queue: "entity_link",
+    sourceIdIsNull: false,
+    externalRefIsNull: false,
+  },
+  entity_link_source_pattern: {
+    queue: "entity_link",
+    sourceIdIsNull: false,
+    externalRefIsNull: true,
+  },
 };
 
 /** The column conditions of one shape — the spelling readers use. */
@@ -196,9 +257,25 @@ export function columnsOfShape(shape: Shape): ShapeColumns {
 export function matchesShapeColumns(item: ReviewItemRow, shape: Shape): boolean {
   const columns = SHAPE_COLUMNS[shape];
   if (item.queue !== columns.queue) return false;
-  if (columns.sourceIdIsNull === null) return true;
-  const isNull = item.source_id === null || item.source_id === undefined;
-  return isNull === columns.sourceIdIsNull;
+  // Each declared condition is checked INDEPENDENTLY. The old body returned
+  // `true` the moment `sourceIdIsNull` was unconstrained, which short-circuited
+  // past every later condition — harmless with one condition after it and
+  // wrong the moment a second arrived (`externalRefIsNull`, 2026-10-22).
+  const nullness = (value: string | null | undefined): boolean =>
+    value === null || value === undefined;
+  if (
+    columns.sourceIdIsNull !== null &&
+    nullness(item.source_id) !== columns.sourceIdIsNull
+  ) {
+    return false;
+  }
+  if (
+    columns.externalRefIsNull !== null &&
+    nullness(item.external_ref) !== columns.externalRefIsNull
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /* ── the ordering ────────────────────────────────────────────────────────── */

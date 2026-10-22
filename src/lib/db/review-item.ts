@@ -622,3 +622,213 @@ export function readEventListings(
     db,
   );
 }
+
+/* ── a reference item's candidates ───────────────────────────────────────── */
+
+/**
+ * Which catalog a reference item's candidates live in.
+ *
+ * `catalog` is `groups` + `idols` — one act, in whichever of the two holds it.
+ * `venues` is its own because a venue reference asks a different question and
+ * `settle_review_item` refuses `rule_not_kpop` on one.
+ */
+export type ReferenceDomain = "groups" | "idols" | "venues";
+
+/**
+ * One candidate the resolver proposed, resolved to something readable.
+ *
+ * **`detail` is the whole point of this type.** Ben, on the Yeonjun item:
+ * *"I have a feeling that I don't have enough information to make a decision
+ * at the moment."* Its ten candidates read `Yeonjun, Yeonjun, Yeonjun,
+ * Yeonjung, Yeonjung, Yeonju, …` — a list of near-identical names is not a
+ * choice. Measured against production, every one of those ten sits in a
+ * DIFFERENT group and carries its own real name and birth year, so the detail
+ * is what turns ten identical rows into ten distinguishable ones.
+ */
+export interface ReferenceCandidate {
+  /** The row's own id — what `link_entity` sends as its `ref`. */
+  id: string;
+  /** Which table it came from, which is the `domain` the verdict carries. */
+  domain: ReferenceDomain;
+  /** What it is called: `stage_name`, `name`. */
+  name: string;
+  /**
+   * What tells it apart from a namesake, in reading order and already joined:
+   * for an idol the group's NAME (resolved, never its uuid), the real name and
+   * the birth year; for a venue the city and country; for a group its company
+   * and debut year.
+   */
+  detail: string | null;
+}
+
+const IDOL_CANDIDATE_COLUMNS = [
+  "id",
+  "stage_name",
+  "real_name",
+  "birth_date",
+  "group_id",
+] as const;
+const GROUP_CANDIDATE_COLUMNS = ["id", "name", "company", "debut_date"] as const;
+const VENUE_CANDIDATE_COLUMNS = ["venue_id", "name", "city", "country"] as const;
+
+/** The year of an instant, or nothing — never a guessed date. */
+function yearOf(instant: string | null): string | null {
+  if (instant === null) return null;
+  const year = instant.slice(0, 4);
+  return /^\d{4}$/.test(year) ? year : null;
+}
+
+/** The parts of a detail line that are actually there, joined once. */
+function detailOf(parts: readonly (string | null)[]): string | null {
+  const named = parts.filter((part): part is string => part !== null && part !== "");
+  return named.length === 0 ? null : named.join(" · ");
+}
+
+/**
+ * The candidates a reference item proposed, resolved across the three catalogs
+ * — `review_items.evidence` on a reference item is "the candidate entity ids
+ * the resolver's 4b step proposed… ranked best score first"
+ * (`20260911000009`), and an id is in exactly one table.
+ *
+ * **The order is the resolver's.** `evidence` is ranked best-first and the
+ * result is returned in that order, not in whatever order PostgREST answered:
+ * the ranking is the resolver's judgment and this app does not re-sort it.
+ *
+ * A refusal from ANY leg refuses the whole set, because a partial candidate
+ * list is worse than none: an operator choosing from four of ten candidates
+ * would be choosing from a list that does not say it is short.
+ */
+export async function readReferenceCandidates(
+  ids: readonly string[],
+  db?: SupabaseClient,
+): Promise<DbResult<ReferenceCandidate[]>> {
+  if (ids.length === 0) return { kind: "ok", data: [] };
+
+  const [idols, groups, venues] = await Promise.all([
+    readRowsByIds<{
+      id: string;
+      stage_name: string | null;
+      real_name: string | null;
+      birth_date: string | null;
+      group_id: string | null;
+    }>(
+      T.idols,
+      IDOL_CANDIDATE_COLUMNS,
+      ids,
+      (client, chunk) =>
+        client
+          .from(T.idols)
+          .select(selectList(IDOL_CANDIDATE_COLUMNS))
+          .in("id", chunk)
+          .limit(chunk.length) as unknown as PromiseLike<DbResponse<never[]>>,
+      db,
+    ),
+    readRowsByIds<{
+      id: string;
+      name: string | null;
+      company: string | null;
+      debut_date: string | null;
+    }>(
+      T.groups,
+      GROUP_CANDIDATE_COLUMNS,
+      ids,
+      (client, chunk) =>
+        client
+          .from(T.groups)
+          .select(selectList(GROUP_CANDIDATE_COLUMNS))
+          .in("id", chunk)
+          .limit(chunk.length) as unknown as PromiseLike<DbResponse<never[]>>,
+      db,
+    ),
+    readRowsByIds<{
+      venue_id: string;
+      name: string | null;
+      city: string | null;
+      country: string | null;
+    }>(
+      T.venues,
+      VENUE_CANDIDATE_COLUMNS,
+      ids,
+      (client, chunk) =>
+        client
+          .from(T.venues)
+          .select(selectList(VENUE_CANDIDATE_COLUMNS))
+          .in("venue_id", chunk)
+          .limit(chunk.length) as unknown as PromiseLike<DbResponse<never[]>>,
+      db,
+    ),
+  ]);
+  if (idols.kind !== "ok") return idols;
+  if (groups.kind !== "ok") return groups;
+  if (venues.kind !== "ok") return venues;
+
+  // An idol's GROUP by name, not by uuid — the single most useful
+  // disambiguator among namesakes, and a uuid tells an operator nothing. One
+  // extra read, only for the groups the candidates actually name.
+  const groupIds = [
+    ...new Set(
+      idols.data
+        .map((row) => row.group_id)
+        .filter((id): id is string => id !== null && id !== ""),
+    ),
+  ];
+  const named = await readRowsByIds<{ id: string; name: string | null }>(
+    T.groups,
+    ["id", "name"] as const,
+    groupIds,
+    (client, chunk) =>
+      client
+        .from(T.groups)
+        .select("id,name")
+        .in("id", chunk)
+        .limit(chunk.length) as unknown as PromiseLike<DbResponse<never[]>>,
+    db,
+  );
+  // A group name that would not read costs a DETAIL, never the candidate: the
+  // row is still choosable and still named, so this leg does not refuse the set.
+  const groupName = new Map(
+    named.kind === "ok"
+      ? named.data.map((row) => [row.id, row.name ?? ""] as const)
+      : [],
+  );
+
+  const byId = new Map<string, ReferenceCandidate>();
+  for (const row of idols.data) {
+    byId.set(row.id, {
+      id: row.id,
+      domain: "idols",
+      name: row.stage_name ?? row.real_name ?? row.id,
+      detail: detailOf([
+        row.group_id === null ? null : (groupName.get(row.group_id) ?? null),
+        row.real_name,
+        yearOf(row.birth_date),
+      ]),
+    });
+  }
+  for (const row of groups.data) {
+    byId.set(row.id, {
+      id: row.id,
+      domain: "groups",
+      name: row.name ?? row.id,
+      detail: detailOf([row.company, yearOf(row.debut_date)]),
+    });
+  }
+  for (const row of venues.data) {
+    byId.set(row.venue_id, {
+      id: row.venue_id,
+      domain: "venues",
+      name: row.name ?? row.venue_id,
+      detail: detailOf([row.city, row.country]),
+    });
+  }
+
+  // The resolver's ranking, kept. An id that resolved to no row is DROPPED
+  // rather than rendered as a blank choice — a candidate the catalog no longer
+  // holds (a merge, a delete) is not a thing an operator can choose.
+  return {
+    kind: "ok",
+    data: ids
+      .map((id) => byId.get(id))
+      .filter((candidate): candidate is ReferenceCandidate => candidate !== undefined),
+  };
+}

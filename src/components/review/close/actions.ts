@@ -126,6 +126,19 @@ export interface ShapeChoices {
 }
 
 /**
+ * One candidate a REFERENCE item's answer may name — the shape
+ * `lib/db/review-item.ts`'s `ReferenceCandidate` satisfies, declared
+ * structurally here because a component imports nothing that can reach a
+ * database (ARCHITECTURE.md §4 rule 1).
+ */
+export interface ShapeCandidate {
+  readonly id: string;
+  readonly domain: string;
+  readonly name: string;
+  readonly detail: string | null;
+}
+
+/**
  * What a shape's builder is given: the item, and the evidence rows the page
  * already resolved for it.
  *
@@ -144,6 +157,15 @@ export interface ShapeActionsInput {
    * ignores that.
    */
   readonly choices?: ShapeChoices | null;
+  /**
+   * The candidates a REFERENCE item's answer may name, best-ranked first — the
+   * resolver's own proposals for the name it could not place.
+   *
+   * `null` means the read refused or was never made; EMPTY means the resolver
+   * proposed none, which is a real answer ("no catalog name is close") and a
+   * different state. Absent on every shape but the reference one.
+   */
+  readonly candidates?: readonly ShapeCandidate[] | null;
 }
 
 /** Every shape module's one export: the actions this shape offers, in order. */
