@@ -86,6 +86,9 @@ export function referenceActions({
       // Destructive, because this one WRITES: a confirmed match re-points what
       // the resolver links on its next cycle.
       variant: "destructive",
+      // THE OPTIONS ARE THE QUESTION, so they are on screen (Ben, twice). A
+      // handful of fixed, ranked rows is not a search.
+      expanded: true,
       chooses: {
         // The resolver's ranking, not re-sorted — the order IS its judgment
         // about which match is closest.

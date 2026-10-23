@@ -103,6 +103,23 @@ export interface ActionSpec {
    * builder produces one.
    */
   readonly chooses?: PickerWindow;
+  /**
+   * Are this control's options shown WITHOUT being asked for?
+   *
+   * Only meaningful beside `chooses`, and the difference is what the window
+   * IS. The venue picker searches a window of up to a thousand rows the
+   * operator has to narrow, so it rests closed and opens on a press. A
+   * REFERENCE item's candidates are the opposite: at most a handful, fixed
+   * when the item opened, ranked by the resolver, and they are not context for
+   * the question — **they are the question's options.**
+   *
+   * Ben asked for them twice — "a list of names to choose from", then "we
+   * display a table with all options" — and got a button labelled "This is
+   * this idol" that revealed them on a click. He reported it as the candidates
+   * not being implemented, which is what a hidden list looks like from the
+   * outside (2026-10-23).
+   */
+  readonly expanded?: boolean;
 }
 
 /**

@@ -335,7 +335,17 @@ export function CloseForm({
    * stays one list of plain specs — and because at most one picker may be open
    * at a time, which an index says and a flag per control would not.
    */
-  const [choosing, setChoosing] = useState<number | null>(null);
+  const [choosing, setChoosing] = useState<number | null>(
+    // An EXPANDED control starts open, so options that are the question are on
+    // screen without being asked for. The first one wins, because at most one
+    // picker may be open at a time and this state says so with an index.
+    () => {
+      const expanded = actions.findIndex(
+        (spec) => spec.chooses !== undefined && spec.expanded === true,
+      );
+      return expanded === -1 ? null : expanded;
+    },
+  );
   const [query, setQuery] = useState("");
   /** The control the operator pressed, so focus can come back to it. */
   const pressed = useRef<HTMLButtonElement | null>(null);
