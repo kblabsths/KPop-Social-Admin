@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
-import { Empty, Eyebrow, Identifier, StateOf, type UnavailableRead } from "@/components/ui";
+import {
+  Button,
+  Empty,
+  Eyebrow,
+  Identifier,
+  StateOf,
+  type UnavailableRead,
+} from "@/components/ui";
 import { EM_DASH, clamped, isAbsent, orDash, relativeAge } from "@/lib/format";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
 import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
@@ -386,6 +393,7 @@ export function CloseSlot({
   readiness,
   actions,
   notice = null,
+  blocked = [],
   verdict,
 }: {
   /** The item being closed — its id addresses the route, its status decides. */
@@ -408,6 +416,25 @@ export function CloseSlot({
    * them but a conflict on a reference field.
    */
   notice?: ReactNode;
+  /**
+   * Controls this close WOULD offer and cannot yet, each with the reason.
+   *
+   * They render DISABLED, labelled, with the reason beside them — which is a
+   * deliberate exception to "a control that cannot be honoured is not drawn"
+   * (SPEC F10). That rule exists so a control never silently fails; a control
+   * visibly refusing and SAYING WHY does not fail silently, and it answers the
+   * question an operator would otherwise ask ("where is the option I need?").
+   *
+   * Ben asked for a "Create a new artist" button on 2026-10-23, and creating a
+   * catalog row is blocked on the catalog domains being registered — a change
+   * in the scraper repo, not here. Omitting the button would hide the gap;
+   * enabling it would send a verdict the database refuses with KS001. So it is
+   * here, off, with its reason.
+   *
+   * Empty on every shape that withholds nothing, which is every shape but the
+   * reference one today.
+   */
+  blocked?: readonly { readonly label: string; readonly because: string }[];
   /**
    * The verdict this item was settled with — `readItemVerdict`'s result,
    * narrowed by the page into plain data (campaign admin-window/TASK-0059).
@@ -454,6 +481,18 @@ export function CloseSlot({
           was empty (LOOK_AND_FEEL: the emptinesses never share a rendering). */}
       {notice}
       <CloseForm reviewItemId={item.review_item_id} actions={actions} />
+      {blocked.length === 0 ? null : (
+        <div data-close-blocked="" className="flex flex-col gap-1">
+          {blocked.map((control) => (
+            <span key={control.label} className="flex flex-wrap items-baseline gap-2">
+              <Button variant="secondary" disabled>
+                {control.label}
+              </Button>
+              <span className="type-body text-ink-secondary">{control.because}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </>
   );
 }

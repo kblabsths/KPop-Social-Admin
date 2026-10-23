@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { EditableCell, type SaveOutcome } from "@/components/EditableCell";
 import { PickerPanel, optionFor } from "@/components/records/entity-picker";
 import { Button, DATA_MUTED, Identifier } from "@/components/ui";
+import { CandidateTable } from "./candidate-table";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
   closeRefusal,
@@ -316,7 +317,7 @@ export function ChosenControl({
  */
 export function noteHint(actions: readonly ActionSpec[]): string {
   void actions;
-  return "Please provide evidence for your decision";
+  return "Provide evidence for your decision";
 }
 
 export function CloseForm({
@@ -347,10 +348,34 @@ export function CloseForm({
     },
   );
   const [query, setQuery] = useState("");
+  /**
+   * The candidate row the operator has SELECTED on an expanded control, before
+   * they confirm it.
+   *
+   * Select-then-confirm, and the separation is deliberate (Ben, 2026-10-23):
+   * the shared picker settles on a row press because a chosen venue IS the
+   * decision, while here the operator picks an artist, writes why, and then
+   * presses the control that writes. A mis-click cannot reach canonical.
+   */
+  const [chosen, setChosen] = useState<string | null>(null);
+
+  /**
+   * The one control whose options are shown without being asked for, with its
+   * index — or `null` where this shape has none.
+   *
+   * At most one, for the reason `choosing` is an index and not a flag per
+   * control: two open option lists on one close is two questions.
+   */
+  const expandedIndex = actions.findIndex(
+    (spec) => spec.chooses !== undefined && spec.expanded === true,
+  );
+  const expanded =
+    expandedIndex === -1
+      ? null
+      : { index: expandedIndex, spec: actions[expandedIndex] };
   /** The control the operator pressed, so focus can come back to it. */
   const pressed = useRef<HTMLButtonElement | null>(null);
   const noteId = useId();
-  const hintId = useId();
 
   useEffect(() => {
     if (!focusReturns({ state, focusIsAdrift: focusIsAdrift(pressed.current) })) return;
@@ -412,23 +437,43 @@ export function CloseForm({
   return (
     <div className="flex flex-col gap-2" data-close-state={state.kind}>
       {/*
-        The word "Note" is gone (Ben, 2026-10-23: "delete the word Note"). It
-        labelled the field with its own name, which told an operator nothing
-        the field's one sentence does not.
+        THE OPTIONS, ABOVE EVERYTHING (Ben, 2026-10-23: "Place the candidates
+        table above the evidence box. And then move all of the buttons to
+        underneath it").
 
-        The LABEL ELEMENT stays, carrying that sentence: a textarea needs an
-        accessible name, and removing the `<label>` as well as the word would
-        leave the control unnamed to everything that reads the page by name
-        (quality bar 9). So the hint IS the label now — one string, one
-        element, named once.
+        It renders OUTSIDE the button row on purpose: the control that confirms
+        the choice stays in that row with the other two, so all three buttons
+        sit together under one table rather than one of them being attached to
+        its own list.
       */}
-      <label id={hintId} className="type-body text-ink" htmlFor={noteId}>
-        {noteHint(actions)}
-      </label>
+      {expanded === null || expanded.spec.chooses === undefined ? null : (
+        <CandidateTable
+          options={expanded.spec.chooses.options}
+          chosen={chosen}
+          disabled={settling}
+          onChoose={(id: string) =>
+            setChosen((was) => (was === id ? null : id))
+          }
+          label={`Candidates for ${expanded.spec.chooses.domain}`}
+        />
+      )}
+      {/*
+        NO VISIBLE LABEL. The word "Note" went on 2026-10-23 and the request
+        moved INTO the field as its hint on the same day, at Ben's word: "move
+        it to be the hint text for the response textfield".
+
+        So the field is named by `aria-label` carrying the same words the hint
+        shows. A `placeholder` is not a name — it vanishes the moment anyone
+        types — and a textarea with no name at all is unreachable to everything
+        that navigates by label (quality bar 9). One string, used twice, so the
+        hint a sighted operator reads and the name a screen reader announces
+        cannot drift apart.
+      */}
       <textarea
         id={noteId}
+        aria-label={noteHint(actions)}
+        placeholder={noteHint(actions)}
         data-close-note=""
-        aria-describedby={hintId}
         rows={3}
         value={note}
         disabled={settling}
@@ -442,7 +487,30 @@ export function CloseForm({
             // entity picker, one whose payload they TYPE is the shared edit
             // cell, and every other control is a button. One list, three
             // renderings, and the same single request path underneath.
-            spec.chooses !== undefined ? (
+            // An EXPANDED control's options are already a table above; what
+            // belongs in this row is the control that CONFIRMS the selection,
+            // so all three buttons sit together under one table. Disabled
+            // until a row is selected: a confirm with nothing selected is a
+            // control that cannot be honoured (SPEC F10).
+            spec.chooses !== undefined && spec.expanded === true ? (
+              <Button
+                key={`${spec.action}-${index}`}
+                data-close-action={spec.action}
+                variant={spec.variant ?? "secondary"}
+                disabled={settling || chosen === null}
+                onClick={(event) => {
+                  pressed.current = event.currentTarget;
+                  if (chosen === null) return;
+                  // Only a row the read returned may be settled with, whatever
+                  // produced the id — the picker's own guard, asked again at
+                  // the call site that sends one.
+                  if (optionFor(spec.chooses?.options ?? [], chosen) === null) return;
+                  void settle(spec, null, chosen);
+                }}
+              >
+                {spec.label}
+              </Button>
+            ) : spec.chooses !== undefined ? (
               <ChosenControl
                 key={`${spec.action}-${index}`}
                 spec={spec}

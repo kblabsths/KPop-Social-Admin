@@ -983,6 +983,33 @@ export default async function ReviewItemPage({
             candidates:
               candidates === null || candidates.kind !== "ok" ? null : candidates.data,
           })}
+          /*
+           * "Create a new artist" — asked for by Ben on 2026-10-23 and not yet
+           * possible. The pipeline's way to create a row is to make claims
+           * until the creation bar is met and let the resolver create it as a
+           * side effect of the first apply (`resolver/creation.py`: "there is
+           * NO draft, stub or partial row before creation — the ledger is the
+           * staging area"). Admin would therefore write admin-tier claims and
+           * insert nothing, which keeps AGENTS.md's rule intact.
+           *
+           * What blocks it is upstream: `settle_review_item` refuses a
+           * value-carrying verdict for a domain with no compiled schema
+           * (KS001, "register the domain in registry/domains/ and ship its
+           * registration migration"), and `registry/schemas/` holds only
+           * `events` and `venues`. So the control is drawn OFF, with the
+           * reason, rather than omitted — see `CloseSlot.blocked`.
+           */
+          blocked={
+            shape === "entity_link_reference"
+              ? [
+                  {
+                    label: "Create a new artist",
+                    because:
+                      "needs groups and idols registered as catalog domains — a scraper-repo migration",
+                  },
+                ]
+              : []
+          }
           verdict={settledWith(verdict)}
         />
       </Section>

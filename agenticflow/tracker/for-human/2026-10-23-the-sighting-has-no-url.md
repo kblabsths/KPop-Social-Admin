@@ -251,3 +251,57 @@ first concrete consumer.
 Until it is answered, Admin offers no "none of these rows" control, for the
 reason given further up: a button that buries the question is worse than no
 button.
+
+---
+
+## BUG to fix separately: two Yeonjuns from TXT in the catalog
+
+Ben, 2026-10-23: *"There are 2 yeonjuns from TXT in our database. This is a
+separate bug, and we shouldn't tackle it here, but maybe just leave a note that
+we should fix this and try to prevent it from happening in the future."*
+
+Noted here rather than fixed. Two observations to go with it:
+
+- The Yeonjun review item's ten candidates include exactly ONE under
+  `TOMORROW X TOGETHER` (`4d2af96c…`, `Choi Yeon-jun`, 1999). So the duplicate
+  is NOT among the candidates the resolver ranked — which means the item's
+  candidate list is not where it will be noticed, and an admin answering this
+  item would link the one they were shown and never learn there is a second.
+- This is the same class already recorded in `../MIGRATE_LATER.md` from the
+  intake: *"dedupe the duplicate rows the intake found (two BLACKPINK Lisas,
+  `Mamamoo`/`MAMAMOO`, Wonho as member + soloist, WJSN Dayoung ×2)"*. The
+  `Lisa, Lisa` pair in the LISA reference item is the same thing surfacing as a
+  decision. So this is not a new bug — it is the known catalog-dedupe debt
+  showing up where an operator now has to act on it.
+
+**Why prevention matters more than the fix here.** Every duplicate pair makes a
+reference item unanswerable-in-principle: "which one is this" has two correct
+answers and linking either is half right. The resolver's own creation path
+already names the risk — `resolver/creation.py`: *"There is no similarity step:
+the cascade is steps 1-3, exact after normalization, and near-duplicate
+creation ('Ziggo Dome Club' beside 'Ziggo Dome') is a known, bounded risk whose
+merge mechanics belong to contracts/entity-linking.md's TODO."* So duplicates
+are expected by design today and the merge machinery is the TODO that fixes it.
+
+A `merges` table already exists (`20260913000001_a_duplicate_folds_into_its_survivor.sql`),
+so the mechanism is partly built. Worth checking whether it can be pointed at
+`idols`/`groups` as part of registering those domains — the same change this
+file already asks for.
+
+## One architectural note, for the record
+
+Ben: *"This UI probably only works for artists… so I guess the review item UI
+needs to be adjustable depending on the review item."*
+
+It already is, and that was the design from the start. Every per-shape decision
+on the review item route is a `Record<Shape, …>` the compiler forces to be
+total: `EVIDENCE_VIEW_BY_SHAPE`, `ACTIONS_BY_SHAPE`, `NOTICE_BY_SHAPE`,
+`DIAL_BY_SHAPE`, `CLOSE_TITLE_BY_SHAPE`. Adding the reference shape on
+2026-10-22 required an entry in all five and would not compile without them —
+which is how the candidate table, the sighting block and the two new actions
+reached only that shape and left the other three untouched.
+
+So the artist-shaped UI is correctly scoped to the artist-shaped item. A venue
+reference item shares the shape and will want a different table (a map, an
+address, not a face), which is a per-DOMAIN branch inside the reference view
+rather than a fifth shape.

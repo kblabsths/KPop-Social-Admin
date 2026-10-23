@@ -38,14 +38,22 @@ import type { ActionSpec, ShapeActionsInput, ShapeCandidate } from "./actions";
  * rightly refuse.
  */
 
+/**
+ * Ben's own words for the control (2026-10-23): "Select this artist".
+ *
+ * A verb plus its object, naming what gets written (copy bar 1) — and it reads
+ * as the confirmation of a selection, which is what it now is: the options are
+ * a table above and this button settles the row the operator picked.
+ */
 const LINK_LABEL: Readonly<Record<string, string>> = {
-  groups: "This is this group",
-  idols: "This is this idol",
-  venues: "This is this venue",
+  groups: "Select this group",
+  idols: "Select this artist",
+  venues: "Select this venue",
 };
 
 /** The operator's word for the ruling — a verb plus its object (copy bar 1). */
-const NOT_KPOP_LABEL = "Confirm not a k-pop act";
+// Ben's wording, 2026-10-23.
+const NOT_KPOP_LABEL = "Not a KPOP act";
 
 /** The candidates of one domain, keeping the resolver's ranking. */
 function byDomain(
