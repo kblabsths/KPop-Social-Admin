@@ -106,7 +106,22 @@ export function CandidateImage({
          *
          * `backdrop:` styles the platform's own backdrop.
          */
-        className="fixed inset-0 m-auto h-fit w-fit max-w-[90vw] border border-hairline bg-surface p-0 backdrop:bg-ink/50"
+        className="fixed inset-0 m-auto h-fit border border-hairline bg-surface p-0 backdrop:bg-ink/50"
+        /*
+         * THE DIALOG IS WHAT ZOOMS (Ben, 2026-10-23: "the dialog height gets
+         * taller correctly, but the width does not change. Can we also
+         * increase the dialog width?").
+         *
+         * It was `w-fit` around an image whose width was a percentage of its
+         * own container — which is circular, so the width never moved and only
+         * the height grew. Now the dialog has an explicit width that scales
+         * and the image simply fills it.
+         *
+         * `min()` with `90vw` is the clamp, in CSS rather than in the handler:
+         * the ceiling is a property of the VIEWPORT, so it belongs where the
+         * viewport is known. The zoom's own 1-4 bound still lives in `step`.
+         */
+        style={{ width: `min(90vw, ${zoom * 32}rem)` }}
         /*
          * A click that lands on the DIALOG rather than on its content is a
          * click outside the content — including one on the backdrop, which the
@@ -123,21 +138,19 @@ export function CandidateImage({
             past the viewport would either be clipped with no way to reach the
             rest, or push the controls below off the screen.
           */}
-          <div className="max-h-[70vh] max-w-full overflow-auto">
+          {/* Vertical scroll only: the width is the dialog's now, so there is
+              never horizontal overflow to chase. Capped so a tall portrait
+              cannot push the zoom controls off the screen. */}
+          <div className="max-h-[70vh] overflow-y-auto">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={url}
               alt={called}
               width={480}
               height={480}
-              /*
-               * The magnification is a NUMBER, so it is an inline style and
-               * not a class — there is no token for "1.75 times" and inventing
-               * one per step would be a scale nobody asked for. The fitted
-               * size stays in the classes; the style only multiplies it.
-               */
-              style={{ width: `${zoom * 100}%`, height: "auto" }}
-              className="max-w-none rounded-control object-contain"
+              /* Fills whatever width the dialog currently has — the
+                 magnification lives on the dialog, not here. */
+              className="h-auto w-full rounded-control object-contain"
             />
           </div>
           <div className="flex items-center justify-between gap-4">

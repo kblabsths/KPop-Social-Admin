@@ -28,7 +28,29 @@ import { CandidateImage } from "./candidate-image";
  * two halves line up by construction rather than by coincidence.
  */
 const COLUMNS = ["name", "group", "agency", "full name", "birthday", "record"] as const;
-const GRID = "grid-cols-[6rem_1fr_1fr_1fr_6rem_auto]";
+/*
+ * `minmax(0,1fr)` and a FIXED last column, not `1fr` and `auto`.
+ *
+ * This is the third attempt at the alignment and the first one aimed at the
+ * real cause, which browser measurement finally showed: the header's cell and
+ * the row's cell were byte-identical and 1350px wide in both, and the labels
+ * still drifted up to 223px from their values.
+ *
+ * `1fr` is `minmax(AUTO, 1fr)`. The auto minimum means a track can never be
+ * narrower than its own content's min-content width — so the header's `agency`
+ * and the row's `Star Bay Entertainment` set different minima, the leftover
+ * space divides differently, and two grids with the same template resolve to
+ * different tracks. `auto` on the last column has the same fault: `record`
+ * against a uuid.
+ *
+ * `minmax(0,1fr)` drops the floor, so the three flexible tracks are purely
+ * proportional and identical wherever they appear. The uuid column is given a
+ * width instead of measuring one. Content that no longer fits is truncated
+ * with its full value on the `title`, which is the trade: a column that
+ * stays put beats a column that says everything.
+ */
+const GRID =
+  "grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_6rem_19rem]";
 /**
  * The picture's column, and the classes its cell takes — IDENTICAL in the
  * header and in every row.
@@ -114,7 +136,9 @@ export function CandidateTable({
               <th scope="col" className="p-0">
                 <span className={cx("type-micro text-ink-secondary", GRID_CELL, GRID)}>
                   {COLUMNS.map((head) => (
-                    <span key={head}>{head}</span>
+                    <span key={head} className="truncate">
+                      {head}
+                    </span>
                   ))}
                 </span>
               </th>
@@ -177,17 +201,39 @@ export function CandidateTable({
                         disabled && "cursor-not-allowed opacity-50",
                       )}
                     >
-                      <span className="type-body text-ink">{option.name}</span>
-                      <span className="type-body text-ink-secondary">
+                      {/* `truncate` on every cell, because `minmax(0,…)` lets
+                          a track be narrower than its content and the
+                          alternative is a value spilling into the next
+                          column. The full text is on the `title`, so nothing
+                          is unreachable. */}
+                      <span
+                        className="type-body truncate text-ink"
+                        title={option.name ?? undefined}
+                      >
+                        {option.name}
+                      </span>
+                      <span
+                        className="type-body truncate text-ink-secondary"
+                        title={option.group ?? undefined}
+                      >
                         {option.group}
                       </span>
-                      <span className="type-body text-ink-secondary">
+                      <span
+                        className="type-body truncate text-ink-secondary"
+                        title={option.agency ?? undefined}
+                      >
                         {option.agency}
                       </span>
-                      <span className="type-body text-ink-secondary">
+                      <span
+                        className="type-body truncate text-ink-secondary"
+                        title={option.fullName ?? undefined}
+                      >
                         {option.fullName}
                       </span>
-                      <span className="type-body text-ink-secondary">
+                      <span
+                        className="type-body truncate text-ink-secondary"
+                        title={option.birthday ?? undefined}
+                      >
                         {option.birthday}
                       </span>
                       <Identifier muted>{option.id}</Identifier>
