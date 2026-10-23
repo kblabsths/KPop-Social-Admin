@@ -60,41 +60,59 @@ harder call — two acts of the same name, one of which plays that venue — the
 bill would settle it, and nothing on the item can reach it. Mentioning it as a
 known edge, not asking for it.
 
-## Second ask, found the same day: the folds name nothing
+## Second ask — CORRECTED, and downgraded
 
-Ben, reading the Yeonjun item: *"the item came from 11 folds over 11 evidence
-ids. Each id is a different appearance of yeonjun correct?"*
+*An earlier version of this section asked you to record which EVENTS the folds
+were, on the grounds that an operator cannot open the bills. That was built on
+a wrong model of what the item asks. Read the correction before acting on it —
+the ask survives, much smaller.*
 
-Half right, and the half he got wrong is Admin's fault for displaying it badly
-— but the half he got right is a real gap.
+### What the item actually asks
 
-Measured on that item in production:
+Not "is Yeonjun the right artist for this event". The scraper says so in its
+own words, and I should have read it before filing anything:
 
-```
-folded_count : 88
-evidence     : 10   -> 10 of 10 resolve in `idols`
-                       0 of 10 in events / observations / scraped_events
-opened_at    : 2026-10-15      last_evidence_at: 2026-10-23
-```
+> THE SUBJECT IS THE REFERENCE (contracts/entity-linking.md): `source_id` and
+> `external_ref` are the two halves the review item opens under, and they are
+> two of the three columns the store is keyed by — so the answer, when it
+> comes, is one lookup away from the item's own subject and no column records
+> it.
+> — `resolver/ledger.py`, `AnUnsettledReference`
 
-- `evidence` is the 10 CANDIDATES, not the appearances. (Admin was drawing
-  them as an evidence table, which invited exactly this reading. Fixed: they
-  are the close's options now.)
-- `folded_count` is 88 REPEAT SIGHTINGS. He is right that each is a separate
-  appearance, and right that they are almost certainly 88 different
-  Ticketmaster events.
+> A reference nothing has SETTLED … opens ONE entity-link item with the subject
+> `(entity_link, source_id, external_ref)`, and a second open for that subject
+> is an insert the widened index refuses, **which is the fold**. They are per
+> REFERENCE and not per fact.
+> — `resolver/cycle.py`
 
-**The ask: the folds name nothing.** `folded_count` is a bare counter and no
-table records which events the 88 sightings were. So an operator cannot open
-any of the bills — and for a genuinely hard call (two same-named acts, one of
-which plays that venue) the bill is what would settle it. The performer page
-is enough for Yeonjun; it will not be enough for everything.
+So the question is: **which catalog row is Ticketmaster's performer
+`K8vZ917-Rw0`?** One question about one identity. The 88 folds are 88 times the
+pipeline met that same reference and still had no answer for it — not 88
+separate questions.
 
-If the 4b step kept the sighting's event ids alongside the candidate ids —
-a second array, or a child row per sighting — Admin would list them and link
-each one. Related to the URL ask above and probably the same change: both are
-"record where the sighting came from".
+And the answer is **durable and global for that reference**: it lands in
+`confirmed_matches` under `(source_id, 'idols', 'K8vZ917-Rw0')`, the resolver
+links it on its next cycle, and every one of the 88 events resolves along with
+every future bill that names the same attraction. One decision, 88 events, and
+the item settles itself.
 
-**Also worth your attention on its own:** 88 failed placements of one name over
-eight days, still arriving today. Whatever the escalation thresholds are, a
-question re-asked 88 times is not being escalated by them.
+### What that means for the asks above
+
+- **The source URL ask stands, and is stronger than I argued.** The attraction
+  page IS the subject of the question — not context around it. An operator
+  deciding "which catalog row is this Ticketmaster performer" is looking at
+  exactly the right page.
+- **The "record which events" ask is DOWNGRADED to a nice-to-have.** The events
+  are not what is being asked about and are not needed to answer. They are
+  tie-breaking context for a genuinely ambiguous call — two same-named acts
+  where the venue or the co-headliners would settle it. Worth having
+  eventually; not worth a schema change now, and I was wrong to put it beside
+  the URL ask as though it were the same change.
+
+### The one thing in this section that still deserves your attention
+
+88 unanswered sightings of one reference, 2026-10-15 to 2026-10-23, still
+arriving. Whatever the escalation thresholds are, a reference re-asked 88 times
+is not being escalated by them — and because the answer is one row with 88
+events behind it, this is the highest-leverage unanswered question in the
+queue. That is a resolver question, not an Admin one.

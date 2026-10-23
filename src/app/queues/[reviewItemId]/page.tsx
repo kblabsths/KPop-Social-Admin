@@ -860,7 +860,11 @@ export default async function ReviewItemPage({
 
   return (
     <Page title="Review item" actions={identity}>
-      <Section title="What happened" surface={HEADER_SURFACE}>
+      {/* No heading. "What happened" sat above the item's own summary — which
+          IS the account of what happened — so the heading restated the thing
+          the reader was already looking at (Ben, 2026-10-23). The surface keeps
+          its name, which is its identity to every oracle; only the words go. */}
+      <Section surface={HEADER_SURFACE}>
         <ItemHeader
           item={row}
           kind={kind}

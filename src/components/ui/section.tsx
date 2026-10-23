@@ -7,7 +7,21 @@ export function Section({
   actions,
   children,
 }: {
-  title: string;
+  /**
+   * The h2 above the section — or ABSENT, where the section's content names
+   * itself and a heading would only repeat it.
+   *
+   * Optional since 2026-10-23 (Ben: "please delete the 'WHAT HAPPENED' text at
+   * the top"). A heading that restates what the reader is plainly looking at is
+   * the same defect as a paragraph that does — "What happened" sat above the
+   * item's own summary sentence, which is the account of what happened.
+   *
+   * A titleless section keeps its `data-surface` identity and its layout, and
+   * drops the heading ROW entirely rather than rendering an empty `h2`: an
+   * empty heading is worse than none, because everything that navigates by
+   * heading would offer it.
+   */
+  title?: string;
   /**
    * A stable name for this section as a SURFACE, emitted as `data-surface`.
    *
@@ -33,10 +47,14 @@ export function Section({
 }) {
   return (
     <section data-surface={surface} className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="type-title text-ink">{title}</h2>
-        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-      </div>
+      {title === undefined && actions === undefined ? null : (
+        <div className="flex items-center justify-between gap-4">
+          {title === undefined ? null : (
+            <h2 className="type-title text-ink">{title}</h2>
+          )}
+          {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+        </div>
+      )}
       {children}
     </section>
   );
