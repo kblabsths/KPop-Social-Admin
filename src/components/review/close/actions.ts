@@ -322,9 +322,20 @@ export function closeRefusal(
 /**
  * What the operator reads when the form refuses — LOOK_AND_FEEL copy bar 3:
  * name what failed, then what to do, with no apology.
+ *
+ * It read "A won't-fix needs a note — say why the condition stands, then close
+ * it again", which was true while `wont_fix` was the only action that required
+ * one. `noteRequired` returns true for EVERY action since 2026-10-23 (Ben's
+ * ruling), so an operator selecting a candidate with no note was told about a
+ * won't-fix they had not chosen and a condition that does not stand (Ben
+ * found it by doing exactly that).
+ *
+ * The words now match the field they are about: the form asks for "evidence
+ * for your decision", so the refusal asks for the same thing in the same word.
+ * One request, two renderings, no second vocabulary for one rule.
  */
 export const NOTE_REFUSAL_WORDS =
-  "A won’t-fix needs a note — say why the condition stands, then close it again.";
+  "Every decision needs its evidence — say why, then close it again.";
 
 /** The words for a control that takes a value and was handed an empty field. */
 export const VALUE_REFUSAL_WORDS =

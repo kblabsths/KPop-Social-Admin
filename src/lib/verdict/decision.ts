@@ -672,7 +672,13 @@ export function decisionRefusals(decision: VerdictDecision): readonly string[] {
       refusals.push("review_item_required");
     }
 
-    // 3. The note `wont_fix` cannot settle without.
+    // 3. The note no decision may settle without.
+    //
+    //    `noteRequired` answers for every action since 2026-10-23, so this
+    //    guard is now Admin's policy applied at its own route and not only a
+    //    mirror of the function's `wont_fix` rule. Stricter than the database
+    //    in one direction, which is the safe one: nothing this app sends can
+    //    be refused for a note the function wanted and Admin did not ask for.
     if (noteRequired(action) && !present(body.note)) {
       refusals.push("note_required");
     }
