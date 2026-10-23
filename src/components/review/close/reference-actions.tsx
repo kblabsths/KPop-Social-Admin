@@ -83,14 +83,21 @@ export function referenceActions({
     specs.push({
       label: LINK_LABEL[domain] ?? "This is this record",
       action: "link_entity",
-      // The domain is the control's; the row is the operator's, merged in as
-      // `ref` by `decisionValue`. The other slots are spelled NULL rather than
-      // omitted, for the reason every builder here spells them: the envelope's
-      // shape is fixed and `decisionRefusals` counts filled slots, so an
-      // absent key and a null key must not be two ways of saying the same
-      // thing. `entity_id` and `field` are the two a reference verdict does
-      // not carry at all — the function refuses them (KS029).
-      value: { domain, observation_id: null, value: null, ref: null },
+      /*
+       * `{ domain }` AND NOTHING ELSE. `decisionValue` merges the chosen row
+       * in as `ref`, giving the `{domain, ref}` the reference arm takes.
+       *
+       * It used to spell the unused slots as explicit nulls, with a comment
+       * arguing that an absent key and a null key must not mean the same
+       * thing. That was wrong about this envelope in both directions. The
+       * DATABASE counts key PRESENCE — it answered Ben's click with "a
+       * reference answer carries a key it does not take: observation_id,
+       * value … send domain and ref and nothing else (KS029)" — and ADMIN's
+       * own `filled()` checks `hasOwnProperty` and the value, so absent and
+       * null were already identical to every invariant here. The nulls bought
+       * nothing and cost the write.
+       */
+      value: { domain },
       // Destructive, because this one WRITES: a confirmed match re-points what
       // the resolver links on its next cycle.
       variant: "destructive",

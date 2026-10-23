@@ -292,17 +292,44 @@ export interface VerdictValue {
    * no field, and the function refuses one.
    */
   readonly field?: string;
-  /** `choose_claimed_value`: the observation whose value is adopted. */
-  readonly observation_id: string | null;
-  /** `supply_value` / a scalar `override`: the operator's own value. */
-  readonly value: string | number | boolean | null;
+  /**
+   * `choose_claimed_value`: the observation whose value is adopted.
+   *
+   * OPTIONAL, like `entity_id` and `field`, and for a sharper reason than
+   * theirs: `settle_review_item`'s reference arm counts KEY PRESENCE, not
+   * nullness. It answers
+   *
+   *   "a reference answer carries a key it does not take: observation_id,
+   *    value … send domain and ref and nothing else (KS029)"
+   *
+   * to `{domain, ref, observation_id: null, value: null}` — a payload whose
+   * every extra slot is null. So a reference verdict must OMIT these keys,
+   * not null them.
+   *
+   * Nothing is loosened for a fact verdict by the `?`: `filled()` already
+   * treats an absent key and a null key identically (it checks
+   * `hasOwnProperty` AND the value), so Admin's own invariants count the same
+   * slots either way.
+   */
+  readonly observation_id?: string | null;
+  /**
+   * `supply_value` / a scalar `override`: the operator's own value.
+   *
+   * Optional for the same one reason `observation_id` is — see above.
+   */
+  readonly value?: string | number | boolean | null;
   /**
    * A reference field's chosen entity id, carried as the admin source's own
    * `external_ref` (§9.2): a reference is observed as a ref, and the link stage
    * resolves `(source, domain, external_ref)` through `confirmed_matches` into
    * the id column. `link_entity`, and an `override` of a reference field.
+   *
+   * Optional, because a CHOOSING control's spec does not hold it: the row is
+   * the operator's and `decisionValue` merges it in at submission. A spec that
+   * carried `ref: null` would be claiming to know an answer nobody has given
+   * yet, and on a reference item the database refuses the extra key outright.
    */
-  readonly ref: string | null;
+  readonly ref?: string | null;
 }
 
 /** One decision, the whole argument `settle_review_item` takes. */
