@@ -29,8 +29,25 @@ import { CandidateImage } from "./candidate-image";
  */
 const COLUMNS = ["name", "group", "agency", "full name", "birthday", "record"] as const;
 const GRID = "grid-cols-[6rem_1fr_1fr_1fr_6rem_auto]";
-/** The picture's column, held to one width in the header and in every row. */
-const FACE_WIDTH = "w-14";
+/**
+ * The picture's column, and the classes its cell takes — IDENTICAL in the
+ * header and in every row.
+ *
+ * One constant per shared thing, because the misalignment Ben kept seeing was
+ * three near-misses rather than one mistake: the header's grid lacked
+ * `w-full` and so shrank to its content, the two face cells had different
+ * padding (`px-2` against `pl-2`), and `table-layout: auto` let the content
+ * decide the column widths anyway. Near-identical class strings in two places
+ * is the shape of that bug, so there are no longer two places.
+ */
+const FACE_CELL = "w-14 px-2 py-1.5 align-middle";
+
+/**
+ * The classes BOTH grid containers take. `w-full` is the load-bearing one: a
+ * grid that is not full-width resolves its `1fr` tracks against its content
+ * box, so the header's labels drifted left of the values under them.
+ */
+const GRID_CELL = "grid w-full items-center gap-2 px-2 py-1.5 text-left";
 
 /**
  * A reference item's candidates, as a TABLE whose rows are the choice — Ben,
@@ -78,22 +95,24 @@ export function CandidateTable({
       className="min-w-0 border border-hairline bg-surface"
     >
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left" aria-label={label}>
+        {/* `table-fixed`: the two columns are decided by the widths declared on
+            the header's cells, not measured from the content. Under `auto`, a
+            long agency name could widen the picture's column in one row and
+            not another, and no amount of matching classes fixes that. */}
+          <table
+            className="w-full table-fixed border-collapse text-left"
+            aria-label={label}
+          >
           <thead>
             <tr className="bg-chrome">
-              {/* The picture's column: blank, and exactly as wide as the cell
+              {/* The picture's column: blank, and the same cell as the one
                   below it. */}
-              <th scope="col" className={cx(FACE_WIDTH, "px-2 py-1.5")} />
-              {/* The other six, in the row's own grid so each label sits over
-                  its values. LEFT-ALIGNED, here and in the rows — Ben asked for
-                  it everywhere and there is no numeric column to right-align. */}
-              <th scope="col" colSpan={2} className="p-0">
-                <span
-                  className={cx(
-                    "type-micro grid items-center gap-2 px-2 py-1.5 text-left text-ink-secondary",
-                    GRID,
-                  )}
-                >
+              <th scope="col" className={FACE_CELL} />
+              {/* The other six, in the row's OWN grid classes so each label
+                  sits over its values. Left-aligned, here and in the rows —
+                  there is no numeric column to right-align. */}
+              <th scope="col" className="p-0">
+                <span className={cx("type-micro text-ink-secondary", GRID_CELL, GRID)}>
                   {COLUMNS.map((head) => (
                     <span key={head}>{head}</span>
                   ))}
@@ -137,7 +156,7 @@ export function CandidateTable({
                     it — which is what Ben asked for, and the only shape in
                     which both are reachable by keyboard.
                   */}
-                  <td className={cx(FACE_WIDTH, "p-0 pl-2 align-middle")}>
+                  <td className={FACE_CELL}>
                     {option.imageUrl === null || option.imageUrl === undefined ? (
                       // A fixed box either way, so a row without a picture is
                       // the same height as one with it.
@@ -146,14 +165,14 @@ export function CandidateTable({
                       <CandidateImage url={option.imageUrl} name={option.name} />
                     )}
                   </td>
-                  <td colSpan={2} className="p-0">
+                  <td className="p-0">
                     <button
                       type="button"
                       onClick={() => onChoose(option.id)}
                       disabled={disabled}
                       aria-pressed={selected}
                       className={cx(
-                        "grid w-full items-center gap-2 px-2 py-1.5 text-left",
+                        GRID_CELL,
                         GRID,
                         disabled && "cursor-not-allowed opacity-50",
                       )}

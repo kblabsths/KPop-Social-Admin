@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
 /**
@@ -45,12 +45,30 @@ export function CandidateImage({
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
   const called = name ?? "(unnamed)";
+  /**
+   * How much the enlarged picture is magnified (Ben, 2026-10-23: "+ and -
+   * buttons to the bottom left which zoom in/out").
+   *
+   * A multiple of the dialog's own fitted size rather than an absolute pixel
+   * width, so `1` is always "as large as this screen will show it" whatever
+   * the source published — a 400px portrait and a 3000px one both start whole
+   * and zoom the same way.
+   */
+  const [zoom, setZoom] = useState(1);
+  const step = (by: number) =>
+    // Clamped, and the bounds are the useful ones: below 1 there is no reason
+    // to shrink a picture that already fits, and past 4 a catalog portrait is
+    // mostly compression artefacts.
+    setZoom((was) => Math.min(4, Math.max(1, Math.round((was + by) * 100) / 100)));
 
   return (
     <>
       <button
         type="button"
-        onClick={() => dialog.current?.showModal()}
+        onClick={() => {
+          setZoom(1);
+          dialog.current?.showModal();
+        }}
         data-candidate-image={called}
         /* The thumbnail IS the control, so the button is the image's box and
            carries no padding of its own. */
@@ -99,25 +117,61 @@ export function CandidateImage({
           if (event.target === dialog.current) dialog.current?.close();
         }}
       >
-        <div className="flex flex-col items-end gap-2 p-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={url}
-            alt={called}
-            width={480}
-            height={480}
-            /* Bounded by the VIEWPORT, not by a fixed size: the catalog's
-               images are whatever the source published, and one that is 2000px
-               tall must not push its own close button off the screen. */
-            className="max-h-[70vh] w-auto max-w-full rounded-control object-contain"
-          />
-          {/* The NAME is gone (Ben, 2026-10-23). The row that opened this says
-              whose face it is, and the dialog still carries it as its
-              accessible name — so nothing is lost to a screen reader and the
-              picture is not captioned with something the operator just read. */}
-          <Button variant="secondary" onClick={() => dialog.current?.close()}>
-            Close
-          </Button>
+        <div className="flex flex-col gap-2 p-3">
+          {/*
+            The picture scrolls once it outgrows its box. Without this a zoom
+            past the viewport would either be clipped with no way to reach the
+            rest, or push the controls below off the screen.
+          */}
+          <div className="max-h-[70vh] max-w-full overflow-auto">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={url}
+              alt={called}
+              width={480}
+              height={480}
+              /*
+               * The magnification is a NUMBER, so it is an inline style and
+               * not a class — there is no token for "1.75 times" and inventing
+               * one per step would be a scale nobody asked for. The fitted
+               * size stays in the classes; the style only multiplies it.
+               */
+              style={{ width: `${zoom * 100}%`, height: "auto" }}
+              className="max-w-none rounded-control object-contain"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            {/* BOTTOM LEFT, as asked. `−` and `+` are the characters, not `-`
+                and `+`: these are mathematical operators being read aloud, and
+                a hyphen is announced as punctuation. Each is disabled at its
+                bound, so the control says when there is nothing left to do. */}
+            <span className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={zoom <= 1}
+                onClick={() => step(-0.25)}
+                aria-label="Zoom out"
+              >
+                −
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={zoom >= 4}
+                onClick={() => step(0.25)}
+                aria-label="Zoom in"
+              >
+                +
+              </Button>
+              {/* The current magnification, so the buttons are not a mystery.
+                  A machine-produced number, in the data face. */}
+              <span className="type-data text-ink-secondary">{zoom}×</span>
+            </span>
+            {/* Escape closes it too, and so does a click outside — this is for
+                the operator who reaches for a button. */}
+            <Button variant="secondary" onClick={() => dialog.current?.close()}>
+              Close
+            </Button>
+          </div>
         </div>
       </dialog>
     </>
