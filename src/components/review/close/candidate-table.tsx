@@ -5,6 +5,16 @@ import { cx } from "@/components/ui/cx";
 import type { PickerOption } from "@/components/records/entity-picker";
 
 /**
+ * The columns, and the grid that holds them aligned with the header.
+ *
+ * Declared together on purpose: the header is `th`s and a row is one grid
+ * button, so nothing but this pair keeps them lined up. Changing one without
+ * the other is the defect, which is why they sit on adjacent lines.
+ */
+const COLUMNS = ["", "name", "group", "agency", "full name", "birthday", "record"] as const;
+const GRID = "grid-cols-[3rem_6rem_1fr_1fr_1fr_5rem_auto]";
+
+/**
  * A reference item's candidates, as a TABLE whose rows are the choice — Ben,
  * 2026-10-23: *"This should not be a closed form; this is some of the most
  * important information for this review item and should be visible on page
@@ -53,7 +63,7 @@ export function CandidateTable({
         <table className="w-full border-collapse text-left" aria-label={label}>
           <thead>
             <tr className="bg-chrome">
-              {["", "name", "which one", "record"].map((head, index) => (
+              {COLUMNS.map((head, index) => (
                 <th
                   key={head === "" ? `blank-${index}` : head}
                   scope="col"
@@ -83,26 +93,35 @@ export function CandidateTable({
                   )}
                 >
                   {/*
-                    ONE button, spanning the row's content, so the whole row is
-                    the control. It carries `aria-pressed` rather than
+                    ONE button spanning every column, so the whole row is the
+                    control. It carries `aria-pressed` rather than
                     `aria-current`: this is a selection the operator toggles,
                     not the page they are on.
+
+                    The columns are a GRID on the button rather than real
+                    `td`s, because a row has to be one control to be one
+                    click — and a grid whose template matches the header keeps
+                    them aligned.
                   */}
-                  <td colSpan={4} className="p-0">
+                  <td colSpan={COLUMNS.length} className="p-0">
                     <button
                       type="button"
                       onClick={() => onChoose(option.id)}
                       disabled={disabled}
                       aria-pressed={selected}
                       className={cx(
-                        "grid w-full grid-cols-[auto_1fr_2fr_auto] items-center gap-2 px-2 py-1.5 text-left",
+                        "grid w-full items-center gap-2 px-2 py-1.5 text-left",
+                        GRID,
                         disabled && "cursor-not-allowed opacity-50",
                       )}
                     >
-                      {/* A face where the catalog holds one. Fixed box either
-                          way, so a row without a picture is the same height as
-                          a row with one and the table does not jump. */}
-                      <span className="flex size-6 items-center justify-center">
+                      {/* A face, bigger than it was (Ben: "Make the candidate
+                          images bigger") — 48px, which is large enough to tell
+                          two people apart and small enough that eleven rows
+                          still fit a screen. The box is fixed either way, so a
+                          row without a picture is the same height as one with
+                          it and the table does not jump. */}
+                      <span className="flex size-12 items-center justify-center">
                         {option.imageUrl === null ||
                         option.imageUrl === undefined ? null : (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -110,15 +129,24 @@ export function CandidateTable({
                             src={option.imageUrl}
                             alt=""
                             loading="lazy"
-                            width={24}
-                            height={24}
-                            className="size-6 rounded-control object-cover"
+                            width={48}
+                            height={48}
+                            className="size-12 rounded-control object-cover"
                           />
                         )}
                       </span>
                       <span className="type-body text-ink">{option.name}</span>
                       <span className="type-body text-ink-secondary">
-                        {option.detail}
+                        {option.group}
+                      </span>
+                      <span className="type-body text-ink-secondary">
+                        {option.agency}
+                      </span>
+                      <span className="type-body text-ink-secondary">
+                        {option.fullName}
+                      </span>
+                      <span className="type-body text-ink-secondary">
+                        {option.birthday}
                       </span>
                       <Identifier muted>{option.id}</Identifier>
                     </button>

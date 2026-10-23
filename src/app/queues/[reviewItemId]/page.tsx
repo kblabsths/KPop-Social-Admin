@@ -6,6 +6,7 @@ import type { EmptyWords, GaugeState } from "@/components/gauges";
 import {
   DIAL_BY_SHAPE,
   EVIDENCE_VIEW_BY_SHAPE,
+  ItemTags,
   ItemHeader,
   claimValueText,
   type DialProps,
@@ -896,7 +897,6 @@ export default async function ReviewItemPage({
       <Section surface={HEADER_SURFACE}>
         <ItemHeader
           item={row}
-          kind={kind}
           shape={shape}
           links={linksOf(
             row,
@@ -1061,6 +1061,13 @@ export default async function ReviewItemPage({
         )}
       </Section>
 
+
+      {/* LAST ON THE PAGE (Ben, 2026-10-23). How the item was filed — its
+          queue, shape, kind and status — is not what a reviewer opens it to
+          find out, and it sat second. Severity rides with them rather than
+          staying above the fold alone: one badge on its own would carry more
+          weight than the whole row did. */}
+      <ItemTags item={row} kind={kind} shape={shape} />
     </Page>
   );
 }

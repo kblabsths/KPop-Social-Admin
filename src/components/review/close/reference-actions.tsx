@@ -103,9 +103,12 @@ export function referenceActions({
         options: rows.map((row) => ({
           id: row.id,
           name: row.name,
-          // What makes ten namesakes ten different people: the group, the
-          // agency, the real name, the birth year — and a face.
-          detail: row.detail,
+          // What makes eleven namesakes eleven different people, each as its
+          // own column rather than one joined line.
+          group: row.group,
+          agency: row.agency,
+          fullName: row.fullName,
+          birthday: row.birthday,
           imageUrl: row.imageUrl,
         })),
         limit: rows.length,

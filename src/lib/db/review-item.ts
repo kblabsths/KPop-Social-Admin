@@ -653,25 +653,31 @@ export interface ReferenceCandidate {
   /** What it is called: `stage_name`, `name`. */
   name: string;
   /**
-   * What tells it apart from a namesake, in reading order and already joined:
-   * for an idol the group's NAME (resolved, never its uuid), the AGENCY, the
-   * real name and the birth year; for a venue the city and country; for a
-   * group its company and debut year.
+   * WHAT TELLS IT APART FROM A NAMESAKE, as separate facts — never one joined
+   * string (Ben, 2026-10-23: "Separate the 'Which one' into different
+   * columns. In this case it seems like we can do group, agency, full name,
+   * and birthday").
    *
-   * The agency joined on 2026-10-23 and is the strongest signal in the line
-   * for a reader who knows the industry: nine of the Yeonjun item's ten
-   * candidates sit under agencies nobody has heard of, and the tenth is
-   * `BigHit Music`.
+   * It was `detail: string | null`, a `·`-joined line, which read as one
+   * opaque cell and could not be scanned down: an operator comparing eleven
+   * namesakes compares GROUPS, then agencies, and a single column makes that
+   * a reading exercise per row.
+   *
+   * Every field is nullable and independently so. The catalog is uneven — on
+   * the staging Yeonjun item one candidate's group is `TXT` with no agency and
+   * another's is `TOMORROW X TOGETHER` with `BigHit Music`, which is how Ben
+   * found the duplicate — and a missing agency must not cost a row its group.
    */
-  detail: string | null;
+  /** The group's NAME, resolved — never its uuid, which identifies nothing. */
+  group: string | null;
+  /** Who manages them. The strongest signal in the row for a reader who knows the industry. */
+  agency: string | null;
+  /** Their real name, where the catalog holds it. */
+  fullName: string | null;
+  /** Their birthday, as the catalog holds it — rendered by the caller. */
+  birthday: string | null;
   /**
    * A PICTURE of them, where the catalog holds one.
-   *
-   * Ben, 2026-10-23: *"Ideally I would look at a picture… but in this case
-   * there is no picture."* He was right about Ticketmaster and wrong about us —
-   * `idols.image_url` is set for nine of that item's ten candidates. The
-   * identification material was in our own catalog the whole time and the
-   * picker was not showing it.
    *
    * A SOURCE-CDN url, not self-hosted (R2 is the intended end state,
    * `../MIGRATE_LATER.md`), so it can 404 and the renderer must survive that.
@@ -698,18 +704,7 @@ const GROUP_CANDIDATE_COLUMNS = [
 const VENUE_CANDIDATE_COLUMNS = ["venue_id", "name", "city", "country"] as const;
 
 /** The year of an instant, or nothing — never a guessed date. */
-function yearOf(instant: string | null): string | null {
-  if (instant === null) return null;
-  const year = instant.slice(0, 4);
-  return /^\d{4}$/.test(year) ? year : null;
-}
-
 /** The parts of a detail line that are actually there, joined once. */
-function detailOf(parts: readonly (string | null)[]): string | null {
-  const named = parts.filter((part): part is string => part !== null && part !== "");
-  return named.length === 0 ? null : named.join(" · ");
-}
-
 /**
  * The candidates a reference item proposed, resolved across the three catalogs
  * — `review_items.evidence` on a reference item is "the candidate entity ids
@@ -827,12 +822,10 @@ export async function readReferenceCandidates(
       id: row.id,
       domain: "idols",
       name: row.stage_name ?? row.real_name ?? row.id,
-      detail: detailOf([
-        row.group_id === null ? null : (groupName.get(row.group_id) ?? null),
-        row.agency,
-        row.real_name,
-        yearOf(row.birth_date),
-      ]),
+      group: row.group_id === null ? null : (groupName.get(row.group_id) ?? null),
+      agency: row.agency,
+      fullName: row.real_name,
+      birthday: row.birth_date,
       imageUrl: row.image_url,
     });
   }
@@ -841,7 +834,12 @@ export async function readReferenceCandidates(
       id: row.id,
       domain: "groups",
       name: row.name ?? row.id,
-      detail: detailOf([row.company, yearOf(row.debut_date)]),
+      // A GROUP has no group of its own; its company sits in the agency column
+      // and its debut in the birthday one, which is the same question of each.
+      group: null,
+      agency: row.company,
+      fullName: null,
+      birthday: row.debut_date,
       imageUrl: row.image_url,
     });
   }
@@ -850,8 +848,15 @@ export async function readReferenceCandidates(
       id: row.venue_id,
       domain: "venues",
       name: row.name ?? row.venue_id,
-      detail: detailOf([row.city, row.country]),
-      // A venue is identified by WHERE it is, not by a photograph.
+      // A venue is identified by WHERE it is: its city stands in the column an
+      // act's group occupies and its country where the agency does. A venue
+      // reference will want its own columns (an address, a map) rather than
+      // borrowing these — noted on the handoff as a per-domain branch.
+      group: row.city,
+      agency: row.country,
+      fullName: null,
+      birthday: null,
+      // Not a photograph.
       imageUrl: null,
     });
   }

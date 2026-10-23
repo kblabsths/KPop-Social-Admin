@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { EditableCell, type SaveOutcome } from "@/components/EditableCell";
 import { PickerPanel, optionFor } from "@/components/records/entity-picker";
 import { Button, DATA_MUTED, Identifier } from "@/components/ui";
+import { BlockedControl } from "./blocked-control";
 import { CandidateTable } from "./candidate-table";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
@@ -137,7 +138,7 @@ export function CloseStatus({ state }: { state: CloseState }) {
       );
     case "refused":
       return (
-        <span className="type-data text-broken" role="alert">
+        <span className="type-body text-broken" role="alert">
           {state.message}
         </span>
       );
@@ -323,10 +324,21 @@ export function noteHint(actions: readonly ActionSpec[]): string {
 export function CloseForm({
   reviewItemId,
   actions,
+  blocked = [],
 }: {
   reviewItemId: string;
   /** The shape's controls, in the order spec §7 lists them. May be empty. */
   actions: readonly ActionSpec[];
+  /**
+   * Controls that WOULD be here and are waiting on something upstream.
+   *
+   * They render in the button row AMONG the live ones — after the first
+   * action — so on a reference item "Create a new artist" sits between "Select
+   * this artist" and "Not a KPOP act", which is where Ben put it. A slice
+   * rather than an index, so a shape with one action or none still renders a
+   * sensible row.
+   */
+  blocked?: readonly { readonly label: string; readonly because: string }[];
 }) {
   const [state, setState] = useState<CloseState>(IDLE_CLOSE_STATE);
   const [note, setNote] = useState("");
@@ -434,6 +446,25 @@ export function CloseForm({
   }
 
   const settling = state.kind === "settling";
+
+  /**
+   * The button row's contents, in order: the first action, the controls that
+   * are waiting on something, then the remaining actions.
+   *
+   * The action's own index is carried, not recomputed, because every control
+   * keys off it and `choosing` is an index into `actions` — a second numbering
+   * is how the open picker and the pressed button come to disagree.
+   */
+  const row: (
+    | { kind: "action"; spec: ActionSpec; index: number }
+    | { kind: "blocked"; control: { label: string; because: string } }
+  )[] = [
+    ...actions.slice(0, 1).map((spec, index) => ({ kind: "action" as const, spec, index })),
+    ...blocked.map((control) => ({ kind: "blocked" as const, control })),
+    ...actions
+      .slice(1)
+      .map((spec, offset) => ({ kind: "action" as const, spec, index: offset + 1 })),
+  ];
   return (
     <div className="flex flex-col gap-2" data-close-state={state.kind}>
       {/*
@@ -478,76 +509,94 @@ export function CloseForm({
         value={note}
         disabled={settling}
         onChange={(event) => setNote(event.target.value)}
-        className="type-data w-full rounded-control border border-hairline bg-surface px-2 py-1 text-ink"
+        /* `type-body`: the operator TYPES PROSE here — their reasoning — and
+           the hint inside it is the app's request. Neither is a machine token.
+           This carried the mono step and so did its placeholder, which is the
+           defect Ben corrected twice: "mono is ONLY used for code items". */
+        className="type-body w-full rounded-control border border-hairline bg-surface px-2 py-1 text-ink"
       />
       {actions.length === 0 ? null : (
         <div className="flex flex-wrap items-center gap-2">
-          {actions.map((spec, index) =>
-            // A control whose payload the operator CHOOSES is the shared
-            // entity picker, one whose payload they TYPE is the shared edit
-            // cell, and every other control is a button. One list, three
-            // renderings, and the same single request path underneath.
-            // An EXPANDED control's options are already a table above; what
-            // belongs in this row is the control that CONFIRMS the selection,
-            // so all three buttons sit together under one table. Disabled
-            // until a row is selected: a confirm with nothing selected is a
-            // control that cannot be honoured (SPEC F10).
-            spec.chooses !== undefined && spec.expanded === true ? (
-              <Button
-                key={`${spec.action}-${index}`}
-                data-close-action={spec.action}
-                variant={spec.variant ?? "secondary"}
-                disabled={settling || chosen === null}
-                onClick={(event) => {
-                  pressed.current = event.currentTarget;
-                  if (chosen === null) return;
-                  // Only a row the read returned may be settled with, whatever
-                  // produced the id — the picker's own guard, asked again at
-                  // the call site that sends one.
-                  if (optionFor(spec.chooses?.options ?? [], chosen) === null) return;
-                  void settle(spec, null, chosen);
-                }}
-              >
-                {spec.label}
-              </Button>
-            ) : spec.chooses !== undefined ? (
-              <ChosenControl
-                key={`${spec.action}-${index}`}
-                spec={spec}
-                open={choosing === index}
-                query={query}
-                disabled={settling}
-                onToggle={() => {
-                  setQuery("");
-                  setChoosing((was) => (was === index ? null : index));
-                }}
-                onQuery={setQuery}
-                onChoose={(id) => {
-                  // Only a row the read returned may be settled with, whatever
-                  // produced the id — the picker's own guard, asked again here
-                  // because THIS is the call site that sends one.
-                  if (optionFor(spec.chooses?.options ?? [], id) === null) return;
-                  setChoosing(null);
-                  setQuery("");
-                  void settle(spec, null, id);
-                }}
+          {/*
+            The row, in ONE pass over an ordered list: the first action, then
+            any control that is waiting on something upstream, then the rest.
+            Built before the JSX so the interleaving is a list operation and
+            not three maps that have to agree about indices.
+          */}
+          {row.map((item) =>
+            item.kind === "blocked" ? (
+              <BlockedControl
+                key={item.control.label}
+                label={item.control.label}
+                because={item.control.because}
               />
-            ) : spec.supplies === undefined ? (
-              <Button
-                key={`${spec.action}-${index}`}
-                data-close-action={spec.action}
-                variant={spec.variant ?? "secondary"}
-                disabled={settling}
-                onClick={(event) => void settle(spec, event.currentTarget)}
-              >
-                {spec.label}
-              </Button>
             ) : (
-              <SuppliedControl
-                key={`${spec.action}-${index}`}
-                spec={spec}
-                onSupply={(next) => settle(spec, null, next)}
-              />
+              // A control whose payload the operator CHOOSES is the shared
+              // entity picker, one whose payload they TYPE is the shared edit
+              // cell, and every other control is a button. One list, three
+              // renderings, and the same single request path underneath.
+              // An EXPANDED control's options are already a table above; what
+              // belongs in this row is the control that CONFIRMS the selection,
+              // so all three buttons sit together under one table. Disabled
+              // until a row is selected: a confirm with nothing selected is a
+              // control that cannot be honoured (SPEC F10).
+              item.spec.chooses !== undefined && item.spec.expanded === true ? (
+                <Button
+                  key={`${item.spec.action}-${item.index}`}
+                  data-close-action={item.spec.action}
+                  variant={item.spec.variant ?? "secondary"}
+                  disabled={settling || chosen === null}
+                  onClick={(event) => {
+                    pressed.current = event.currentTarget;
+                    if (chosen === null) return;
+                    // Only a row the read returned may be settled with, whatever
+                    // produced the id — the picker's own guard, asked again at
+                    // the call site that sends one.
+                    if (optionFor(item.spec.chooses?.options ?? [], chosen) === null) return;
+                    void settle(item.spec, null, chosen);
+                  }}
+                >
+                  {item.spec.label}
+                </Button>
+              ) : item.spec.chooses !== undefined ? (
+                <ChosenControl
+                  key={`${item.spec.action}-${item.index}`}
+                  spec={item.spec}
+                  open={choosing === item.index}
+                  query={query}
+                  disabled={settling}
+                  onToggle={() => {
+                    setQuery("");
+                    setChoosing((was) => (was === item.index ? null : item.index));
+                  }}
+                  onQuery={setQuery}
+                  onChoose={(id) => {
+                    // Only a row the read returned may be settled with, whatever
+                    // produced the id — the picker's own guard, asked again here
+                    // because THIS is the call site that sends one.
+                    if (optionFor(item.spec.chooses?.options ?? [], id) === null) return;
+                    setChoosing(null);
+                    setQuery("");
+                    void settle(item.spec, null, id);
+                  }}
+                />
+              ) : item.spec.supplies === undefined ? (
+                <Button
+                  key={`${item.spec.action}-${item.index}`}
+                  data-close-action={item.spec.action}
+                  variant={item.spec.variant ?? "secondary"}
+                  disabled={settling}
+                  onClick={(event) => void settle(item.spec, event.currentTarget)}
+                >
+                  {item.spec.label}
+                </Button>
+              ) : (
+                <SuppliedControl
+                  key={`${item.spec.action}-${item.index}`}
+                  spec={item.spec}
+                  onSupply={(next) => settle(item.spec, null, next)}
+                />
+              )
             ),
           )}
         </div>

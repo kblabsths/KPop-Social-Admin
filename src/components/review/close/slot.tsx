@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import {
-  Button,
   Empty,
   Eyebrow,
   Identifier,
@@ -480,19 +479,11 @@ export function CloseSlot({
           length it is. It is not a state card: nothing was unread and nothing
           was empty (LOOK_AND_FEEL: the emptinesses never share a rendering). */}
       {notice}
-      <CloseForm reviewItemId={item.review_item_id} actions={actions} />
-      {blocked.length === 0 ? null : (
-        <div data-close-blocked="" className="flex flex-col gap-1">
-          {blocked.map((control) => (
-            <span key={control.label} className="flex flex-wrap items-baseline gap-2">
-              <Button variant="secondary" disabled>
-                {control.label}
-              </Button>
-              <span className="type-body text-ink-secondary">{control.because}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      <CloseForm
+        reviewItemId={item.review_item_id}
+        actions={actions}
+        blocked={blocked}
+      />
     </>
   );
 }

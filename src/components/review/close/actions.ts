@@ -152,7 +152,11 @@ export interface ShapeCandidate {
   readonly id: string;
   readonly domain: string;
   readonly name: string;
-  readonly detail: string | null;
+  /** Each disambiguator its own field, so each gets its own column. */
+  readonly group: string | null;
+  readonly agency: string | null;
+  readonly fullName: string | null;
+  readonly birthday: string | null;
   readonly imageUrl: string | null;
 }
 

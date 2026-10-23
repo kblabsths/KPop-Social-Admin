@@ -8,7 +8,7 @@
  * imports `lib/db`, and none of them settles anything.
  */
 export { claimValueText } from "./claim-value";
-export { ItemHeader, type ItemLink } from "./item-header";
+export { ItemHeader, ItemTags, type ItemLink } from "./item-header";
 export type { EvidenceRow } from "./evidence-cells";
 export {
   DIAL_BY_SHAPE,

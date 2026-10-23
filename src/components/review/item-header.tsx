@@ -98,42 +98,22 @@ function foldScope(
   folds: number,
   evidenceIds: number | null,
   shape: Shape,
-): string {
+): string | null {
   /*
-   * WHAT A FOLD IS depends on the shape, and the line used to assume one shape.
+   * NOTHING on a reference item (Ben, 2026-10-23: "delete the 'Asked again 11
+   * times -- still not placed.' text; it is not valuable").
    *
-   * On a `data_conflict` item, `evidence` is "the observation ids behind
-   * exactly the values the summary names, appended as repeats fold in"
-   * (`20260911000009`). So folds and evidence ids count the same events from
-   * two directions and a disagreement between them is a real finding — which
-   * is why admin-window/BUG-0124 put the comparison here.
+   * He is right, and the count is not lost: the meta line below already
+   * publishes `asked again ×11`, with the hook a test reads it by. This line
+   * was a second rendering of the same number wrapped in a judgment ("still
+   * not placed") — which is the app editorialising about its own backlog.
    *
-   * On a REFERENCE item the two are unrelated. `evidence` is the ranked
-   * CANDIDATE entity ids, fixed when the item opens, and "a repeat sighting
-   * folds `folded_count` and `last_evidence_at` and appends nothing". So the
-   * folds count SIGHTINGS and the evidence counts OPTIONS. Measured on the
-   * Yeonjun item: 88 folds, 10 candidates — and this function reported that as
-   * "the counts disagree", which is two unrelated numbers accused of
-   * contradicting each other (Ben found it, 2026-10-23).
-   *
-   * The sightings themselves are not recorded anywhere: `folded_count` is a
-   * counter and no table names the 88 events behind it, so the line says how
-   * many there were and does not pretend any of them can be opened. That gap
-   * is filed for the scraper.
+   * On a `data_conflict` item it still earns its place, for the reason
+   * admin-window/BUG-0124 put it here: there `evidence` IS the observations
+   * behind the values, so folds and evidence ids count the same events from
+   * two directions and a disagreement between them is a real finding.
    */
-  if (shape === "entity_link_reference") {
-    // The number IS the story on this shape: a name sighted 88 times that the
-    // pipeline has declined to place 88 times is a different problem from one
-    // seen once, and nothing else on the page says so.
-    // "Asked again", in the app's own existing vocabulary — the queue list's
-    // column for this very number. NOT "sighted N times": `folded_count`
-    // counts the REPEATS (the list renders `×0` for an item seen once), so a
-    // total would be `folds + 1`, and that +1 is an inference this line does
-    // not need to make in order to say the useful thing.
-    return folds === 0
-      ? "Seen once, not placed."
-      : `Asked again ${counted(folds, "time")} — still not placed.`;
-  }
+  if (shape === "entity_link_reference") return null;
   if (evidenceIds === null) return counted(folds, "fold");
   if (evidenceIds === 0) {
     return `${counted(folds, "fold")}, carrying no evidence id.`;
@@ -147,13 +127,17 @@ function foldScope(
 
 export function ItemHeader({
   item,
-  kind,
   shape,
   links,
   evidenceIds,
 }: {
   item: ReviewItemRow;
-  kind: Kind;
+  /*
+   * `kind` is gone from this component. It was here only to render the kind
+   * badge, which moved to `ItemTags` at the bottom of the page on 2026-10-23 —
+   * and a prop kept "in case" is a prop the next reader has to account for.
+   * `shape` stays, because the fold line still branches on it.
+   */
   shape: Shape;
   /** Where this investigation continues (LOOK_AND_FEEL bar 10). */
   links: readonly ItemLink[];
@@ -166,31 +150,20 @@ export function ItemHeader({
   evidenceIds: number | null;
 }) {
   const opened = relativeAge(item.opened_at);
+  const scope = foldScope(item.folded_count, evidenceIds, shape);
   const lastEvidence = relativeAge(item.last_evidence_at);
 
   return (
     <div data-item={item.review_item_id} className="flex flex-col gap-2">
       <p className="type-body text-ink">{item.summary}</p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span data-severity={item.severity}>
-          <Badge tone={item.severity}>{item.severity}</Badge>
-        </span>
-        <span data-kind={kind}>
-          <Badge>{kind}</Badge>
-        </span>
-        <span data-shape={shape}>
-          <Badge>{shape}</Badge>
-        </span>
-        <span data-queue={item.queue}>
-          <Badge>{item.queue}</Badge>
-        </span>
-        <span data-status={item.status}>
-          <Badge>{item.status}</Badge>
-        </span>
-      </div>
-
-      <p className="type-data flex flex-wrap items-baseline gap-3 text-ink-secondary">
+      {/* `type-body`: "opened 9d ago", "last evidence 7d ago", "asked again
+          ×11" are the app's own words about its own rows. The AGES are
+          relative-time prose, not machine values — an absolute instant IS a
+          machine value and travels in the `title` (Voice bar 6), which is
+          where the mono rule actually applies. Corrected 2026-10-23 at Ben's
+          word, with the textarea above. */}
+      <p className="type-body flex flex-wrap items-baseline gap-3 text-ink-secondary">
         <span title={opened.title}>opened {opened.text}</span>
         <span title={lastEvidence.title}>last evidence {lastEvidence.text}</span>
         <span data-folds={item.folded_count}>
@@ -201,13 +174,15 @@ export function ItemHeader({
       {/* What that figure counts, and what the other one does. The evidence-id
           count is published as a hook of its own, so the relation is graded
           against the block below rather than against these words. */}
-      <p
-        data-fold-scope
-        data-fold-evidence-ids={evidenceIds ?? undefined}
-        className="type-body text-ink-secondary"
-      >
-        {foldScope(item.folded_count, evidenceIds, shape)}
-      </p>
+      {scope === null ? null : (
+        <p
+          data-fold-scope
+          data-fold-evidence-ids={evidenceIds ?? undefined}
+          className="type-body text-ink-secondary"
+        >
+          {scope}
+        </p>
+      )}
 
       {links.length === 0 ? null : (
         <p className="type-body flex flex-wrap items-baseline gap-3">
@@ -229,6 +204,57 @@ export function ItemHeader({
           ))}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE CLASSIFICATION TAGS — severity, kind, shape, queue, status.
+ *
+ * They were the second thing on the page, under the summary. Ben, 2026-10-23:
+ * *"Let's move the tags, e.g. 'high' or 'decision' to the bottom of the page.
+ * This might be useful sometimes but as a reviewer I generally do not care."*
+ *
+ * He is right about the ranking. Four of the five are the app's own filing —
+ * which queue, which shape, which kind, which status — and a reviewer opening
+ * an item to answer a question does not need to be told how it was filed
+ * before being told what it asks. The fifth, severity, is the registry's word
+ * and the only one that bears on urgency; it travels with the rest because
+ * splitting one badge out to sit alone above the fold would give it more
+ * weight than a page of them had.
+ *
+ * Its own export rather than a flag on the header, so the PAGE decides where
+ * they sit. A component that renders its own "at the bottom" cannot be moved
+ * by whoever composes the route, and the hooks every oracle reads them by
+ * (`data-severity`, `data-kind`, `data-shape`, `data-queue`, `data-status`)
+ * are unchanged wherever they land.
+ */
+export function ItemTags({
+  item,
+  kind,
+  shape,
+}: {
+  item: ReviewItemRow;
+  kind: Kind;
+  shape: Shape;
+}) {
+  return (
+    <div data-item-tags="" className="flex flex-wrap items-center gap-2">
+      <span data-severity={item.severity}>
+        <Badge tone={item.severity}>{item.severity}</Badge>
+      </span>
+      <span data-kind={kind}>
+        <Badge>{kind}</Badge>
+      </span>
+      <span data-shape={shape}>
+        <Badge>{shape}</Badge>
+      </span>
+      <span data-queue={item.queue}>
+        <Badge>{item.queue}</Badge>
+      </span>
+      <span data-status={item.status}>
+        <Badge>{item.status}</Badge>
+      </span>
     </div>
   );
 }

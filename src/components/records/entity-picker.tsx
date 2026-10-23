@@ -90,18 +90,29 @@ export interface PickerOption {
    * Absent or null renders nothing, so the venue picker that shipped without
    * it is unchanged.
    */
-  readonly detail?: string | null;
+  /**
+   * The disambiguators, each on its own, for a caller that renders COLUMNS.
+   *
+   * One joined `detail` string was the first shape of this and it read as an
+   * opaque cell: comparing eleven namesakes means scanning the GROUP column,
+   * then the agency column, which a single line makes impossible (Ben,
+   * 2026-10-23). Absent on the venue picker, which renders a flat list.
+   */
+  readonly group?: string | null;
+  readonly agency?: string | null;
+  readonly fullName?: string | null;
+  readonly birthday?: string | null;
   /**
    * A thumbnail of the row, where the caller has one.
    *
-   * For a person this is the single fastest disambiguator there is, which is
-   * why it is here: Ben asked to identify a performer by looking at them, and
-   * `idols.image_url` holds a picture for nine of ten candidates on the item
-   * he asked about.
+   * For a person this is the single fastest disambiguator there is — when the
+   * SOURCE also has a picture to compare against. It does not on the Yeonjun
+   * item, which Ben pointed out; it does on others, and the comparison is
+   * worth building for.
    *
    * A SOURCE-CDN url, so it can 404. It renders as a plain `img` that simply
-   * fails to paint — never a broken-image frame sized to hold one, and never a
-   * placeholder pretending a picture exists.
+   * fails to paint — never a broken-image frame, never a placeholder
+   * pretending a picture exists.
    */
   readonly imageUrl?: string | null;
 }
@@ -545,9 +556,11 @@ export function PickerOptions({
                   {orDash(option.name)}{" "}
                   <Identifier muted>{option.id}</Identifier>
                 </span>
-                {option.detail === null || option.detail === undefined ? null : (
-                  // What makes ten namesakes ten different people.
-                  <span className="type-data text-ink-secondary">{option.detail}</span>
+                {/* The flat list shows the group alone — it is the one
+                    disambiguator short enough for a single line. A caller
+                    wanting all four renders columns (`CandidateTable`). */}
+                {option.group === null || option.group === undefined ? null : (
+                  <span className="type-body text-ink-secondary">{option.group}</span>
                 )}
               </span>
             </span>

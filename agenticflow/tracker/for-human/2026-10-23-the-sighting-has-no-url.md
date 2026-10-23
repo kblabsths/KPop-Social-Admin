@@ -305,3 +305,52 @@ So the artist-shaped UI is correctly scoped to the artist-shaped item. A venue
 reference item shares the shape and will want a different table (a map, an
 address, not a face), which is a per-DOMAIN branch inside the reference view
 rather than a fifth shape.
+
+---
+
+## Two more scraper asks from the UI pass
+
+### A. The summary should not carry the question
+
+Ben, 2026-10-23: the item's own sentence reads
+
+> `ticketmaster "Yeonjun": 11 catalog names match closely, none exactly - which one is this, or none of them`
+
+and he wants it to stop at `none exactly`. The trailing clause is the question,
+and the question is now the close's heading ("Please identify ticketmaster's
+performer K8vZ917-Rw0") — so the item states it twice, once as prose and once
+as the thing you act on.
+
+**Not trimmed in Admin on purpose.** The summary is the resolver's own
+sentence and Admin renders it verbatim (Voice bar 5); editing a machine value
+on the way to the screen is the one thing that makes "what the database said"
+untrustworthy. So this is a request, not a patch:
+`resolver/summary.py`'s `THE_REFERENCE_READS` is
+`'{source} "{name}": {candidates} - {question}'` and the ask is to drop
+`- {question}` from the reference template. The question strings
+(`THE_CATALOG_QUESTION_READS` and friends) stay for anything else that reads
+them.
+
+### B. The candidate COLUMNS should be the resolver's, not Admin's
+
+Ben: *"this might be something that the scraper should structure when creating
+the review item. It could be generalized to: for this type of review item,
+which requires the reviewer to select from a list of options, here is the
+candidate table with relevant columns. And these are the relevant columns for
+an artist review item."*
+
+That is the right shape and it is worth saying why. Admin currently derives
+the columns — group, agency, full name, birthday — by knowing that `idols` is
+what an artist candidate is and which of its columns matter. That is a
+judgment about the DOMAIN living in the consumer, and it has two costs: a venue
+reference item wants an address and a city and gets an artist's columns, and
+the day the catalog grows a better disambiguator Admin has to learn about it
+independently.
+
+If the item instead carried its candidates as rows with named, ordered
+columns — the resolver choosing what identifies this kind of subject — every
+consumer renders the same table and none of them knows what an idol is.
+
+Worth designing alongside the two asks above, since all three are "the item
+should carry what the reviewer needs". Not urgent: what Admin derives today
+works for artists and venues, which is every reference item that exists.

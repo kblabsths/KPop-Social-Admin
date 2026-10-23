@@ -100,6 +100,17 @@ screen). Every surface ships light and dark.
 ### Typography — one family pair, five steps
 
 `Geist` (sans) and `Geist Mono` (mono), already loaded in the root layout.
+
+> **MONO IS ONLY FOR CODE.** Ben has had to say this three times — 2026-10-21,
+> 2026-10-22 and 2026-10-23 — so it goes at the top of this section rather than
+> inside it. The test is: *could an operator paste this string into a query?*
+> `entity_link_source_pattern`, a uuid, a column name, an error string the
+> database wrote: yes, mono. A count, a date, an age, a duration, a title, an
+> English sentence, a FORM FIELD the operator types prose into, a placeholder
+> asking them to: no, sans — every one of those has been caught in mono at
+> least once. When in doubt it is sans; the code face is the exception and
+> earns its place one value at a time.
+
 **Mono carries every value the database produced** — counts, ids, timestamps,
 values, source names, buckets, tiers, error strings. Sans carries every word
 the app wrote — labels, headings, buttons, prose. That split *is* the
