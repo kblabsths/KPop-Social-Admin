@@ -94,18 +94,46 @@ export interface ItemLink {
  *    are the SAME number the sentence says so, rather than leaving a reader to
  *    decide for themselves whether one figure is the other one narrowed.
  */
-function foldScope(folds: number, evidenceIds: number | null): string {
+function foldScope(
+  folds: number,
+  evidenceIds: number | null,
+  shape: Shape,
+): string {
   /*
-   * The explanation is gone (Ben, 2026-10-23: "delete the each fold
-   * description; it is not helpful"). It opened every one of these lines with
-   * "Each fold is a re-ask of this item, not a record" — a definition of the
-   * word `fold`, restated above every item forever, which is the class of
-   * sentence he has now cut three times.
+   * WHAT A FOLD IS depends on the shape, and the line used to assume one shape.
    *
-   * The COUNTS stay, and the disagreement between them stays: two numbers that
-   * should match and do not is a fact about this item, not a description of
-   * the vocabulary (admin-window/BUG-0124 put it here for that reason).
+   * On a `data_conflict` item, `evidence` is "the observation ids behind
+   * exactly the values the summary names, appended as repeats fold in"
+   * (`20260911000009`). So folds and evidence ids count the same events from
+   * two directions and a disagreement between them is a real finding — which
+   * is why admin-window/BUG-0124 put the comparison here.
+   *
+   * On a REFERENCE item the two are unrelated. `evidence` is the ranked
+   * CANDIDATE entity ids, fixed when the item opens, and "a repeat sighting
+   * folds `folded_count` and `last_evidence_at` and appends nothing". So the
+   * folds count SIGHTINGS and the evidence counts OPTIONS. Measured on the
+   * Yeonjun item: 88 folds, 10 candidates — and this function reported that as
+   * "the counts disagree", which is two unrelated numbers accused of
+   * contradicting each other (Ben found it, 2026-10-23).
+   *
+   * The sightings themselves are not recorded anywhere: `folded_count` is a
+   * counter and no table names the 88 events behind it, so the line says how
+   * many there were and does not pretend any of them can be opened. That gap
+   * is filed for the scraper.
    */
+  if (shape === "entity_link_reference") {
+    // The number IS the story on this shape: a name sighted 88 times that the
+    // pipeline has declined to place 88 times is a different problem from one
+    // seen once, and nothing else on the page says so.
+    // "Asked again", in the app's own existing vocabulary — the queue list's
+    // column for this very number. NOT "sighted N times": `folded_count`
+    // counts the REPEATS (the list renders `×0` for an item seen once), so a
+    // total would be `folds + 1`, and that +1 is an inference this line does
+    // not need to make in order to say the useful thing.
+    return folds === 0
+      ? "Seen once, not placed."
+      : `Asked again ${counted(folds, "time")} — still not placed.`;
+  }
   if (evidenceIds === null) return counted(folds, "fold");
   if (evidenceIds === 0) {
     return `${counted(folds, "fold")}, carrying no evidence id.`;
@@ -178,7 +206,7 @@ export function ItemHeader({
         data-fold-evidence-ids={evidenceIds ?? undefined}
         className="type-body text-ink-secondary"
       >
-        {foldScope(item.folded_count, evidenceIds)}
+        {foldScope(item.folded_count, evidenceIds, shape)}
       </p>
 
       {links.length === 0 ? null : (
