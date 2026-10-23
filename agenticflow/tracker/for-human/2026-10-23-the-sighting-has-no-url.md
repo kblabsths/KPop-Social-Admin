@@ -152,3 +152,102 @@ Until one of them exists, Admin will not offer `settle` on a reference item at
 all: an operator reaching for "none of them" and finding only a control that
 quietly buries the question is worse served than one who finds nothing. That is
 a decision I have made in the UI and you can overrule.
+
+
+---
+
+# CORRECTED PRIORITIES, 2026-10-23 (later)
+
+*Ben pushed back on two things and was right on both. This section supersedes
+the priorities above; the asks themselves are unchanged in substance but one
+that I downgraded is now the most valuable of them. Read this before acting.*
+
+## 1. Candidate pictures are half a comparison — capture the source's
+
+Ben: *"It doesn't matter if we have pictures if the source does not have a
+picture. How am I supposed to match a face if the thing we care about has no
+face."*
+
+Correct, and it was the flaw in what I built. Admin now shows a face for nine
+of the Yeonjun item's ten candidates and there is nothing to compare them
+against.
+
+**But Ticketmaster DOES have a photo.** Fetched and checked on 2026-10-23, the
+attraction page for `K8vZ917-Rw0` shows a portrait of the performer, plus a
+genre ("Pop"). It shows **no** bio and **no** agency.
+
+So the comparison Ben wants — *"a table with all options, including a picture
+of the source, as well as of the options"* — is possible and is blocked only by
+us not keeping the source's side.
+
+**ASK: when the 4b step opens a reference item, record what the adapter saw
+about the entry itself** — the image URL at minimum, the classification if it
+is free. That plus the candidate pictures Admin already has is the table he
+described.
+
+This also kills a claim I made in the commit before it: I said `BigHit Music`
+against nine unknown agencies made the call "checkable". It does not.
+Ticketmaster shows no agency, so our agency column compares against nothing and
+I had simply guessed a second time, as Ben said.
+
+## 2. The events ARE the evidence — I downgraded this wrongly
+
+Earlier in this file I downgraded "record which events the folds were" to a
+nice-to-have, on the grounds that the events are not what the item asks about.
+The first half of that is right and the conclusion was wrong.
+
+The Ticketmaster page's lineups name **TXT on the same bills as this Yeonjun.**
+That is the decisive evidence for the identification, and it is a fact about
+the EVENTS, not about the performer. "This reference appears on bills that also
+bill TOMORROW X TOGETHER" is derivable; "BigHit Music, so it must be TXT" is a
+guess.
+
+Reachable today? No. We hold `Kiss 108's Jingle Ball Presented By Capital One`
+(2026-12-13, matching Ticketmaster exactly) and it carries **one** linked
+performer — `Adéla` — with no `scraped_events` row matched to it. So the bill's
+other acts are either unlinked references themselves or not kept at all.
+
+**ASK, promoted to first priority: keep the sighting's event ids on the
+reference item.** Then Admin can show, per candidate, the one thing that
+actually decides it: who else is on those bills. Even unlinked, "this bill also
+carries an unplaced reference named TOMORROW X TOGETHER" settles the question.
+
+## 3. How a row gets created — the pipeline already has an answer
+
+Ben: *"the admin would need to create a row. However, I don't know how to go
+about doing that. The row create should integrate perfectly into the pipeline,
+while providing an easy input UI for the admin to fill out."*
+
+The pipeline's own answer, from `resolver/creation.py`'s header:
+
+> CREATION IS A SIDE EFFECT OF THE FIRST APPLY (contracts/resolver.md section
+> 9), so this module opens no second path into canonical… There is NO draft,
+> stub or partial row before creation — **the ledger is the staging area.**
+
+So the shape is already decided and it is a good one: **you do not create a
+row, you make claims until the creation bar is met, and the resolver creates it
+as a side effect.** Admin's "easy input UI" is therefore a form over the
+required fields that writes ADMIN-TIER CLAIMS — and Admin still inserts
+nothing, which keeps `AGENTS.md`'s rule and the provenance story intact.
+
+**What is in the way, and it reconciles the disagreement in this file.** Your
+scraper agent corrected my first handoff with "no domain registration is
+needed", and that is right *for linking* — a `confirmed_matches` row needs no
+schema. It is **not** right for creating. `resolver/ledger.py`'s
+`_creation_of` requires a domain that registers creation `open` or `curated`,
+the bar reads required columns off the registered target table, and
+`registry/schemas/` holds **only** `events.schema.json` and
+`venues.schema.json`. There is no schema for `groups` or `idols`.
+
+So: **linking needs no registration; creating needs it.** Both were half right.
+
+**The question only you can answer:** does `domain_target('idols')` resolve
+today, and would you want `idols`/`groups` registered `open` (rows grow by
+resolution, so an admin's claims create them) or `curated` (humans only, and
+the resolver never creates)? `open` is what makes the form above work with no
+new verdict action at all. That decision is ROADMAP item 9 and this is now its
+first concrete consumer.
+
+Until it is answered, Admin offers no "none of these rows" control, for the
+reason given further up: a button that buries the question is worse than no
+button.
