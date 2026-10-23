@@ -12,10 +12,25 @@ import { CandidateImage } from "./candidate-image";
  * button, so nothing but this pair keeps them lined up. Changing one without
  * the other is the defect, which is why they sit on adjacent lines.
  */
-const COLUMNS = ["", "name", "group", "agency", "full name", "birthday", "record"] as const;
-/* The image is its own `td` now, so the grid covers the SIX remaining
-   columns and the header's blank first cell holds the picture's width. */
+/**
+ * The six columns a row's own grid lays out, and that grid's template.
+ *
+ * **The header uses the SAME grid, which is the whole point of them being
+ * declared together.** They did not, and the labels did not line up with the
+ * values (Ben, 2026-10-23: "the column title doesn't line up with the column
+ * correctly for some reason"). The reason: the header was `th`s laid out by
+ * the TABLE while a row's values are a GRID inside one spanning cell. Two
+ * layout systems, each sizing its own tracks, with nothing making them agree —
+ * so they agreed only by accident and only at some widths.
+ *
+ * Now both are the same grid with the same template. The image sits outside it
+ * in its own fixed-width cell, mirrored by a fixed-width blank `th`, so the
+ * two halves line up by construction rather than by coincidence.
+ */
+const COLUMNS = ["name", "group", "agency", "full name", "birthday", "record"] as const;
 const GRID = "grid-cols-[6rem_1fr_1fr_1fr_6rem_auto]";
+/** The picture's column, held to one width in the header and in every row. */
+const FACE_WIDTH = "w-14";
 
 /**
  * A reference item's candidates, as a TABLE whose rows are the choice — Ben,
@@ -66,15 +81,24 @@ export function CandidateTable({
         <table className="w-full border-collapse text-left" aria-label={label}>
           <thead>
             <tr className="bg-chrome">
-              {COLUMNS.map((head, index) => (
-                <th
-                  key={head === "" ? `blank-${index}` : head}
-                  scope="col"
-                  className="type-micro px-2 py-1.5 text-ink-secondary"
+              {/* The picture's column: blank, and exactly as wide as the cell
+                  below it. */}
+              <th scope="col" className={cx(FACE_WIDTH, "px-2 py-1.5")} />
+              {/* The other six, in the row's own grid so each label sits over
+                  its values. LEFT-ALIGNED, here and in the rows — Ben asked for
+                  it everywhere and there is no numeric column to right-align. */}
+              <th scope="col" colSpan={2} className="p-0">
+                <span
+                  className={cx(
+                    "type-micro grid items-center gap-2 px-2 py-1.5 text-left text-ink-secondary",
+                    GRID,
+                  )}
                 >
-                  {head}
-                </th>
-              ))}
+                  {COLUMNS.map((head) => (
+                    <span key={head}>{head}</span>
+                  ))}
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -113,7 +137,7 @@ export function CandidateTable({
                     it — which is what Ben asked for, and the only shape in
                     which both are reachable by keyboard.
                   */}
-                  <td className="w-12 p-0 pl-2 align-middle">
+                  <td className={cx(FACE_WIDTH, "p-0 pl-2 align-middle")}>
                     {option.imageUrl === null || option.imageUrl === undefined ? (
                       // A fixed box either way, so a row without a picture is
                       // the same height as one with it.
@@ -122,7 +146,7 @@ export function CandidateTable({
                       <CandidateImage url={option.imageUrl} name={option.name} />
                     )}
                   </td>
-                  <td colSpan={COLUMNS.length - 1} className="p-0">
+                  <td colSpan={2} className="p-0">
                     <button
                       type="button"
                       onClick={() => onChoose(option.id)}

@@ -47,11 +47,28 @@ export function Toast({
       role="status"
       aria-live="polite"
       data-toast=""
-      /* Fixed to the viewport's bottom-right, above everything. Radius 0,
-         because LOOK_AND_FEEL gives containers no radius and a toast is a
-         container; 1px hairline and the surface fill, because this app has no
-         elevation and a shadow here would be the only one in it. */
-      className="type-body fixed right-4 bottom-4 z-50 border border-hairline bg-surface px-3 py-1.5 text-ink"
+      /*
+       * BOTTOM CENTRE, and INVERTED so it is unmissable (Ben, 2026-10-23:
+       * "make the toast a different style so it is clear when it pops up.
+       * Please also make it pop up in the center bottom of the screen").
+       *
+       * It was the surface fill with a hairline — which is what every card on
+       * the page already looks like, so a message that appeared for four
+       * seconds in the corner looked like more page. The accent fill with
+       * `on-accent` text is the one declared pair in this palette for "text on
+       * a filled accent" (LOOK_AND_FEEL's own `--color-on-accent`, which exists
+       * for exactly this and flips with the theme), so it reads as an event
+       * rather than as furniture and introduces no colour.
+       *
+       * Centred with `left-1/2` plus a half-width translate rather than a
+       * flex wrapper: a wrapper spanning the viewport would sit over the page
+       * and swallow clicks even while empty.
+       *
+       * Radius 0, because LOOK_AND_FEEL gives containers none and a toast is a
+       * container. No shadow — this app has no elevation, and the inversion is
+       * what separates it from the page.
+       */
+      className="type-body fixed bottom-4 left-1/2 z-50 -translate-x-1/2 bg-accent px-3 py-1.5 font-medium text-on-accent"
     >
       {message}
     </div>

@@ -72,12 +72,34 @@ export function CandidateImage({
         ref={dialog}
         data-candidate-dialog={called}
         aria-label={called}
-        /* `backdrop:` styles the platform's own backdrop. The dialog takes the
-           surface fill and a hairline, like every other container here, and no
-           shadow — this app has no elevation. */
-        className="max-w-[90vw] border border-hairline bg-surface p-3 backdrop:bg-ink/50"
+        /*
+         * CENTRED, and closed by a click outside it (Ben, 2026-10-23).
+         *
+         * `inset-0` + `m-auto` + `h-fit w-fit` centres a modal dialog in both
+         * axes explicitly. The UA centres `dialog:modal` on its own, but this
+         * app's reset and the classes below are free to disturb that, so the
+         * centring is stated rather than inherited.
+         *
+         * NO PADDING HERE, on purpose: the padding lives on the inner box, so
+         * every pixel of the dialog element itself is "outside the content"
+         * and the click handler below can treat a hit on it as a backdrop
+         * click. With padding on the dialog, the frame around the image would
+         * swallow those clicks and the outside-to-close would feel broken.
+         *
+         * `backdrop:` styles the platform's own backdrop.
+         */
+        className="fixed inset-0 m-auto h-fit w-fit max-w-[90vw] border border-hairline bg-surface p-0 backdrop:bg-ink/50"
+        /*
+         * A click that lands on the DIALOG rather than on its content is a
+         * click outside the content — including one on the backdrop, which the
+         * platform reports as a hit on the dialog element. Compared by
+         * identity, so a click on the image or the button never closes it.
+         */
+        onClick={(event) => {
+          if (event.target === dialog.current) dialog.current?.close();
+        }}
       >
-        <div className="flex flex-col items-start gap-2">
+        <div className="flex flex-col items-end gap-2 p-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={url}
@@ -89,9 +111,10 @@ export function CandidateImage({
                tall must not push its own close button off the screen. */
             className="max-h-[70vh] w-auto max-w-full rounded-control object-contain"
           />
-          <span className="type-body text-ink">{called}</span>
-          {/* Escape closes it too — this is for the operator who reaches for a
-              button, and the only way to close it with a pointer. */}
+          {/* The NAME is gone (Ben, 2026-10-23). The row that opened this says
+              whose face it is, and the dialog still carries it as its
+              accessible name — so nothing is lost to a screen reader and the
+              picture is not captioned with something the operator just read. */}
           <Button variant="secondary" onClick={() => dialog.current?.close()}>
             Close
           </Button>
