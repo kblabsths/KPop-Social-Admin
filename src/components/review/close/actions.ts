@@ -335,11 +335,11 @@ export function closeRefusal(
  * One request, two renderings, no second vocabulary for one rule.
  */
 export const NOTE_REFUSAL_WORDS =
-  "Every decision needs its evidence — say why, then close it again.";
+  "Please include the evidence for your decision.";
 
 /** The words for a control that takes a value and was handed an empty field. */
 export const VALUE_REFUSAL_WORDS =
-  "This action settles the fact with a value — type the one canonical should hold, then save it.";
+  "Please type the value canonical should hold.";
 
 /**
  * The words for a fact that LINKS a row instead of holding one
@@ -350,19 +350,19 @@ export const VALUE_REFUSAL_WORDS =
  * can reach today.
  */
 export const REFERENCE_REFUSAL_WORDS =
-  "This fact points at another record, so it is chosen rather than typed — pick the record it should point at.";
+  "Please pick the record this field points at.";
 
 /**
  * The words for a link control that was submitted with nothing chosen
  * (campaign admin-window/TASK-0056).
  *
  * Its own sentence rather than `REFERENCE_REFUSAL_WORDS` above, which answers a
- * different question: that one explains why there is no field to TYPE in, this
- * one says the picker was left empty. Name what failed, then what to do, with
- * no apology (LOOK_AND_FEEL copy bar 3).
+ * different question: that one is for a field where a record is wanted and a
+ * value was typed; this one is for a picker left empty. "First" is the only
+ * word separating them and it is doing real work — it says the step was
+ * skipped rather than done wrongly.
  */
-export const REF_REFUSAL_WORDS =
-  "Nothing is chosen yet — pick the record this fact should point at, then link it.";
+export const REF_REFUSAL_WORDS = "Please pick a record first.";
 
 /**
  * The refusal an identifier reads as. The map is TOTAL over the identifiers

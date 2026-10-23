@@ -60,8 +60,7 @@ export const IDLE_CLOSE_STATE: CloseState = { kind: "idle" };
  * so this is the state's own guard, and it is words rather than silence
  * because the cell has to be handed an outcome to revert on.
  */
-const IN_FLIGHT_WORDS =
-  "A settlement is already in flight; wait for it to answer, then try again.";
+const IN_FLIGHT_WORDS = "A settlement is already in flight.";
 
 /**
  * Where focus belongs once a settlement answers — the same rule

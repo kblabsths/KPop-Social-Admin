@@ -535,10 +535,36 @@ newcomer")*
 2. **An action keeps its name through the whole flow**: "Keep current value"
    settles to the state "kept current value" and logs the line "kept current
    value" — the word never changes between button, confirmation, and log.
-3. **Every error names what failed, then what to do, with no apology** — no
-   "Oops", "Sorry", "Something went wrong". "A won't-fix needs a note — say
-   why the condition stands, then close it again" beats "Error: note
-   required".
+3. **Every error ASKS FOR THE THING, in one sentence, with no apology** — no
+   "Oops", "Sorry", "Something went wrong", and no telling the operator to
+   press the button again. "Please include the evidence for your decision."
+
+   *(REWRITTEN 2026-10-23, and this bar was the bug.* It read "names what
+   failed, then what to do", and held up **"A won't-fix needs a note — say why
+   the condition stands, then close it again"** as the model. That is the exact
+   sentence Ben objected to, so every refusal in the app was built to a
+   template that generates what he called slop — and it did, five times. The
+   "then what to do" clause is the problem: the operator pressed a control and
+   is looking at the form, so "then close it again" and "then save it" tell
+   them what they were already doing. Four rules replace it, each one a thing
+   I actually got wrong:*
+
+   - **Ask, do not state the rule.** "Please include the evidence for your
+     decision", never "Every decision needs its evidence". The second is a
+     policy announcement; the operator wants to know what to put in the box.
+   - **Never say what the operator is already doing.** No "then close it
+     again", "then save it", "then try again", "wait for it to answer". They
+     pressed it. They know.
+   - **One sentence.** If a second one is wanted, it is usually the obvious
+     half — cut it and re-read. An em dash joining two clauses is the tell:
+     check whether the clause after it says anything the clause before it did
+     not.
+   - **The operator's word, not the system's.** "evidence", not "note";
+     "record", not "entity"; "value", not "payload". A word that exists only
+     inside this codebase has no business in a sentence addressed to a person.
+
+   *The compact form, for anyone writing copy here: say what you want, once,
+   in their words. Everything else is the system talking to itself.*
 4. **Every empty and not-provisioned state names what the surface holds and
    what fills it, in ONE clause.** Never a bare "No data" or "No items to
    display": "No open decisions — the resolver files one here when sources
