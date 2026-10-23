@@ -3,6 +3,7 @@
 import { Identifier } from "@/components/ui";
 import { cx } from "@/components/ui/cx";
 import type { PickerOption } from "@/components/records/entity-picker";
+import { CandidateImage } from "./candidate-image";
 
 /**
  * The columns, and the grid that holds them aligned with the header.
@@ -12,7 +13,9 @@ import type { PickerOption } from "@/components/records/entity-picker";
  * the other is the defect, which is why they sit on adjacent lines.
  */
 const COLUMNS = ["", "name", "group", "agency", "full name", "birthday", "record"] as const;
-const GRID = "grid-cols-[3rem_6rem_1fr_1fr_1fr_5rem_auto]";
+/* The image is its own `td` now, so the grid covers the SIX remaining
+   columns and the header's blank first cell holds the picture's width. */
+const GRID = "grid-cols-[6rem_1fr_1fr_1fr_6rem_auto]";
 
 /**
  * A reference item's candidates, as a TABLE whose rows are the choice — Ben,
@@ -103,7 +106,23 @@ export function CandidateTable({
                     click — and a grid whose template matches the header keeps
                     them aligned.
                   */}
-                  <td colSpan={COLUMNS.length} className="p-0">
+                  {/*
+                    THE IMAGE HAS ITS OWN CELL, because the row is one button
+                    and a button may not contain a button. Clicking the face
+                    opens a dialog; clicking anywhere else in the row selects
+                    it — which is what Ben asked for, and the only shape in
+                    which both are reachable by keyboard.
+                  */}
+                  <td className="w-12 p-0 pl-2 align-middle">
+                    {option.imageUrl === null || option.imageUrl === undefined ? (
+                      // A fixed box either way, so a row without a picture is
+                      // the same height as one with it.
+                      <span className="block size-12" />
+                    ) : (
+                      <CandidateImage url={option.imageUrl} name={option.name} />
+                    )}
+                  </td>
+                  <td colSpan={COLUMNS.length - 1} className="p-0">
                     <button
                       type="button"
                       onClick={() => onChoose(option.id)}
@@ -115,26 +134,6 @@ export function CandidateTable({
                         disabled && "cursor-not-allowed opacity-50",
                       )}
                     >
-                      {/* A face, bigger than it was (Ben: "Make the candidate
-                          images bigger") — 48px, which is large enough to tell
-                          two people apart and small enough that eleven rows
-                          still fit a screen. The box is fixed either way, so a
-                          row without a picture is the same height as one with
-                          it and the table does not jump. */}
-                      <span className="flex size-12 items-center justify-center">
-                        {option.imageUrl === null ||
-                        option.imageUrl === undefined ? null : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={option.imageUrl}
-                            alt=""
-                            loading="lazy"
-                            width={48}
-                            height={48}
-                            className="size-12 rounded-control object-cover"
-                          />
-                        )}
-                      </span>
                       <span className="type-body text-ink">{option.name}</span>
                       <span className="type-body text-ink-secondary">
                         {option.group}

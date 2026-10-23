@@ -1,61 +1,49 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui";
+import { Button, Toast, useToast } from "@/components/ui";
 
 /**
  * A control this close WOULD offer and cannot yet — drawn, pressable, and
- * answering with what it is waiting on.
+ * answering in a toast.
  *
  * Ben, 2026-10-23: *"Please put Create a new artist between select and not
- * kpop. And make it so that when clicked it opens a toast that just needs not
- * yet implemented."*
+ * kpop. And make it so that when clicked it opens a toast."*
  *
- * **Pressable rather than disabled, which is a reversal worth stating.** It was
- * a disabled button with its reason printed permanently beside it. Disabled is
- * the wrong shape twice over: a disabled control is skipped by keyboard
- * navigation, so an operator tabbing through the close never meets it and
- * never learns the option exists at all; and a reason printed next to every
- * control forever is standing prose, which is the thing this page keeps
- * shedding. Pressable with an answer on demand tells the same truth and only
- * when asked.
+ * **Pressable rather than disabled**, which is a reversal worth keeping
+ * stated: a disabled control is skipped by keyboard navigation, so an operator
+ * tabbing through the close would never meet it and never learn the option
+ * exists at all. Pressable and honest beats absent and tidy.
  *
- * It settles nothing and sends nothing. The whole mechanism is one piece of
- * local state: there is no request, no verdict, no route — which is why it
- * cannot be confused for a control that half-works.
+ * **The reason does not render.** It did, inline under the button, and that
+ * was more standing prose on a page Ben keeps clearing — and he then asked for
+ * the toast to say "Not yet implemented" and nothing else. So `because` is
+ * documentation for whoever reads this code, not copy: the operator is told
+ * the honest short answer, and the long answer lives in the handoff where the
+ * person who can fix it will read it.
+ *
+ * It settles nothing and sends nothing — no request, no verdict, no route — so
+ * it cannot be mistaken for a control that half-works.
  */
 export function BlockedControl({
   label,
   because,
 }: {
   label: string;
-  /** What it is waiting on, in one line, shown when pressed. */
+  /**
+   * What it is waiting on. NOT rendered — see above. It stays in the signature
+   * because a blocked control with no recorded reason is one nobody can
+   * unblock, and the page that declares it is where that belongs.
+   */
   because: string;
 }) {
-  const [asked, setAsked] = useState(false);
+  const { toast, show, clear } = useToast();
+  void because;
   return (
-    <span className="flex flex-col gap-1">
-      <Button
-        variant="secondary"
-        data-close-blocked={label}
-        onClick={() => setAsked(true)}
-      >
+    <>
+      <Button variant="secondary" data-close-blocked={label} onClick={() => show("Not yet implemented")}>
         {label}
       </Button>
-      {asked ? (
-        /*
-         * `role="status"`, so it is announced when it appears without stealing
-         * focus — the operator pressed a button and is still reading the table.
-         * `alert` would interrupt, and nothing here is urgent.
-         */
-        <span
-          role="status"
-          data-close-blocked-said={label}
-          className="type-body text-ink-secondary"
-        >
-          Not yet implemented — {because}
-        </span>
-      ) : null}
-    </span>
+      {toast === null ? null : <Toast message={toast} onDone={clear} />}
+    </>
   );
 }
