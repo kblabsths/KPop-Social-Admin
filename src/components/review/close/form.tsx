@@ -7,7 +7,6 @@ import { Button, DATA_MUTED, Identifier } from "@/components/ui";
 import type { VerdictAction } from "@/lib/verdict/decision";
 import {
   closeRefusal,
-  noteIsRequiredBy,
   refusalWords,
   submitSettlement,
   type ActionSpec,
@@ -301,11 +300,23 @@ export function ChosenControl({
   );
 }
 
-/** The note field's own words — a hint, not a placeholder inside the field. */
+/**
+ * The note field's own words — a hint, not a placeholder inside the field.
+ *
+ * ONE SENTENCE, on every action (Ben, 2026-10-23). It used to say "Required on
+ * a won't-fix: why the condition stands. Optional on every other action.",
+ * which was a description of the validation rather than a request, and said
+ * "optional" about a field Ben wants on every decision: *"First it is (or
+ * should be) required on every action."*
+ *
+ * The `actions` argument is kept and deliberately unused: the words no longer
+ * vary by action, and dropping the parameter would change this function's
+ * signature at every call site for nothing. If a per-action hint ever returns,
+ * it returns here.
+ */
 export function noteHint(actions: readonly ActionSpec[]): string {
-  return noteIsRequiredBy(actions)
-    ? "Required on a won’t-fix: why the condition stands. Optional on every other action."
-    : "Optional — the reason this was settled the way it was.";
+  void actions;
+  return "Please provide evidence for your decision";
 }
 
 export function CloseForm({
@@ -390,12 +401,20 @@ export function CloseForm({
   const settling = state.kind === "settling";
   return (
     <div className="flex flex-col gap-2" data-close-state={state.kind}>
-      <label className="type-body text-ink" htmlFor={noteId}>
-        Note
-      </label>
-      <span id={hintId} className="type-body text-ink-secondary">
+      {/*
+        The word "Note" is gone (Ben, 2026-10-23: "delete the word Note"). It
+        labelled the field with its own name, which told an operator nothing
+        the field's one sentence does not.
+
+        The LABEL ELEMENT stays, carrying that sentence: a textarea needs an
+        accessible name, and removing the `<label>` as well as the word would
+        leave the control unnamed to everything that reads the page by name
+        (quality bar 9). So the hint IS the label now — one string, one
+        element, named once.
+      */}
+      <label id={hintId} className="type-body text-ink" htmlFor={noteId}>
         {noteHint(actions)}
-      </span>
+      </label>
       <textarea
         id={noteId}
         data-close-note=""

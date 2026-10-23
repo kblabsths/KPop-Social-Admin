@@ -12,6 +12,7 @@ import {
   type EvidenceRow,
   type ItemLink,
 } from "@/components/review";
+import type { ReferenceSighting } from "@/components/review/shape-views";
 import type { ShapeChoices } from "@/components/review/close/actions";
 import { linkableFact } from "@/components/review/close/link-actions";
 import {
@@ -29,7 +30,7 @@ import {
   Section,
   StateOf,
 } from "@/components/ui";
-import { claimsHref, sourceHref } from "@/lib/claims/filters";
+import { sourceHref } from "@/lib/claims/filters";
 import { readPendingClaimRows, type PendingClaimRow } from "@/lib/db/claims";
 import { readLinkChoices } from "@/lib/db/records";
 import type { DbResult, DbUnavailable } from "@/lib/db/result";
@@ -57,6 +58,7 @@ import {
   type AwaitingRowTrend,
 } from "@/lib/gauges/pending-claims";
 import { recordHref } from "@/lib/records/routes";
+import { sightedNameOf, sightingUrl } from "@/lib/review/sighting-url";
 import {
   kindOfItem,
   shapeOf,
@@ -154,9 +156,6 @@ import { factKey } from "@/lib/verdict/decision";
  * Next 16.2.2.
  */
 export const dynamic = "force-dynamic";
-
-/** The Claims page, which every "its claims" link narrows. */
-const CLAIMS_PATH = "/claims";
 
 /**
  * Where a review-item id comes from — the ONE recovery sentence the two
@@ -437,25 +436,23 @@ function linksOf(
   listings: readonly EventListingRow[] = [],
 ): ItemLink[] {
   const links: ItemLink[] = [];
-  if (item.source_id !== null) {
-    const source = sourceLabel(names, item.source_id);
-    links.push({
-      label: "Its claims",
-      href: claimsHref(CLAIMS_PATH, { source_id: item.source_id }),
-      value: source,
-    });
-    links.push({
-      label: "Its source",
-      href: sourceHref(item.source_id),
-      value: source,
-    });
-  } else if (item.domain !== null) {
-    links.push({
-      label: "Its claims",
-      href: claimsHref(CLAIMS_PATH, { domain: item.domain }),
-      value: item.domain,
-    });
-  }
+  /*
+   * "Its claims" and "Its source" are GONE (Ben, 2026-10-23: "I don't know why
+   * the claims and sources links are valuable for. They are confusing").
+   *
+   * They were sideways moves dressed as context. "Its claims" opened /claims
+   * narrowed to this item's source — every claim that source has ever made,
+   * which is thousands of rows and none of them this item's question. "Its
+   * source" opened the registry row for a source whose lifecycle and tier
+   * decide nothing about which Yeonjun a bill means. Neither helped anyone
+   * answer the item, and both sat where the eye lands first.
+   *
+   * What survives is what the operator is actually reaching for: the RECORD
+   * this item is about, and the source's own LISTING below. The sighting block
+   * now carries the link to the source's page for the reference itself, which
+   * is the one "where did this come from" link there was ever a case for.
+   */
+  void names;
 
   const record =
     item.domain === null ? null : recordHref(item.domain, item.entity_id);
@@ -488,6 +485,31 @@ function linksOf(
     });
   }
   return links;
+}
+
+/**
+ * The SIGHTING a reference item is about, assembled for its view.
+ *
+ * `null` on every other shape, and on a reference item whose name cannot be
+ * read from its summary — the one row that costs is the name, and the rest of
+ * the block still says who saw it and under what reference.
+ */
+function sightingOf(
+  item: ReviewItemRow,
+  names: ReadonlyMap<string, string>,
+): ReferenceSighting | null {
+  if (item.external_ref === null || item.source_id === null) return null;
+  const name = sightedNameOf(item.summary);
+  if (name === null) return null;
+  const source = sourceLabel(names, item.source_id);
+  return {
+    name,
+    source,
+    ref: item.external_ref,
+    // Constructed per source, and absent for one this app has not verified
+    // (`lib/review/sighting-url.ts`).
+    url: sightingUrl(source, item.external_ref),
+  };
 }
 
 /**
@@ -906,11 +928,27 @@ export default async function ReviewItemPage({
             item: row,
             evidence: evidenceRows,
             choices: linkChoices,
+            // The candidates are the ANSWER'S OPTIONS, so they go to the close
+            // and not to the evidence block (Ben, 2026-10-23: "are these not
+            // the options that I should be choosing from to respond to the
+            // question?"). `null` on a refused read is a different state from
+            // the empty list the resolver returns when it proposed none, and
+            // `referenceNotice` says which.
+            candidates:
+              candidates === null || candidates.kind !== "ok" ? null : candidates.data,
           })}
           notice={NOTICE_BY_SHAPE[shape]({
             item: row,
             evidence: evidenceRows,
             choices: linkChoices,
+            // The candidates are the ANSWER'S OPTIONS, so they go to the close
+            // and not to the evidence block (Ben, 2026-10-23: "are these not
+            // the options that I should be choosing from to respond to the
+            // question?"). `null` on a refused read is a different state from
+            // the empty list the resolver returns when it proposed none, and
+            // `referenceNotice` says which.
+            candidates:
+              candidates === null || candidates.kind !== "ok" ? null : candidates.data,
           })}
           verdict={settledWith(verdict)}
         />
@@ -931,9 +969,7 @@ export default async function ReviewItemPage({
                 unresolved={evidence.data.unresolved}
                 empty={emptyWords(evidence.data)}
                 canonical={canonicalCard(evidence.data.canonical)}
-                candidates={
-                  candidates === null || candidates.kind !== "ok" ? null : candidates.data
-                }
+                sighting={sightingOf(row, names)}
                 dial={
                   dialSource === null || trend === null
                     ? null

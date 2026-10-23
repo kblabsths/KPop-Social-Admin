@@ -19,8 +19,6 @@ import {
 } from "@/components/ui";
 import { IN_PAGE_LINK } from "@/components/cycles/links";
 import { count, counted, pluralise } from "@/lib/format";
-import type { ReferenceCandidate } from "@/lib/db/review-item";
-import { recordHref } from "@/lib/records/routes";
 import type { Shape } from "@/lib/review/shapes";
 import {
   DASH_MEANS,
@@ -149,15 +147,25 @@ export interface ShapeEvidenceProps {
   /** The per-source dial. `null` on every shape but the source pattern. */
   dial: DialProps | null;
   /**
-   * A REFERENCE item's candidates — the entity rows the resolver proposed for
-   * the name it could not place, best-ranked first, each already carrying what
-   * tells it apart from a namesake.
+   * What a REFERENCE item was SIGHTED as — the name, who saw it, the source's
+   * own reference for it, and where to look at it on their site.
    *
-   * `null` on every other shape, and on a reference item whose read refused;
-   * EMPTY on one the resolver proposed nothing for ("no catalog name is
-   * close"), which is a real answer and a different state from a refusal.
+   * `null` on every other shape. The candidates are NOT here: they are the
+   * answer's options and live in the close (Ben, 2026-10-23).
    */
-  candidates: readonly ReferenceCandidate[] | null;
+  sighting: ReferenceSighting | null;
+}
+
+/** The sighting a reference item is about, as the view renders it. */
+export interface ReferenceSighting {
+  /** The name the source reported, read out of the item's own summary. */
+  readonly name: string;
+  /** What the registry calls the source that reported it. */
+  readonly source: string;
+  /** The source's own reference for the entry, verbatim. */
+  readonly ref: string;
+  /** The source's page for it, or `null` where this app cannot address it. */
+  readonly url: string | null;
 }
 
 /**
@@ -542,86 +550,72 @@ function PatternEvidence({
 }
 
 /**
- * A REFERENCE item's evidence: the candidates, and what tells them apart.
+ * A REFERENCE item's evidence: THE SIGHTING, and the way to look at it.
  *
- * The view this shape never had. Until 2026-10-22 Admin read a reference item
- * as the source-pattern shape and so drew the pattern's view over it —
- * resolving its `evidence` as OBSERVATION ids, which match nothing, so the
- * block rendered the "none of them names a row this database holds" card over
- * every one of production's 125 reference items. The ids were never
- * observations; they are candidate entity ids (`20260911000009`).
+ * Rewritten 2026-10-23 on two of Ben's corrections, taken together.
  *
- * **The detail column is the point, not decoration.** The Yeonjun item's ten
- * candidates read `Yeonjun, Yeonjun, Yeonjun, Yeonjung, …`; what separates
- * them is the group each belongs to, their real names and their birth years.
- * A picker showing names alone would be a list of ten identical rows, which is
- * what Ben meant by not having enough information to decide.
+ * It first drew the CANDIDATES as a read-only table. He answered: *"are these
+ * not the options that I should be choosing from to respond to the question?"*
+ * — and they are. Listing them here and again in the picker made the same ten
+ * rows appear twice, once to read and once to choose from, which is one list
+ * too many and the wrong one on top. The candidates moved to the close, where
+ * the decision is.
  *
- * Ranked best-first, in the resolver's own order, which this view does not
- * re-sort: the ranking is the resolver's judgment about which match is closest.
+ * What belongs here is what the item is ABOUT, which was the other half of the
+ * complaint: *"All I know is that the name Yeonjun has multiple matches. But I
+ * need to see the source page… to actually know more about it."* So this block
+ * is the sighting — which source saw it, under what reference, and a link to
+ * the source's own page for it.
+ *
+ * The link is constructed rather than stored (`lib/review/sighting-url.ts`,
+ * which carries the whole reason) and is absent for a source whose addressing
+ * this app has not verified. Absent is the honest answer: an operator who
+ * cannot look is better served than one sent to a 404.
  */
-function ReferenceEvidence({ candidates, unresolved }: ShapeEvidenceProps) {
+function ReferenceEvidence({ sighting }: ShapeEvidenceProps) {
+  if (sighting === null) {
+    return (
+      <div data-evidence-view="reference" className="flex min-w-0 flex-col gap-3">
+        <Empty
+          holds="the sighting this item is about"
+          filledBy="A source reports a name its reference could not be placed under."
+        />
+      </div>
+    );
+  }
   return (
     <div data-evidence-view="reference" className="flex min-w-0 flex-col gap-3">
-      {candidates === null ? (
-        // The read refused. The surface above this one names it; this block
-        // states no candidate rather than an empty list, which would read as
-        // "the resolver proposed none".
-        <Lede>The candidates could not be read.</Lede>
-      ) : candidates.length === 0 ? (
-        <Empty
-          holds="catalog rows close to this name"
-          filledBy="The resolver proposes one when a name is close enough to rank."
-        />
-      ) : (
-        <DataTable<ReferenceCandidate>
-          label="Candidates"
-          rows={[...candidates]}
-          rowKey={(row) => row.id}
-          columns={[
-            {
-              key: "rank",
-              label: "rank",
-              align: "right",
-              // The resolver's ranking, made visible: best first is the whole
-              // reason the order is not re-sorted here.
-              cell: (row) => count(candidates.indexOf(row) + 1),
-            },
-            {
-              key: "name",
-              label: "name",
-              cell: (row) => <Identifier>{row.name}</Identifier>,
-            },
-            {
-              key: "detail",
-              label: "which one",
-              // The app's own joined reading of the row's own columns, so it is
-              // prose rather than a machine token and takes the body face.
-              cell: (row) => row.detail,
-            },
-            {
-              key: "domain",
-              label: "catalog",
-              cell: (row) => <Identifier>{row.domain}</Identifier>,
-            },
-            {
-              key: "record",
-              label: "record",
-              cell: (row) => {
-                const href = recordHref(row.domain, row.id);
-                return href === null ? null : (
-                  <a href={href} className={`type-data ${IN_PAGE_LINK}`}>
-                    {row.id}
-                  </a>
-                );
-              },
-            },
-          ]}
-        />
-      )}
-      {unresolved.length === 0 ? null : (
-        <Unresolved ids={unresolved} />
-      )}
+      <DataTable<{ label: string; value: ReactNode }>
+        label="The sighting"
+        rows={[
+          { label: "sighted name", value: <Identifier>{sighting.name}</Identifier> },
+          { label: "source", value: <Identifier>{sighting.source}</Identifier> },
+          {
+            label: "source's reference",
+            value: <Identifier>{sighting.ref}</Identifier>,
+          },
+          {
+            label: "on the source's site",
+            value:
+              sighting.url === null ? null : (
+                <a
+                  href={sighting.url}
+                  data-sighting-url={sighting.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className={`type-body ${IN_PAGE_LINK}`}
+                >
+                  Open the {sighting.source} page
+                </a>
+              ),
+          },
+        ]}
+        rowKey={(row) => row.label}
+        columns={[
+          { key: "label", label: "what", cell: (row) => row.label },
+          { key: "value", label: "value", cell: (row) => row.value },
+        ]}
+      />
     </div>
   );
 }

@@ -372,12 +372,30 @@ export const DECISION_VALUE_KEYS: readonly (keyof VerdictValue)[] = Object.keys(
  * shown a refusal. Everything else takes a note at the admin's discretion.
  */
 export function noteRequired(action: VerdictAction): boolean {
-  // `rule_not_kpop` joins `wont_fix` here by Admin's choice, not the
-  // function's: the migration leaves its note optional and Ben asked for it to
-  // be enforced on the form. Both actions close a question by asserting
-  // something a later reader cannot re-derive — that a condition stands, that
-  // a name is out of scope — so both owe a reason.
-  return action === "wont_fix" || action === "rule_not_kpop";
+  /*
+   * EVERY action, since 2026-10-23 (Ben: "First it is (or should be) required
+   * on every action").
+   *
+   * **This is Admin's policy and not the function's rule, and the difference
+   * matters.** `settle_review_item` requires a note on `wont_fix` alone and
+   * accepts one or none on the other eight; Admin is STRICTER, which is a
+   * direction a client may go. Nothing here relaxes a server rule, so no
+   * verdict this app sends can be refused for a note the function wanted and
+   * Admin did not ask for.
+   *
+   * Why hold the line this far: `verdicts.note` is "the reasoning half of the
+   * training signal, and the only column here a reader will quote back" (the
+   * column's own comment). A verdict with no reason is a decision the
+   * ecosystem cannot learn from and a later operator cannot audit — and the
+   * actions that looked like they needed no reason are exactly the ones whose
+   * reasoning is least recoverable later ("keep_current" says nothing about
+   * WHY the incumbent won).
+   *
+   * The parameter is kept, unused, for the reason `noteHint`'s is: the rule is
+   * uniform today and this is where a per-action rule would return.
+   */
+  void action;
+  return true;
 }
 
 /* ── the fact identifier, spelled once ───────────────────────────────────── */

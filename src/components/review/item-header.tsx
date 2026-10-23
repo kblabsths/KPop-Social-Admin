@@ -95,16 +95,26 @@ export interface ItemLink {
  *    decide for themselves whether one figure is the other one narrowed.
  */
 function foldScope(folds: number, evidenceIds: number | null): string {
-  const fold = "Each fold is a re-ask of this item, not a record";
-  if (evidenceIds === null) return `${fold}.`;
+  /*
+   * The explanation is gone (Ben, 2026-10-23: "delete the each fold
+   * description; it is not helpful"). It opened every one of these lines with
+   * "Each fold is a re-ask of this item, not a record" — a definition of the
+   * word `fold`, restated above every item forever, which is the class of
+   * sentence he has now cut three times.
+   *
+   * The COUNTS stay, and the disagreement between them stays: two numbers that
+   * should match and do not is a fact about this item, not a description of
+   * the vocabulary (admin-window/BUG-0124 put it here for that reason).
+   */
+  if (evidenceIds === null) return counted(folds, "fold");
   if (evidenceIds === 0) {
-    return `${fold}: ${counted(folds, "fold")}, and it carries no evidence id.`;
+    return `${counted(folds, "fold")}, carrying no evidence id.`;
   }
-  const both = `${fold}: ${counted(folds, "fold")} over the ${counted(
+  const both = `${counted(folds, "fold")} over ${counted(
     evidenceIds,
     "evidence id",
-  )} it carries, listed below`;
-  return folds === evidenceIds ? `${both} — the two counts agree.` : `${both}.`;
+  )}`;
+  return folds === evidenceIds ? both : `${both} — the counts disagree.`;
 }
 
 export function ItemHeader({
