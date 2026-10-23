@@ -279,10 +279,39 @@ const LISTINGS_SURFACE = "event_listings";
 const CLOSE_TITLE_BY_SHAPE: Record<Shape, string> = {
   data_conflict_fact: "Which value is correct?",
   entity_link_fact: "Which record is this?",
-  entity_link_reference: "Which catalog name is this?",
+  // The reference shape's heading is composed per item, from the source and
+  // the reference, because Ben's own wording for it names both: "Please
+  // identify Ticketmaster's performer K8vZ917-Rw0". `closeTitleOf` below.
+  entity_link_reference: "Please identify this performer",
   entity_link_source_pattern: "Which catalog name is this?",
 };
 
+/**
+ * The close's heading for THIS item.
+ *
+ * Ben, 2026-10-23, after reading the question stated plainly: *"When you word
+ * it like 'Which catalog row is Ticketmaster's performer K8vZ917-Rw0?' it is
+ * more understandable. I would write it like 'Please identify Ticketmaster's
+ * performer K8vZ917-Rw0'."*
+ *
+ * So the reference shape's heading is an ASK naming its own subject, which is
+ * exactly what the item's subject IS — `(source_id, external_ref)`, the two
+ * halves it opens under (`resolver/ledger.py`). Every other shape keeps its
+ * fixed question; there is no source and reference to name on a fact item.
+ *
+ * The source's registry NAME, never its uuid, and the reference verbatim.
+ */
+function closeTitleOf(
+  item: ReviewItemRow,
+  shape: Shape,
+  names: ReadonlyMap<string, string>,
+): string {
+  if (shape !== "entity_link_reference") return CLOSE_TITLE_BY_SHAPE[shape];
+  if (item.source_id === null || item.external_ref === null) {
+    return CLOSE_TITLE_BY_SHAPE[shape];
+  }
+  return `Please identify ${sourceLabel(names, item.source_id)}'s performer ${item.external_ref}`;
+}
 /**
  * The dial's display window, in days.
  *
@@ -924,7 +953,7 @@ export default async function ReviewItemPage({
           companion says what the shape WITHHOLDS and why — today only a
           conflict on a reference field, whose value links a row rather than
           carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
-      <Section title={CLOSE_TITLE_BY_SHAPE[shape]} surface={CLOSE_SURFACE}>
+      <Section title={closeTitleOf(row, shape, names)} surface={CLOSE_SURFACE}>
         <CloseSlot
           item={row}
           readiness={readiness}

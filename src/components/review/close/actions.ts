@@ -136,6 +136,7 @@ export interface ShapeCandidate {
   readonly domain: string;
   readonly name: string;
   readonly detail: string | null;
+  readonly imageUrl: string | null;
 }
 
 /**

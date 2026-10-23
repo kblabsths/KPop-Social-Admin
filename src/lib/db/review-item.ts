@@ -654,11 +654,29 @@ export interface ReferenceCandidate {
   name: string;
   /**
    * What tells it apart from a namesake, in reading order and already joined:
-   * for an idol the group's NAME (resolved, never its uuid), the real name and
-   * the birth year; for a venue the city and country; for a group its company
-   * and debut year.
+   * for an idol the group's NAME (resolved, never its uuid), the AGENCY, the
+   * real name and the birth year; for a venue the city and country; for a
+   * group its company and debut year.
+   *
+   * The agency joined on 2026-10-23 and is the strongest signal in the line
+   * for a reader who knows the industry: nine of the Yeonjun item's ten
+   * candidates sit under agencies nobody has heard of, and the tenth is
+   * `BigHit Music`.
    */
   detail: string | null;
+  /**
+   * A PICTURE of them, where the catalog holds one.
+   *
+   * Ben, 2026-10-23: *"Ideally I would look at a picture… but in this case
+   * there is no picture."* He was right about Ticketmaster and wrong about us —
+   * `idols.image_url` is set for nine of that item's ten candidates. The
+   * identification material was in our own catalog the whole time and the
+   * picker was not showing it.
+   *
+   * A SOURCE-CDN url, not self-hosted (R2 is the intended end state,
+   * `../MIGRATE_LATER.md`), so it can 404 and the renderer must survive that.
+   */
+  imageUrl: string | null;
 }
 
 const IDOL_CANDIDATE_COLUMNS = [
@@ -667,8 +685,16 @@ const IDOL_CANDIDATE_COLUMNS = [
   "real_name",
   "birth_date",
   "group_id",
+  "agency",
+  "image_url",
 ] as const;
-const GROUP_CANDIDATE_COLUMNS = ["id", "name", "company", "debut_date"] as const;
+const GROUP_CANDIDATE_COLUMNS = [
+  "id",
+  "name",
+  "company",
+  "debut_date",
+  "image_url",
+] as const;
 const VENUE_CANDIDATE_COLUMNS = ["venue_id", "name", "city", "country"] as const;
 
 /** The year of an instant, or nothing — never a guessed date. */
@@ -711,6 +737,8 @@ export async function readReferenceCandidates(
       real_name: string | null;
       birth_date: string | null;
       group_id: string | null;
+      agency: string | null;
+      image_url: string | null;
     }>(
       T.idols,
       IDOL_CANDIDATE_COLUMNS,
@@ -728,6 +756,7 @@ export async function readReferenceCandidates(
       name: string | null;
       company: string | null;
       debut_date: string | null;
+      image_url: string | null;
     }>(
       T.groups,
       GROUP_CANDIDATE_COLUMNS,
@@ -800,9 +829,11 @@ export async function readReferenceCandidates(
       name: row.stage_name ?? row.real_name ?? row.id,
       detail: detailOf([
         row.group_id === null ? null : (groupName.get(row.group_id) ?? null),
+        row.agency,
         row.real_name,
         yearOf(row.birth_date),
       ]),
+      imageUrl: row.image_url,
     });
   }
   for (const row of groups.data) {
@@ -811,6 +842,7 @@ export async function readReferenceCandidates(
       domain: "groups",
       name: row.name ?? row.id,
       detail: detailOf([row.company, yearOf(row.debut_date)]),
+      imageUrl: row.image_url,
     });
   }
   for (const row of venues.data) {
@@ -819,6 +851,8 @@ export async function readReferenceCandidates(
       domain: "venues",
       name: row.name ?? row.venue_id,
       detail: detailOf([row.city, row.country]),
+      // A venue is identified by WHERE it is, not by a photograph.
+      imageUrl: null,
     });
   }
 

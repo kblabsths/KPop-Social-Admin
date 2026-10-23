@@ -116,3 +116,39 @@ arriving. Whatever the escalation thresholds are, a reference re-asked 88 times
 is not being escalated by them — and because the answer is one row with 88
 events behind it, this is the highest-leverage unanswered question in the
 queue. That is a resolver question, not an Admin one.
+
+## Third thing — "none of these rows" has no answer
+
+Ben's own account of the three responses he expects:
+
+> select one of those rows, select none of the rows, or select that it is not a
+> KPOP act, and provide reasoning
+
+The first and third are now buildable: `link_entity` with `{domain, ref}` and
+`rule_not_kpop`, both with a note Admin requires. **The middle one is not.**
+
+"None of these rows" means: it IS a k-pop act, and the catalog does not hold
+it. Nothing in the nine actions says that. The nearest is `settle`, whose own
+documented meaning is "leave it held; the claim keeps waiting in its bucket" —
+a shrug, not an answer. And it writes no `confirmed_matches` row, so the store
+has not settled the reference: as far as `resolver/cycle.py`'s self-settling
+read is concerned the question is still unanswered, while the item now reads
+`settled` and no longer reaches a human.
+
+That is the worst of the three outcomes — the question disappears from the
+queue without being answered — and it is reachable today by one click on an
+item whose honest answer is "none of them".
+
+**Two ways out, and the choice is yours:**
+
+1. A tenth action — `needs_row`, or whatever you call it — that records "a
+   k-pop act the catalog is missing" and keeps the reference unsettled so it
+   stays visible, or settles it into a list of rows to create. This is the
+   honest version of "add the row" with Admin still inserting nothing.
+2. Or rule that `settle` is correct here and make the resolver treat a settled
+   reference item with no store row as a standing request for a row.
+
+Until one of them exists, Admin will not offer `settle` on a reference item at
+all: an operator reaching for "none of them" and finding only a control that
+quietly buries the question is worse served than one who finds nothing. That is
+a decision I have made in the UI and you can overrule.

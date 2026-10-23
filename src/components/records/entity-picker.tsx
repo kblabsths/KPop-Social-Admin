@@ -91,6 +91,19 @@ export interface PickerOption {
    * it is unchanged.
    */
   readonly detail?: string | null;
+  /**
+   * A thumbnail of the row, where the caller has one.
+   *
+   * For a person this is the single fastest disambiguator there is, which is
+   * why it is here: Ben asked to identify a performer by looking at them, and
+   * `idols.image_url` holds a picture for nine of ten candidates on the item
+   * he asked about.
+   *
+   * A SOURCE-CDN url, so it can 404. It renders as a plain `img` that simply
+   * fails to paint — never a broken-image frame sized to hold one, and never a
+   * placeholder pretending a picture exists.
+   */
+  readonly imageUrl?: string | null;
 }
 
 /**
@@ -503,8 +516,41 @@ export function PickerOptions({
               busy && "cursor-not-allowed opacity-50",
             )}
           >
-            {orDash(option.name)}{" "}
-            <Identifier muted>{option.id}</Identifier>
+            <span className="flex items-baseline gap-2">
+              {/*
+                A face, where there is one. `img` and not `next/image`: these
+                are source-CDN urls the catalog does not host, so there is no
+                loader config that covers them and an unoptimised tag is the
+                honest rendering. 32px square, so a row with a picture is the
+                same height as a row without one and the list does not jump.
+
+                `alt` is EMPTY on purpose: the name sits immediately beside it
+                in the same control, so a screen reader announcing the picture
+                would read the person twice. The image is decoration over text
+                that already says who this is.
+              */}
+              {option.imageUrl === null || option.imageUrl === undefined ? null : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={option.imageUrl}
+                  alt=""
+                  loading="lazy"
+                  width={32}
+                  height={32}
+                  className="size-6 shrink-0 self-center rounded-control object-cover"
+                />
+              )}
+              <span className="flex flex-col">
+                <span>
+                  {orDash(option.name)}{" "}
+                  <Identifier muted>{option.id}</Identifier>
+                </span>
+                {option.detail === null || option.detail === undefined ? null : (
+                  // What makes ten namesakes ten different people.
+                  <span className="type-data text-ink-secondary">{option.detail}</span>
+                )}
+              </span>
+            </span>
           </button>
         </li>
       ))}
