@@ -171,6 +171,29 @@ Follows from 5. Either:
 
 Admin will offer the control the moment either exists.
 
+**Added 2026-10-24, from a real answer on STAGING.** Ben settled the Hatsune
+Miku reference item with `rule_not_kpop`, and the function recorded it like
+this — two rows, one per candidate domain:
+
+```
+confirmed_matches, external_ref = K8vZ9173hY0
+  {"domain":"groups","entity_id":null,"matched_by":"verdict","ruling":"not_kpop"}
+  {"domain":"idols", "entity_id":null,"matched_by":"verdict","ruling":"not_kpop"}
+```
+
+So the store ALREADY has a shape for "an answer about a reference that points
+at no row": a `confirmed_matches` row with a null `entity_id` and a `ruling`.
+Whatever item 6 becomes should almost certainly reuse it — a second ruling
+value rather than a new table or a null-row convention invented beside this
+one. It also answers the "does it resolve every fold" question: one answer
+covers the reference in both domains, so the resolver stops asking as a group
+and as an idol at once.
+
+Worth knowing while deciding: `rule_not_kpop` writes NO observation, so the
+verdict's `observation_id` is null. That is correct for a ruling — there is no
+value to record about a row that should not exist — and a `needs_row` answer
+would be the opposite case, where there IS something to record.
+
 ---
 
 ## 7. Duplicate catalog rows make some items unanswerable
