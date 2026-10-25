@@ -34,7 +34,8 @@ where the page controls sit.
 **Out of scope:** `/login`. The sign-in gate carries over untouched (spec §3),
 so its rounded card, pink mark and drop shadow are sanctioned exceptions —
 neither a precedent to copy nor a violation to file. Nothing else in the app
-uses pink, a radius above 4px, or a shadow.
+uses pink or a shadow, and the only radius above 4px is the decision box's
+6px (see the radius bar).
 
 ---
 
@@ -101,9 +102,9 @@ screen). Every surface ships light and dark.
 
 `Geist` (sans) and `Geist Mono` (mono), already loaded in the root layout.
 
-> **MONO IS ONLY FOR CODE.** Ben has had to say this three times — 2026-10-21,
-> 2026-10-22 and 2026-10-23 — so it goes at the top of this section rather than
-> inside it. The test is: *could an operator paste this string into a query?*
+> **MONO IS ONLY FOR CODE.** Ben has had to say this four times — 2026-10-21,
+> 2026-10-22, 2026-10-23 and 2026-10-24 — so it goes at the top of this section
+> rather than inside it. The test is: *could an operator paste this string into a query?*
 > `entity_link_source_pattern`, a uuid, a column name, an error string the
 > database wrote: yes, mono. A count, a date, an age, a duration, a title, an
 > English sentence, a FORM FIELD the operator types prose into, a placeholder
@@ -111,15 +112,26 @@ screen). Every surface ships light and dark.
 > least once. When in doubt it is sans; the code face is the exception and
 > earns its place one value at a time.
 
-**Mono carries every value the database produced** — counts, ids, timestamps,
-values, source names, buckets, tiers, error strings. Sans carries every word
-the app wrote — labels, headings, buttons, prose. That split *is* the
-typographic idea: the operator can always see which words are the machine's.
+**The test is CODE-SHAPEDNESS, never provenance.** This paragraph used to read
+"mono carries every value the database produced", and that sentence is what
+produced the fourth violation: the sighting block rendered `Hatsune Miku` in
+mono, because the name did come from the database — Ticketmaster emitted it.
+But a performer's name is words a person reads, and no operator pastes it into
+a query. A value the machine produced is mono when it is **a token**: an id, a
+snake_case registry value, a table or column name, a reference string whose
+case and punctuation matter, a timestamp rendered verbatim, an error string the
+database wrote. A **proper noun** the machine happens to be carrying — a
+performer, a group, a venue, a city — is sans, the same as any other words.
+
+Sans carries every word a person reads, whoever wrote it. Mono carries the
+tokens. That split *is* the typographic idea: the operator can always see which
+strings are machine-shaped — and the useful consequence is that mono doubles as
+"this is safe to copy and paste somewhere that cares about every character".
 
 | Step | Size / line | Face | Used for |
 | --- | --- | --- | --- |
 | `figure` | 24 / 30, semibold | mono | the one number on a stat or gauge card |
-| `title` | 16 / 22, semibold, uppercase, +0.05em | sans | page h1 and section h2, nothing else |
+| `title` | 16 / 22, semibold, +0.05em | sans | page h1 and section h2, nothing else. **Two faces** (`SectionTitleFace`, 2026-10-24): `label` uppercases — "Evidence", "Close" — and `sentence` does not, for a heading that is a question or an ask ("Please identify ticketmaster's performer K8vZ9173hY0"), which also drops the caps tracking. A heading carrying a case-sensitive reference MUST be `sentence`: the transform rewrites `K8vZ9173hY0` into a string the source does not have |
 | `body` | 14 / 20 | sans | buttons, nav, prose, form labels, **chips and badges carrying the app's words** |
 | `data` | 13 / 18 | mono | **a code-shaped machine token**: an id, a snake_case registry value, a table or column name, a verbatim claim value, an instant rendered as one, an error string. Reached through `ui/Identifier` |
 | `micro` | 11 / 15, uppercase, +0.05em | sans | the eyebrow label above a value |
@@ -174,10 +186,22 @@ database's).
   pinned to 4px rather than a rem multiple, so this density never drifts with
   the browser's root font size (sanctioned deviation, not a defect). Nothing
   outside the scale. Table cell padding is 8 horizontal / 6 vertical; card
-  padding 12; page padding 16; the gap between page sections 16.
+  padding 12; **the decision box 12 horizontal / 8 vertical** (2026-10-24: a
+  panel whose content is mostly its own bordered children does not need a
+  card's full breathing room above and below, while the horizontal inset still
+  has to clear the border); page padding 16; the gap between page sections
+  16.
 - **Radius: 0 for containers** (cards, tables, panels, banners), **4px for
   interactive controls** (buttons, chips, nav items, inputs), full round for
-  status dots. No other radius anywhere.
+  status dots — **and 6px for the one container that is a BUBBLE: the decision
+  box on a review item** (`--radius-panel`, `ui/Section`'s `boxed`). Ben asked
+  for that box on 2026-10-24 — *"that would make it more clear that everything
+  is a part of the same decision"* — and then for its corners "a tiny bit
+  more" rounded than a control's. It is the exception because it is the only
+  container whose job is to say *these things are one act*, and it is the only
+  one the eye has to separate from a square `surface` table sitting directly
+  below it. No other radius anywhere, and a second surface reaching for
+  `--radius-panel` is claiming to be the same kind of thing.
 - **1px hairlines, never shadows.** Structure comes from rules and fills.
   There is no elevation in this app.
 - **Frame:** a 192px fixed left sidebar (chrome fill, hairline right edge)
@@ -526,6 +550,63 @@ newcomer")*
 | **tier** | level, rank, trust score, priority | a source's trust level; `admin` is the top |
 | **canonical** | live value, current truth, production value | the value the resolver applied |
 
+### The five rules — every word the operator reads
+
+*Four of these were written 2026-10-23 inside copy bar 3 — the ERROR bar — and
+moved here the same day, because scoping them to errors was itself the
+mistake. Ben opened a reference item with no candidates and read this:*
+
+> The resolver proposed no candidate for this name, so there is no row to
+> choose. If it belongs in the catalog, the row has to arrive through the
+> pipeline — Admin writes no catalog row. If it does not belong,
+> `rule_not_kpop` is the answer.
+
+*His verdict: "We only need to communicate 'The resolver proposed no candidates
+for this name.' everything else is obvious or unnecessary fluff" — then:
+"Please review and see if our new style guideline holds up here." It did not.
+That string is not an error (bar 3) and not an empty state (bar 4); it is an
+explanatory notice beside a control, and no bar in this document reached it.
+Two of the four would have cut it to one sentence had they applied — "one
+sentence", and "the operator's word, not the system's", since the prose named
+`rule_not_kpop` while the button in front of him read "Not a KPOP act". The
+case also produced a fifth rule the four did not contain. So they now govern
+every word this app addresses to a person, and bars 3 and 4 are special cases
+of them rather than their only home.*
+
+1. **Ask, do not state the rule.** "Please include the evidence for your
+   decision", never "Every decision needs its evidence". The second is a policy
+   announcement; the operator wants to know what to put in the box.
+2. **Never say what the operator is already doing.** No "then close it again",
+   "then save it", "then try again", "wait for it to answer". They pressed it.
+   They know.
+3. **Never narrate the screen.** If the sentence describes what the controls
+   under it already show, it is not information — it is a caption for a picture
+   the operator is looking at. The notice above spent three of its four clauses
+   this way: "there is no row to choose" restated an empty table, "Admin writes
+   no catalog row" restated a button already sitting there switched off with
+   its reason on it, and "`rule_not_kpop` is the answer" pointed at a button
+   reading "Not a KPOP act". What survives is the one fact no control shows:
+   the resolver came back empty.
+4. **One sentence.** If a second one is wanted, it is usually the obvious half —
+   cut it and re-read. An em dash joining two clauses is the tell: check
+   whether the clause after it says anything the clause before it did not.
+5. **The operator's word, not the system's.** "evidence", not "note";
+   "record", not "entity"; "value", not "payload". A word that exists only
+   inside this codebase has no business in a sentence addressed to a person —
+   and that includes an action's machine name: the operator reads the button,
+   which says "Not a KPOP act", so prose that says `rule_not_kpop` is the app
+   talking to itself in front of them.
+
+*The compact form, for anyone writing copy here: say what you want, once, in
+their words, and only if the screen does not already say it. Everything else is
+the system talking to itself.*
+
+**Where it bites hardest:** a notice is not exempt because it is "just
+context". The error sentences were fixed five times before the rules were
+written down; the notices were never looked at, because the doc had no bar that
+named them. Every string the operator reads — button, error, empty state,
+notice, hint, confirmation, log line — is graded by the five rules above.
+
 ### Copy bars
 
 1. **Every button is a verb plus its object, naming what gets written**:
@@ -535,9 +616,10 @@ newcomer")*
 2. **An action keeps its name through the whole flow**: "Keep current value"
    settles to the state "kept current value" and logs the line "kept current
    value" — the word never changes between button, confirmation, and log.
-3. **Every error ASKS FOR THE THING, in one sentence, with no apology** — no
-   "Oops", "Sorry", "Something went wrong", and no telling the operator to
-   press the button again. "Please include the evidence for your decision."
+3. **Every error ASKS FOR THE THING, with no apology** — no "Oops", "Sorry",
+   "Something went wrong", and no telling the operator to press the button
+   again. "Please include the evidence for your decision." The five rules
+   above are what makes it that sentence.
 
    *(REWRITTEN 2026-10-23, and this bar was the bug.* It read "names what
    failed, then what to do", and held up **"A won't-fix needs a note — say why
@@ -546,25 +628,7 @@ newcomer")*
    template that generates what he called slop — and it did, five times. The
    "then what to do" clause is the problem: the operator pressed a control and
    is looking at the form, so "then close it again" and "then save it" tell
-   them what they were already doing. Four rules replace it, each one a thing
-   I actually got wrong:*
-
-   - **Ask, do not state the rule.** "Please include the evidence for your
-     decision", never "Every decision needs its evidence". The second is a
-     policy announcement; the operator wants to know what to put in the box.
-   - **Never say what the operator is already doing.** No "then close it
-     again", "then save it", "then try again", "wait for it to answer". They
-     pressed it. They know.
-   - **One sentence.** If a second one is wanted, it is usually the obvious
-     half — cut it and re-read. An em dash joining two clauses is the tell:
-     check whether the clause after it says anything the clause before it did
-     not.
-   - **The operator's word, not the system's.** "evidence", not "note";
-     "record", not "entity"; "value", not "payload". A word that exists only
-     inside this codebase has no business in a sentence addressed to a person.
-
-   *The compact form, for anyone writing copy here: say what you want, once,
-   in their words. Everything else is the system talking to itself.*
+   them what they were already doing.)*
 4. **Every empty and not-provisioned state names what the surface holds and
    what fills it, in ONE clause.** Never a bare "No data" or "No items to
    display": "No open decisions — the resolver files one here when sources

@@ -7,11 +7,11 @@ import {
   StateOf,
   type UnavailableRead,
 } from "@/components/ui";
-import { EM_DASH, clamped, isAbsent, orDash, relativeAge } from "@/lib/format";
+import { clamped, isAbsent, relativeAge } from "@/lib/format";
 import type { ReviewItemRow, Shape } from "@/lib/review/shapes";
 import type { ActionSpec, ShapeActions, ShapeActionsInput } from "./actions";
 import { conflictActions, conflictNotice } from "./conflict-actions";
-import { CloseForm } from "./form";
+import { CloseForm, type BlockedSpec } from "./form";
 import { linkActions, linkNotice } from "./link-actions";
 import { referenceActions, referenceNotice } from "./reference-actions";
 import { dispositionActions } from "./signal-actions";
@@ -126,17 +126,20 @@ export const NOTICE_BY_SHAPE: Record<Shape, ShapeNotice> = {
  * A settled item stays browsable (spec §4), so its detail renders like any
  * other — but offering it a settle control would offer an action the function
  * would refuse. The status is the machine's own word and renders verbatim in
- * mono (§11). WHICH verdict settled it stands directly below, rendered by
- * `SettledVerdict` (campaign admin-window/TASK-0059) — this line claims
- * nothing about it, so an item whose verdict this app could not read still
- * reads truthfully.
+ * mono (§11, and Ben on 2026-10-24: *"Leave the settled text as mono; I like
+ * that"*). WHICH verdict settled it stands directly below, rendered by
+ * `SettledVerdict` — this line claims nothing about it, so an item whose
+ * verdict this app could not read still reads truthfully.
+ *
+ * FOUR WORDS. It said "This item is already settled. There is nothing left to
+ * close." until 2026-10-24; the second sentence described the absence of the
+ * controls the operator can see are absent, and "already" argued with them for
+ * arriving. Ben: *"I need to know the item is settled, I don't need all this."*
  */
 function SettledItem({ status }: { status: string }) {
   return (
     <p className="type-body text-ink-secondary" data-close-item-status={status}>
-      This item is already{" "}
-      <Identifier>{status}</Identifier>. There is nothing
-      left to close.
+      This item is <Identifier>{status}</Identifier>
     </p>
   );
 }
@@ -205,27 +208,6 @@ export type CloseVerdict =
     }
   | UnavailableRead;
 
-/**
- * What an em dash means in this block, said once (LESSONS 1: "a column of
- * dashes carries one line saying what a dash means").
- *
- * Rendered exactly when a dash is actually on screen, whichever line drew it
- * (campaign admin-window/BUG-0092) — a sentence explaining a character the
- * operator cannot see is noise, and the block is one verdict rather than the
- * log's column of them, so the line is conditional where the log tab's is
- * unconditional. The condition is EVERY dashable line, not the two structural
- * ones: a dash on the actor or on an instant that will not parse is still a
- * dash the operator has to read.
- *
- * Which is also why it does not repeat the log tab's "not missing data": two
- * of these dashes are the record doing its job (a note is at the admin's
- * discretion, a settle-only verdict observed nothing) and two are a value this
- * row could not give, so the one sentence says what is true of all four.
- */
-const DASH_MEANS =
-  `A ${EM_DASH} is a value this verdict does not carry: an admin may settle ` +
-  "without a note, and a settle-only verdict writes no claim.";
-
 /** What a settled item with no verdict row on record says, in its own words. */
 const NO_VERDICT_ROW = {
   holds: "verdict on record for this item",
@@ -274,11 +256,8 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
   const age = relativeAge(verdict.createdAt);
   // An instant this app cannot read answers `{ text: EM_DASH, title: "" }`
   // (`relativeAge`, `lib/format.ts`), and rendering that text puts a BARE em
-  // dash on screen — outside the one dash element this app draws absences
-  // with. It is handed over as null instead, so `orDash` draws it, which is
-  // exactly what the sibling rendering of the SAME column does
-  // (`components/queues/verdict-log.tsx`, `created`): one column, one
-  // rendering, on both screens (campaign admin-window/BUG-0092).
+  // dash on screen. It is handed over as null instead, so the line is dropped
+  // rather than drawn empty.
   const when = age.title === "" ? null : age;
   const actor = isAbsent(verdict.actor) ? null : verdict.actor;
   const wrote = isAbsent(verdict.note) ? null : (verdict.note as string);
@@ -286,46 +265,77 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
   const observation = isAbsent(verdict.observationId)
     ? null
     : (verdict.observationId as string);
-  // Whether a dash reaches the screen at all, asked once over EVERY line that
-  // can draw one — the block explains the dashes it draws, and it draws four
-  // kinds, not two (campaign admin-window/BUG-0092). An unresolvable
-  // observation id is not among them: it renders verbatim, never dashed.
-  const dashOnScreen = [actor, note, when, observation].some(
-    (value) => value === null,
-  );
 
-  return (
-    <div data-item-verdict={verdict.action} className="flex flex-col gap-2">
-      <VerdictLine label="settled with">
+  /*
+   * A LINE PER THING THE VERDICT ACTUALLY CARRIES. Absent, and the line is not
+   * drawn at all.
+   *
+   * It used to draw every line always, dashing the empty ones, and then
+   * explain the dash underneath: "A — is a value this verdict does not carry:
+   * an admin may settle without a note, and a settle-only verdict writes no
+   * claim." Ben, 2026-10-24: *"I have no idea what this means. Can we just
+   * delete it? and why is there no observation id?"*
+   *
+   * The sentence was answering his second question badly. A verdict's
+   * `observation_id` is the CLAIM IT WROTE, and a ruling writes none — his
+   * `rule_not_kpop` row carries null there, correctly, because the answer was
+   * "this is not a k-pop act" and there is no value to record about a row that
+   * should not exist. But that fact belongs to the verdict's own kind, not to
+   * a footnote about a punctuation mark: a reader of a four-line block does not
+   * need to be told which lines are missing, and the old rendering made the
+   * operator read a dash, then a sentence, to learn nothing.
+   *
+   * The LESSONS rule the dash sentence came from ("a column of dashes carries
+   * one line saying what a dash means") is about a TABLE COLUMN, where the
+   * rows must line up and a cell cannot be omitted. This is a labelled block;
+   * a line can simply not be there. The verdict log tab keeps its own
+   * unconditional sentence, because it is a real column of them.
+   */
+  const lines: { label: string; body: ReactNode }[] = [
+    {
+      label: "settled with",
+      body: (
         <Identifier data-verdict-action={verdict.action}>
           {verdict.action}
         </Identifier>
-      </VerdictLine>
-
-      <VerdictLine label="by">
-        <span data-verdict-actor={actor ?? undefined}>{orDash(actor)}</span>
-      </VerdictLine>
-
-      <VerdictLine label="note">
-        <span title={note?.title} data-verdict-note={wrote ?? undefined}>
-          {orDash(note?.text ?? null)}
+      ),
+    },
+  ];
+  if (when !== null) {
+    lines.push({
+      label: "when",
+      body: (
+        <span title={when.title} data-verdict-when={verdict.createdAt}>
+          {when.text}
         </span>
-      </VerdictLine>
-
-      <VerdictLine label="when">
-        {when === null ? (
-          orDash(null)
-        ) : (
-          <span title={when.title} data-verdict-when={verdict.createdAt}>
-            {when.text}
-          </span>
-        )}
-      </VerdictLine>
-
-      <VerdictLine label="observation id">
-        {observation === null ? (
-          orDash(null)
-        ) : verdict.observationHref === null ? (
+      ),
+    });
+  }
+  if (actor !== null) {
+    lines.push({
+      label: "by",
+      body: <span data-verdict-actor={actor}>{actor}</span>,
+    });
+  }
+  if (note !== null) {
+    // EVIDENCE, not "note" (Ben, 2026-10-24). It is the same rename the form's
+    // own field had on 2026-10-23 — "Provide evidence for your decision" — and
+    // the two had drifted apart: the operator was asked for evidence and then
+    // shown it back under a different word. Voice rule 5, the operator's word.
+    lines.push({
+      label: "evidence",
+      body: (
+        <span title={note.title} data-verdict-note={wrote ?? undefined}>
+          {note.text}
+        </span>
+      ),
+    });
+  }
+  if (observation !== null) {
+    lines.push({
+      label: "observation id",
+      body:
+        verdict.observationHref === null ? (
           <Identifier data-verdict-observation={observation}>
             {observation}
           </Identifier>
@@ -337,14 +347,17 @@ function ItemVerdictBlock({ verdict }: { verdict: InlineVerdict }) {
           >
             {observation}
           </a>
-        )}
-      </VerdictLine>
+        ),
+    });
+  }
 
-      {dashOnScreen ? (
-        <p data-absence-note="dash" className="type-body text-ink-secondary">
-          {DASH_MEANS}
-        </p>
-      ) : null}
+  return (
+    <div data-item-verdict={verdict.action} className="flex flex-col gap-2">
+      {lines.map((line) => (
+        <VerdictLine key={line.label} label={line.label}>
+          {line.body}
+        </VerdictLine>
+      ))}
     </div>
   );
 }
@@ -433,7 +446,7 @@ export function CloseSlot({
    * Empty on every shape that withholds nothing, which is every shape but the
    * reference one today.
    */
-  blocked?: readonly { readonly label: string; readonly because: string }[];
+  blocked?: readonly BlockedSpec[];
   /**
    * The verdict this item was settled with — `readItemVerdict`'s result,
    * narrowed by the page into plain data (campaign admin-window/TASK-0059).
@@ -487,3 +500,4 @@ export function CloseSlot({
     </>
   );
 }
+

@@ -7,6 +7,8 @@ import {
   NARROWING_FACETS,
   SOURCE_FACET,
   REVIEW_QUEUES,
+  TABS,
+  kindOfTab,
   REVIEW_STATUSES,
   facetChips,
   filterBar,
@@ -58,10 +60,27 @@ function paramsOf(href: string): SearchParams {
 
 describe("the facet vocabulary", () => {
   it("offers exactly the values the domain declares", () => {
-    expect(FACET_VALUES.kind).toEqual(KINDS);
     expect(FACET_VALUES.shape).toEqual(SHAPES);
     expect(FACET_VALUES.status).toEqual(REVIEW_STATUSES);
-    expect(FACET_VALUES.queue).toEqual(REVIEW_QUEUES);
+  });
+
+  it("offers kind and queue as TABS and not as chip rows", () => {
+    // Ben's queues pass, 2026-10-21: `kind` became the tab row and `queue`
+    // went away entirely (`queue-filters.ts` records both in full). This file
+    // graded all four facets until 2026-10-23 and so pinned the page Ben
+    // asked to have changed — the stale pin, not the code, was what broke.
+    // Both still exist on `ReviewItemFilter`: a tab SETS a kind. Neither is
+    // a facet, which is what this grades.
+    expect(FACETS).toEqual(["shape", "status"]);
+    expect(Object.keys(FACET_VALUES).sort()).toEqual(["shape", "status"]);
+    // Every kind is still reachable — as a tab. The mapping is `KIND_BY_TAB`
+    // and it is the thing that replaced the facet, so grading it here is what
+    // keeps "we removed the filter" from reading as "we removed the kind".
+    expect([...KINDS].sort()).toEqual(
+      TABS.map((tab) => kindOfTab(tab))
+        .filter((kind): kind is Kind => kind !== undefined)
+        .sort(),
+    );
   });
 
   it("names the same two queues the queue-health gauge reports on", () => {
@@ -272,34 +291,35 @@ describe("writing the URL", () => {
   });
 
   it("carries every set facet and nothing else", () => {
-    const href = queuesHref(PATH, { kind: "decision", status: "open" });
-    expect(paramsOf(href)).toEqual({ kind: "decision", status: "open" });
+    const href = queuesHref(PATH, {
+      shape: "data_conflict_fact",
+      status: "open",
+    });
+    expect(paramsOf(href)).toEqual({
+      shape: "data_conflict_fact",
+      status: "open",
+    });
   });
 
   it("round-trips every combination back to the same filter", () => {
-    for (const kind of [undefined, ...FACET_VALUES.kind]) {
-      for (const queue of [undefined, ...FACET_VALUES.queue]) {
-        for (const shape of [undefined, ...FACET_VALUES.shape]) {
-          for (const status of [undefined, ...FACET_VALUES.status]) {
-            const filter = filterFrom({ kind, queue, shape, status });
-            expect(filterFrom(paramsOf(queuesHref(PATH, filter)))).toEqual(filter);
-          }
-        }
+    for (const shape of [undefined, ...FACET_VALUES.shape]) {
+      for (const status of [undefined, ...FACET_VALUES.status]) {
+        const filter = filterFrom({ shape, status });
+        expect(filterFrom(paramsOf(queuesHref(PATH, filter)))).toEqual(filter);
       }
     }
   });
 
   it("changes one facet and keeps the rest", () => {
-    const filter: ReviewItemFilter = { kind: "signal", status: "open" };
-    expect(withFacet(filter, "queue", "entity_link")).toEqual({
-      kind: "signal",
+    const filter: ReviewItemFilter = { shape: "entity_link_fact", status: "open" };
+    expect(withFacet(filter, "shape", "data_conflict_fact")).toEqual({
+      shape: "data_conflict_fact",
       status: "open",
-      queue: "entity_link",
     });
     // Clearing removes the key rather than setting it to a value that means
     // "everything" — an absent parameter is how "no narrowing" is spelled.
-    expect(withFacet(filter, "kind", undefined)).toEqual({ status: "open" });
-    expect(filter).toEqual({ kind: "signal", status: "open" });
+    expect(withFacet(filter, "shape", undefined)).toEqual({ status: "open" });
+    expect(filter).toEqual({ shape: "entity_link_fact", status: "open" });
   });
 });
 
@@ -435,10 +455,9 @@ describe("the chips a page renders", () => {
   });
 
   it("keeps every other facet when one chip is followed", () => {
-    const filter = filterFrom({ kind: "decision", status: "open" });
-    for (const choice of facetChips(PATH, filter, "queue").choices) {
+    const filter = filterFrom({ status: "open" });
+    for (const choice of facetChips(PATH, filter, "shape").choices) {
       const landed = filterFrom(paramsOf(choice.href));
-      expect(landed.kind).toBe("decision");
       expect(landed.status).toBe("open");
     }
   });
@@ -552,10 +571,10 @@ describe("the source facet", () => {
       status: "open",
       source_id: SOURCE,
     });
-    expect(paramsOf(queuesHref(PATH, filter, "verdict_log"))).toEqual({
+    expect(paramsOf(queuesHref(PATH, filter, "matches"))).toEqual({
       status: "open",
       source_id: SOURCE,
-      tab: "verdict_log",
+      tab: "matches",
     });
     for (const facet of FACETS) {
       for (const choice of facetChips(PATH, filter, facet).choices) {

@@ -953,7 +953,19 @@ export default async function ReviewItemPage({
           companion says what the shape WITHHOLDS and why — today only a
           conflict on a reference field, whose value links a row rather than
           carrying text (`NOTICE_BY_SHAPE`, spec §8). */}
-      <Section title={closeTitleOf(row, shape, names)} surface={CLOSE_SURFACE}>
+      {/* `sentence`, not the default label face: every one of these headings is
+          a QUESTION or an ASK, not a name for the surface — and the reference
+          shape's carries a source's own case-sensitive reference, which the
+          uppercase transform rewrites into a string that source does not have
+          (Ben, 2026-10-24). */}
+      <Section
+        title={closeTitleOf(row, shape, names)}
+        titleFace="sentence"
+        /* One box, because it is one decision: the question, the candidates,
+           the evidence field and the buttons (Ben, 2026-10-24). */
+        boxed
+        surface={CLOSE_SURFACE}
+      >
         <CloseSlot
           item={row}
           readiness={readiness}
@@ -1004,6 +1016,9 @@ export default async function ReviewItemPage({
               ? [
                   {
                     label: "Create a new artist",
+                    // Always before the ruling, whether or not there is a
+                    // candidate to select — so the row's order never moves.
+                    before: "rule_not_kpop" as const,
                     because:
                       "needs groups and idols registered as catalog domains — a scraper-repo migration",
                   },

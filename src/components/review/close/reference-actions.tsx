@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Identifier } from "@/components/ui";
 import type { ActionSpec, ShapeActionsInput, ShapeCandidate } from "./actions";
 
 /**
@@ -170,16 +169,37 @@ export function referenceActions({
 export function referenceNotice({
   candidates,
 }: ShapeActionsInput): ReactNode {
-  if (candidates === null || candidates === undefined) {
-    return <>The candidates could not be read, so no row can be chosen here.</>;
-  }
-  if (candidates.length > 0) return null;
+  /*
+   * ONE SENTENCE, both branches (Ben, 2026-10-23). This notice used to spend
+   * four clauses on an empty candidate list: that there was "no row to
+   * choose", that a real row "has to arrive through the pipeline", that Admin
+   * writes none, and that `rule_not_kpop` was the answer. Every one of those
+   * is visible in the row of buttons underneath it — the catalog button is
+   * already sitting there switched off with its own reason, and the ruling is
+   * already a button. The operator was being told what the screen was showing
+   * them (*"everything else is obvious or unnecessary fluff"*).
+   *
+   * What a notice owes the operator is the fact they cannot see: the resolver
+   * came back empty. Nothing follows it.
+   */
+  /*
+   * ONE RENDERING for one kind of thing: the same `<p>` and the same step
+   * `conflictNotice` uses. This returned a bare fragment until 2026-10-24, so
+   * it inherited the document's font size (16px) while the item's own summary
+   * sentence three inches above it is `type-body` (14px) — the mismatch Ben
+   * reported: *"make the font size … match the font size for [the summary]"*.
+   * A notice is prose, so it takes the prose step.
+   */
+  const words =
+    candidates === null || candidates === undefined
+      ? "The candidates could not be read."
+      : candidates.length > 0
+        ? null
+        : "The resolver proposed no candidates for this name.";
+  if (words === null) return null;
   return (
-    <>
-      The resolver proposed no candidate for this name, so there is no row to
-      choose. If it belongs in the catalog, the row has to arrive through the
-      pipeline — Admin writes no catalog row. If it does not belong,{" "}
-      <Identifier>rule_not_kpop</Identifier> is the answer.
-    </>
+    <p className="type-body text-ink-secondary" data-close-notice="reference">
+      {words}
+    </p>
   );
 }

@@ -588,7 +588,17 @@ function ReferenceEvidence({ sighting }: ShapeEvidenceProps) {
       <DataTable<{ label: string; value: ReactNode }>
         label="The sighting"
         rows={[
-          { label: "sighted name", value: <Identifier>{sighting.name}</Identifier> },
+          {
+            label: "sighted name",
+            /*
+             * SANS. What the source called this performer is a NAME — the
+             * words a person reads — and mono is only ever for code-shaped
+             * items (Ben, 2026-10-24, and the same correction three times
+             * before it). The source's own REFERENCE below is code-shaped and
+             * keeps its mono; the name beside it never was.
+             */
+            value: <span className="type-body text-ink">{sighting.name}</span>,
+          },
           { label: "source", value: <Identifier>{sighting.source}</Identifier> },
           {
             label: "source's reference",

@@ -228,24 +228,29 @@ describe("the signal's close once the verdict log is installed", () => {
     }
   });
 
-  it("says each name verbatim in mono where the operator reads it: the settled state", () => {
-    // §11's "render verbatim in mono" is met where the name actually reaches
-    // the eye — the state that replaces the controls once the write lands
-    // (`SettledNotice`), which is also what keeps the word the same between
-    // control, confirmation and verdict log (copy bar 2). The control itself
-    // carries the name on its hook, by the frame's rule above.
+  it("says each name where the operator reads it, and the token only on the hook", () => {
+    // The action's name travels VERBATIM on the hook, and no longer in the
+    // sentence. It was printed after the label until 2026-10-24 — "Settled:
+    // Mark fixed `fixed`" — on the reading that §11 wants every machine name
+    // on screen. Ben cut it: *"the reviewer already understands this from the
+    // prior text."* §11 covers an identifier the surface is ABOUT; a second
+    // spelling of the words right before it is the Voice's "never narrate the
+    // screen". What copy bar 2 needs — the same word from control to
+    // confirmation to verdict log — is still proved, by the label and the hook.
     expect(signalActions()).toHaveLength(2);
     for (const spec of signalActions()) {
       const $ = cheerio.load(
         render(h(SettledNotice, { action: spec.action, label: spec.label })),
       );
-      const identifier = $(`.${MONO_STEP}`);
-      expect(identifier, spec.action).toHaveLength(1);
-      // Verbatim: not uppercased, not Title Cased, not de-underscored.
-      expect(identifier.text(), spec.action).toBe(spec.action);
+      // Verbatim on the hook: not uppercased, not Title Cased, not de-underscored.
       expect($("[data-close-settled]").attr("data-close-settled"), spec.action).toBe(
         spec.action,
       );
+      expect($.root().text(), spec.action).toContain(spec.label);
+      // And no machine token in the sentence. Graded on the FACE, not on the
+      // characters: "Mark fixed" contains the word `fixed` legitimately, so a
+      // substring check here would forbid the label rather than the token.
+      expect($(`.${MONO_STEP}`), spec.action).toHaveLength(0);
     }
   });
 

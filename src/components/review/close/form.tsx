@@ -152,8 +152,17 @@ export function CloseStatus({ state }: { state: CloseState }) {
  * instruction to refresh).
  *
  * The action keeps its name through the whole flow (copy bar 2): the label the
- * operator pressed is what this says, and the machine's own action name stands
- * beside it verbatim in mono (§11).
+ * operator pressed is what this says.
+ *
+ * It used to print the machine's action name after that label —
+ * "Settled: Not a KPOP act `rule_not_kpop`" — on the reading that §11 wants a
+ * machine identifier shown verbatim. Ben, 2026-10-24: *"let's just remove the
+ * `rule_not_kpop` at the end; the reviewer already understands this from the
+ * prior text."* §11 governs an identifier the surface is ABOUT; this one is a
+ * second spelling of the words immediately before it, which is the "never
+ * narrate the screen" rule in the Voice. The action still travels in
+ * `data-close-settled`, where the tests and oracles read it and the operator
+ * does not.
  */
 export function SettledNotice({
   action,
@@ -164,8 +173,7 @@ export function SettledNotice({
 }) {
   return (
     <p className="type-body text-ink" role="status" data-close-settled={action}>
-      Settled: {label}{" "}
-      <Identifier muted>{action}</Identifier>
+      Settled: {label}
     </p>
   );
 }
@@ -320,6 +328,33 @@ export function noteHint(actions: readonly ActionSpec[]): string {
   return "Provide evidence for your decision";
 }
 
+/**
+ * A control that WOULD be in the button row and is waiting on something
+ * upstream.
+ *
+ * `before` names the action it sits in front of, and that is what keeps the
+ * row's order fixed. The position used to be "after the first action", which
+ * made it depend on which actions an item happened to offer: a Hatsune Miku
+ * item has no candidates, so no `link_entity` control, and "Create a new
+ * artist" slid in behind "Not a KPOP act" instead of in front of it (Ben,
+ * 2026-10-23: *"the buttons should always stay in the same order"*).
+ *
+ * Anchoring to a NAMED action holds in both directions: with candidates the
+ * row reads Select / Create / Not-a-KPOP-act, and without them Create /
+ * Not-a-KPOP-act — the same order with a gap where the missing control would
+ * have been, which is what "always the same order" means.
+ *
+ * Declared here and imported by `CloseSlot` rather than restated there: when
+ * the slot carried its own copy of this shape, the two drifted the moment one
+ * of them gained a field, and the page's object was checked against the stale
+ * one.
+ */
+export type BlockedSpec = {
+  readonly label: string;
+  readonly because: string;
+  readonly before?: VerdictAction;
+};
+
 export function CloseForm({
   reviewItemId,
   actions,
@@ -328,16 +363,8 @@ export function CloseForm({
   reviewItemId: string;
   /** The shape's controls, in the order spec §7 lists them. May be empty. */
   actions: readonly ActionSpec[];
-  /**
-   * Controls that WOULD be here and are waiting on something upstream.
-   *
-   * They render in the button row AMONG the live ones — after the first
-   * action — so on a reference item "Create a new artist" sits between "Select
-   * this artist" and "Not a KPOP act", which is where Ben put it. A slice
-   * rather than an index, so a shape with one action or none still renders a
-   * sensible row.
-   */
-  blocked?: readonly { readonly label: string; readonly because: string }[];
+  /** Controls waiting on something upstream — see `BlockedSpec`. */
+  blocked?: readonly BlockedSpec[];
 }) {
   const [state, setState] = useState<CloseState>(IDLE_CLOSE_STATE);
   const [note, setNote] = useState("");
@@ -457,13 +484,31 @@ export function CloseForm({
   const row: (
     | { kind: "action"; spec: ActionSpec; index: number }
     | { kind: "blocked"; control: { label: string; because: string } }
-  )[] = [
-    ...actions.slice(0, 1).map((spec, index) => ({ kind: "action" as const, spec, index })),
-    ...blocked.map((control) => ({ kind: "blocked" as const, control })),
-    ...actions
-      .slice(1)
-      .map((spec, offset) => ({ kind: "action" as const, spec, index: offset + 1 })),
-  ];
+  )[] = [];
+  /*
+   * ONE PASS over the actions, inserting each blocked control immediately
+   * before the action it named. Order is therefore a property of the DECLARED
+   * list and not of which actions this item happens to offer.
+   *
+   * The action's own index is carried, not recomputed, because every control
+   * keys off it and `choosing` is an index into `actions` — a second numbering
+   * is how the open picker and the pressed button come to disagree.
+   */
+  const placed = new Set<string>();
+  actions.forEach((spec, index) => {
+    for (const control of blocked) {
+      if (control.before === spec.action && !placed.has(control.label)) {
+        row.push({ kind: "blocked", control });
+        placed.add(control.label);
+      }
+    }
+    row.push({ kind: "action", spec, index });
+  });
+  // A control whose anchor this item does not offer still renders — at the
+  // end, because "somewhere predictable" beats "nowhere".
+  for (const control of blocked) {
+    if (!placed.has(control.label)) row.push({ kind: "blocked", control });
+  }
   return (
     <div className="flex flex-col gap-2" data-close-state={state.kind}>
       {/*
@@ -517,10 +562,12 @@ export function CloseForm({
       {actions.length === 0 ? null : (
         <div className="flex flex-wrap items-center gap-2">
           {/*
-            The row, in ONE pass over an ordered list: the first action, then
-            any control that is waiting on something upstream, then the rest.
-            Built before the JSX so the interleaving is a list operation and
-            not three maps that have to agree about indices.
+            The row, in ONE pass over an ordered list: each action, with any
+            blocked control inserted in front of the action it names. Built
+            before the JSX so the interleaving is a list operation and not
+            three maps that have to agree about indices — and so that the
+            order is a property of the declared list rather than of which
+            actions this item happens to offer (see `BlockedSpec`).
           */}
           {row.map((item) =>
             item.kind === "blocked" ? (

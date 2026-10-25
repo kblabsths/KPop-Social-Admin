@@ -98,6 +98,19 @@
 
   /* ---- Radius: 0 for containers, 4px for interactive controls -------- */
   --radius-control: 4px;
+  /*
+   * The ONE container with a radius: the decision box on a review item
+   * (`ui/Section`'s `boxed`), 6px — Ben, 2026-10-24, asked for its corners
+   * "a tiny bit more" rounded than a control's.
+   *
+   * A named token rather than a `rounded-md` at the call site, because
+   * LOOK_AND_FEEL's radius bar says containers are 0 and nothing in the app
+   * is above 4px: a bare utility would read as a slip, while a token named
+   * for its job says a human decided it. Its job is "the box that holds one
+   * decision", and if a second surface ever wants it, that surface is making
+   * the same claim.
+   */
+  --radius-panel: 6px;
 
   /*
    * ---- Motion budget: 120ms colour transitions, and the 1.5s save

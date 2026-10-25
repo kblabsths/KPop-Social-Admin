@@ -441,15 +441,17 @@ describe("a settled item renders the verdict that settled it", () => {
     expect($("[data-close-item-status]").attr("data-close-item-status")).toBe("settled");
   });
 
-  it("dashes a note that is present but blank, rather than leaving an empty element", async () => {
+  it("draws no evidence line at all for a note that is present but blank", async () => {
     // admin-window/BUG-0085's shape: `isAbsent` TRIMS, and the guard has to
-    // run BEFORE the element is built or the absence is invisible to `orDash`.
+    // run BEFORE the element is built — which is still the whole point, since
+    // a whitespace note now decides whether the LINE exists.
     const markup = await renderItem(withVerdict({ note: "   " }));
     const $ = cheerio.load(markup);
 
     expect($("[data-verdict-note]")).toHaveLength(0);
-    expect($(VERDICT).find('[aria-label="no value"]').length).toBeGreaterThanOrEqual(1);
-    expect($(VERDICT).find("[data-absence-note]")).toHaveLength(1);
+    expect(linesOf(markup)).not.toContain("evidence");
+    // And no dash stands in for it: the line is simply not there.
+    expect($(VERDICT).find('[aria-label="no value"]')).toHaveLength(0);
   });
 
   it("renders an unresolvable observation id verbatim, unlinked, and never dashed", async () => {
@@ -607,6 +609,20 @@ describe("an unsettled item", () => {
  * Deliberately fixture-scoped: an operator's note may legitimately contain an
  * em dash, so this is asked only of rows whose values carry none.
  */
+/**
+ * Which labelled lines the block drew, in order — the thing that replaced the
+ * dash on 2026-10-24 (Ben: *"I have no idea what this means. Can we just
+ * delete it?"*). A value the verdict does not carry is now an ABSENT LINE
+ * rather than a dashed one, so "what is on screen" is the list of labels.
+ */
+function linesOf(markup: string): string[] {
+  const $ = cheerio.load(markup);
+  return $(VERDICT)
+    .find(".type-micro")
+    .toArray()
+    .map((element) => $(element).text().replace(/\s+/g, " ").trim());
+}
+
 function dashAccounting(markup: string): {
   appDashes: number;
   strayDashes: number;
@@ -638,25 +654,20 @@ describe("the dashes the block draws", () => {
    */
 
   it(
-    "explains the dash it draws for a blank actor",
+    "omits the line for a blank actor instead of dashing it",
     async () => {
-      // Every other line carries a value, so the actor's dash is the only one
-      // on screen — and it stands there with nothing saying what it means.
       const markup = await renderItem(
         withVerdict({ actor: "   ", note: "the marketing title, not the billed one" }),
       );
       const seen = dashAccounting(markup);
 
-      expect(seen.appDashes).toBeGreaterThan(0);
-      expect({ dashOnScreen: seen.appDashes > 0, notes: seen.absenceNotes }).toEqual({
-        dashOnScreen: true,
-        notes: 1,
-      });
+      expect(linesOf(markup)).not.toContain("by");
+      expect(seen).toEqual({ appDashes: 0, strayDashes: 0, absenceNotes: 0 });
     },
   );
 
   it(
-    "draws an unparseable instant with the app's own dash",
+    "omits the when line for an instant it cannot read, and leaks no bare dash",
     async () => {
       // `relativeAge` answers `{ text: EM_DASH, title: "" }` for an instant it
       // cannot read, and this block renders that text directly — where the
@@ -668,25 +679,40 @@ describe("the dashes the block draws", () => {
       );
       const seen = dashAccounting(markup);
 
+      expect(linesOf(markup)).not.toContain("when");
+      // The point of BUG-0092 survives the rewrite: `relativeAge`'s own
+      // `EM_DASH` text must never reach the screen as bare text.
       expect({ stray: seen.strayDashes, drawn: seen.appDashes }).toEqual({
         stray: 0,
-        drawn: 1,
+        drawn: 0,
       });
     },
   );
 
-  it("draws and explains both structural dashes on a settle-only verdict", async () => {
-    // The state the block gets RIGHT, pinned beside the two it does not, so a
-    // fix for BUG-0092 cannot buy the invariant by dropping this line.
+  it("draws only what a settle-only verdict carries, and says nothing about the rest", async () => {
+    // A ruling writes no claim and may carry no note, so two of the five lines
+    // have nothing in them. They are absent rather than dashed — the shape Ben
+    // asked for on 2026-10-24, and the reason the dash-meaning sentence could
+    // be deleted rather than merely hidden.
     const markup = await renderItem(withVerdict({ observation_id: null, note: null }, []));
     const seen = dashAccounting(markup);
 
-    expect(seen).toEqual({ appDashes: 2, strayDashes: 0, absenceNotes: 1 });
+    // `when` above `by` since 2026-10-24 (Ben): the action and its date are
+    // the record, and the actor is attribution after it.
+    expect(linesOf(markup)).toEqual(["settled with", "when", "by"]);
+    expect(seen).toEqual({ appDashes: 0, strayDashes: 0, absenceNotes: 0 });
   });
 
-  it("draws no dash, and no dash-meaning line, on a verdict that carries everything", async () => {
+  it("draws every line, and no dash, on a verdict that carries everything", async () => {
     const markup = await renderItem(withVerdict({ note: "a note" }));
 
+    expect(linesOf(markup)).toEqual([
+      "settled with",
+      "when",
+      "by",
+      "evidence",
+      "observation id",
+    ]);
     expect(dashAccounting(markup)).toEqual({
       appDashes: 0,
       strayDashes: 0,

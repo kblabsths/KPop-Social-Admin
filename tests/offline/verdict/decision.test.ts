@@ -52,8 +52,10 @@ function decisionOf(overrides: Partial<VerdictDecision> = {}): VerdictDecision {
 }
 
 /**
- * One WELL-FORMED decision per action — the eight fixtures of acceptance
- * criterion 3, keyed by action so the iteration below cannot silently skip one.
+ * One WELL-FORMED decision per action — the fixtures of acceptance criterion 3,
+ * keyed by action so the iteration below cannot silently skip one. Nine since
+ * `rule_not_kpop` arrived; the count is not written here, because the `Record`
+ * is what makes a tenth a compile error.
  */
 const WELL_FORMED: Readonly<Record<VerdictAction, VerdictDecision>> = {
   choose_claimed_value: decisionOf({
@@ -84,12 +86,15 @@ const WELL_FORMED: Readonly<Record<VerdictAction, VerdictDecision>> = {
     review_item_id: null,
     value: valueOf({ value: "Seoul Olympic Stadium" }),
   }),
+  // Ninth (scraper migration `20261021000002`). No payload at all: the ruling
+  // IS the answer, and a value on it is what KS029 refuses.
+  rule_not_kpop: decisionOf({ action: "rule_not_kpop" }),
 };
 
 /**
- * The four actions that carry a `VerdictValue`; the other four are settle-only.
+ * The actions that carry a `VerdictValue`; the rest are settle-only.
  * Module-scope because two blocks read it — invariant 4 and the absent-key
- * bodies below — and a ninth action must not be judged by two hand-lists.
+ * bodies below — and a new action must not be judged by two hand-lists.
  */
 const VALUE_CARRYING: readonly VerdictAction[] = [
   "choose_claimed_value",

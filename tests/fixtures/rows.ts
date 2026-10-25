@@ -1,3 +1,9 @@
+import type {
+  ReviewQueue,
+  ReviewSeverity,
+  ReviewStatus,
+  ReviewItemRow,
+} from "@/lib/review/shapes";
 import type { EvidenceRow } from "@/components/review";
 import type {
   PickerOption,
@@ -34,6 +40,14 @@ export const ID = {
   sourceBandsintown: "01920000-0000-7000-8000-000000000102",
   eventEntity: "01920000-0000-7000-8000-000000000201",
   groupEntity: "01920000-0000-7000-8000-000000000202",
+  // The catalog is `groups` + `idols`, and until 2026-10-23 this map named no
+  // idol and no venue — so a fixture about a reference item, whose candidates
+  // are idols, had no id to use. `idolNamesake` is the second of them on
+  // purpose: the case that made the candidate table necessary is two people
+  // with the SAME NAME, and one id cannot express it.
+  idolEntity: "01920000-0000-7000-8000-000000000203",
+  idolNamesake: "01920000-0000-7000-8000-000000000204",
+  venueEntity: "01920000-0000-7000-8000-000000000205",
   observationA: "01920000-0000-7000-8000-000000000301",
   observationB: "01920000-0000-7000-8000-000000000302",
   provenance: "01920000-0000-7000-8000-000000000401",
@@ -197,28 +211,22 @@ export function fieldProvenanceRow(
 
 /* ── review_items ────────────────────────────────────────────────────────── */
 
-export type ReviewQueue = "data_conflict" | "entity_link";
-export type ReviewSeverity = "low" | "high";
-export type ReviewStatus = "open" | "settled";
-
-export interface ReviewItemRow {
-  review_item_id: string;
-  queue: ReviewQueue;
-  /** Set on a per-source item; null on a per-fact item. */
-  source_id: string | null;
-  /** `review_items` spells the canonical table `domain`, not `entity_type`. */
-  domain: string | null;
-  entity_id: string | null;
-  field: string | null;
-  severity: ReviewSeverity;
-  status: ReviewStatus;
-  summary: string;
-  /** uuid[] of observation ids, in fold order. */
-  evidence: string[];
-  folded_count: number;
-  opened_at: string;
-  last_evidence_at: string;
-}
+/*
+ * The review-item row type is the PRODUCT'S, re-exported — never restated.
+ *
+ * This file used to declare its own copy. Both read identically, so every
+ * fixture type-checked against the copy while the app read a different shape;
+ * when `external_ref` was added to the real row on 2026-10-22 (the column that
+ * tells a reference item from a stuck-record one), the copy stayed as it was
+ * and 98 type errors landed in files that had not changed. A fixture exists to
+ * stand in for a database row, and it can only do that against the one
+ * definition of what a row is.
+ *
+ * The queue/severity/status unions come from the same module for the same
+ * reason, and are re-exported here so the fixture's importers keep their
+ * current import.
+ */
+export type { ReviewQueue, ReviewSeverity, ReviewStatus, ReviewItemRow };
 
 /** Shape 1 of 3: a `data_conflict` item about one fact — a DECISION. */
 export function reviewItemDataConflict(
@@ -235,6 +243,7 @@ export function reviewItemDataConflict(
     status: "open",
     summary:
       "events.title: ticketmaster (official) says 'TWICE 5TH WORLD TOUR', bandsintown (standard) says 'TWICE World Tour'; neither outranks the settled value.",
+    external_ref: null,
     evidence: [ID.observationA, ID.observationB],
     folded_count: 2,
     opened_at: "2026-08-30T06:00:00Z",
@@ -258,6 +267,7 @@ export function reviewItemEntityLink(
     status: "open",
     summary:
       "events.venue: bandsintown's 'The Forum, Inglewood' matches no venue and the match confidence is below the bar.",
+    external_ref: null,
     evidence: [ID.observationB],
     folded_count: 0,
     opened_at: "2026-08-31T06:00:00Z",
@@ -286,6 +296,7 @@ export function reviewItemSourcePattern(
     status: "open",
     summary:
       "bandsintown: 41 records stuck unlinked for 6 cycles — the venue names it emits match nothing.",
+    external_ref: null,
     evidence: [ID.observationB],
     folded_count: 5,
     opened_at: "2026-08-28T06:00:00Z",

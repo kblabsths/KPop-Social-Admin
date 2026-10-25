@@ -287,8 +287,11 @@ describe("what the operator is told while it settles", () => {
       render(h(SettledNotice, { action: "keep_current", label: "Keep current value" })),
     );
     expect($.root().text()).toContain("Keep current value");
-    // The machine's own name renders verbatim beside it (§11).
+    // The machine's own name travels on the hook, not in the sentence
+    // (Ben, 2026-10-24) — the words the operator pressed are the words they
+    // get back.
     expect($("[data-close-settled]").attr("data-close-settled")).toBe("keep_current");
+    expect($.root().text()).not.toContain("keep_current");
   });
 
   it("returns focus only when the write has answered and focus is adrift", () => {

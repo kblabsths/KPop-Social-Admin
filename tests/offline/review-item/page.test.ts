@@ -2215,6 +2215,7 @@ describe("an evidence cell with nothing in it", () => {
           empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
           canonical: null,
           dial: null,
+          sighting: null,
         }),
       ),
     );
@@ -2261,6 +2262,7 @@ describe("an evidence cell with nothing in it", () => {
             empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
             canonical: null,
             dial: null,
+          sighting: null,
           }),
         ),
       ],
@@ -2332,6 +2334,7 @@ describe("an evidence cell with nothing in it", () => {
               empty: { holds: "claims on this item", filledBy: "The resolver folds them." },
               canonical: null,
               dial: null,
+          sighting: null,
             }),
           ),
         ],

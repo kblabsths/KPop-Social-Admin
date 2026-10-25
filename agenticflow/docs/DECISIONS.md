@@ -2530,3 +2530,210 @@ Gates: tsc, lint, build, offline 82/3131, isolated 8, test:http 37/37.
 
 **Still open:** the 4px spacing scale has not followed the type scale up —
 table cell padding is 8 horizontal / 6 vertical under 14px text.
+
+## 2026-10-21 — registry-owned current version replaces the search (scraper migration, external ticket)
+
+`public.settle_review_item` no longer probes `domain_schema` over `generate_series(1, 64)`
+for a domain's current schema version; the registry states it through
+`public.domain_current_version(p_domain text) returns integer` (immutable, security
+invoker; events 3, venues 2, NULL for an unknown domain) and the function assigns
+`v_version := public.domain_current_version(v_domain);`. The KS001 unknown-domain arm is
+unchanged and no new KS code exists. Scraper migration
+`supabase/migrations/20261016000001_the_registry_states_the_current_version.sql`
+(ticket `tracker/for-human/external-ticket-domain-current-version.md`); applied to staging
+2026-10-21 with the migration below, production pending Ben's push. Nothing in Admin
+product code moves — the envelope never carried a version (ARCHITECTURE §9.2) — and
+`tests/offline/handoff/settle-review-item.test.ts` grades the M2 handoff note's fenced
+SQL, which is a dated record and stays as pasted.
+
+## 2026-10-21 — a reference item takes its answer: `rule_not_kpop` is the ninth action, and `link_entity` on a Name-matches item sends `{domain, ref}`
+
+Ben approved the scraper-side build the "answer has nowhere to go" handoff asked for,
+with two corrections to that handoff: `groups`/`idols` need NO domain registration (the
+answer lands in `confirmed_matches` under the sighting source's own reference, which the
+resolver already reads), and the no-act answer is the contract's `not_kpop`, not a new
+`not_in_scope`. Scraper migration
+`supabase/migrations/20261021000002_a_reference_item_takes_its_answer.sql`, on staging
+2026-10-21, production pending. What Admin builds on it is in
+`tracker/inbox/2026-10-21-external-the-answer-has-a-home.md`. Ben on the note: optional
+in the function, **required on the Admin form** — "we need to build up evidence for our AI
+agents later".
+
+## 2026-10-23 — the copy rules govern every word, not only errors; and a blocked control names the action it sits before
+
+Two things Ben reported from the deployed app in one message, both of them
+about the reference item's close.
+
+**The button row's order was computed from the buttons that happened to
+exist.** `CloseForm` built its row as `[first action, blocked controls,
+remaining actions]`, so "Create a new artist" meant "second" rather than
+"before the ruling". On a name with no candidates there is no `link_entity`
+control, and the row came out [Not a KPOP act, Create a new artist] — Ben:
+*"the buttons should always stay in the same order"*. A blocked control now
+carries `before?: VerdictAction` (`BlockedSpec`, exported from `form.tsx` and
+imported by `CloseSlot` so the shape is declared once), and the row is one pass
+that inserts each control in front of the action it names. With candidates:
+Select / Create / Not-a-KPOP-act. Without: Create / Not-a-KPOP-act — the same
+order with a gap where the missing control would be. A control whose anchor the
+item does not offer (the ruling is withheld on a venue reference) renders last,
+because somewhere predictable beats nowhere. Pinned in
+`tests/offline/review-item/reference-actions.test.ts`, which is also the first
+test file the reference shape has had.
+
+**The copy rules were scoped to errors, and that was the defect.** The four
+rules written on 2026-10-23 lived inside LOOK_AND_FEEL copy bar 3, which
+governs error sentences. The string Ben hit next was a notice — four clauses
+where one was wanted — and no bar in the document reached it. The rules are now
+their own section ("The five rules — every word the operator reads") governing
+every string the operator reads, with bars 3 and 4 as special cases; the case
+added a fifth rule, **never narrate the screen**, which is the one the notice
+actually broke: three of its four clauses described controls that were visible
+underneath it, including one that named `rule_not_kpop` while the button read
+"Not a KPOP act". `referenceNotice` is now "The resolver proposed no candidates
+for this name." and, on a failed read, "The candidates could not be read."
+
+**The door this closes:** copy is not graded by what kind of string it is.
+A notice, a hint, a confirmation and a log line are all judged by the five
+rules, and "it is just context" is not an exemption.
+
+## 2026-10-23 (second) — the test fixtures do not restate a product type
+
+`tests/fixtures/rows.ts` carried its own `ReviewItemRow` interface, identical
+to `lib/review/shapes.ts`'s by inspection. When the real row gained
+`external_ref` — the column that tells a reference item from a stuck-record
+one — the copy did not, and 98 type errors landed across files that had not
+changed, in a suite that could not then be read for real failures. The fixture
+now imports the product's type and re-exports it. Rule: **a fixture stands in
+for a database row and can only do that against the one definition of what a
+row is** — fixtures may build values, never declare shapes. The ID map also
+gained `idolEntity`, `idolNamesake` and `venueEntity`; it named no idol and no
+venue, so a fixture about a reference item had no id to use, and
+`ID.idolEntity` evaluating to `undefined` showed up only as a React key
+warning.
+
+## 2026-10-24 — a section heading has two faces, and mono is decided by shape rather than by provenance
+
+Three visual corrections from Ben on the deployed reference item, each of which
+had a generator in the design doc rather than only in the code.
+
+**The close heading uppercased a case-sensitive reference.** `Section` rendered
+every title in the `title` step, which carries `text-transform: uppercase`, so
+"Please identify ticketmaster's performer K8vZ9173hY0" reached the screen as
+`…K8VZ9173HY0` — a reference Ticketmaster does not have. `SectionTitleFace`
+("label" | "sentence", default "label") follows `ChipFace`'s pattern: the
+caller says which kind of heading it wrote, and the primitive decides what the
+type scale does about caps. The close heading is `sentence` on every shape,
+because all four are questions rather than names for a surface.
+`tests/offline/ui/markup.ts`'s `uppercasedIdentifiers` guard would have caught
+this if the reference carried an underscore; it carries none, which is why a
+guard keyed on one character is not the rule, only a net under it.
+
+**A notice inherited the document's font size.** `referenceNotice` returned a
+bare fragment, so it rendered at the browser's 16px beside a 14px `type-body`
+summary. It now renders the same `<p className="type-body text-ink-secondary">`
+its sibling `conflictNotice` always did. Rule: **a shape notice returns its own
+element in the prose step** — a notice is prose, and one kind of thing gets one
+rendering.
+
+**Mono is decided by the string's SHAPE, not by who produced it.** The doc said
+"mono carries every value the database produced", and under that sentence the
+sighted name `Hatsune Miku` was correctly mono — it is a database value. Ben's
+ruling is that a performer's name is words. The paragraph is rewritten: mono is
+for TOKENS (ids, snake_case registry values, table and column names, references
+whose case matters, verbatim timestamps, database error strings) and a PROPER
+NOUN the machine is merely carrying — performer, group, venue, city — is sans.
+The source's own reference in the same block keeps its mono, which is the line
+the new wording draws.
+
+## 2026-10-24 (second) — the settled state says the words, and the token travels on the hook
+
+`SettledNotice` printed the machine's action name after the label: "Settled:
+Not a KPOP act `rule_not_kpop`". Ben: *"let's just remove the `rule_not_kpop`
+at the end; the reviewer already understands this from the prior text."*
+
+The sentence that put it there was spec §11, "a machine identifier renders
+verbatim in mono" — read as "wherever it appears". The narrower reading is the
+right one: §11 governs an identifier the surface is ABOUT (a `source_id` on a
+record page, a `data_conflict` queue name, a reference string), and prevents it
+being prettified. An action name printed beside its own label is not that; it
+is a second spelling of the words immediately before it, which the Voice's
+"never narrate the screen" rule forbids. Copy bar 2 — the same word from
+control to confirmation to verdict log — is satisfied by the LABEL, which is
+the word the operator pressed.
+
+The action still travels in `data-close-settled`, so the tests and live
+oracles read it and the operator does not; `signal-actions.test.ts` now grades
+exactly that, and grades the token's absence on the FACE (no mono in the
+sentence) rather than on the characters, because a label may legitimately
+contain its action's word — "Mark fixed" contains `fixed`.
+
+## 2026-10-24 (third) — the close is one box, and a verdict line a verdict does not carry is absent rather than dashed
+
+Four corrections from Ben on the settled reference item.
+
+**The close renders as one box.** `Section` gained `boxed` — the app's existing
+panel (`border border-hairline bg-surface p-3`, the same four tokens `ui/Empty`,
+`ui/NotProvisioned` and `ui/StatCard` already draw), with the heading outside
+it because the heading names the box. Ben: *"that would make it more clear that
+everything is a part of the same decision"*, which is what the grouping is for
+— the close is a heading, a notice, a table, a field and three buttons, and
+nothing but proximity said they were one act. This is the FIFTH spelling of
+that panel idiom; the next one extracts a `ui/Panel` rather than adding a
+sixth.
+
+**"This item is settled."** It read "This item is already settled. There is
+nothing left to close." The second sentence described the absence of controls
+the operator can see are absent, and "already" argued with them for arriving.
+The status word stays mono at Ben's explicit request.
+
+**"note" became "evidence" in the verdict block.** The form asked for "evidence
+for your decision" from 2026-10-23 and the settled block then showed it back
+under a different word. Voice rule 5 — the operator's word.
+
+**An absent verdict line is now not drawn at all.** The block drew all five
+lines always, dashed the empty ones, and explained the dash underneath: "A — is
+a value this verdict does not carry: an admin may settle without a note, and a
+settle-only verdict writes no claim." Ben: *"I have no idea what this means.
+Can we just delete it? and why is there no observation id?"*
+
+The answer to his second question is that a verdict's `observation_id` is the
+CLAIM IT WROTE, and a ruling writes none — `rule_not_kpop` on the Hatsune Miku
+item carries null there, correctly, because there is no value to record about a
+row that should not exist. The sentence was trying to say that and taught him
+nothing. The rule now: **a labelled block omits a line it has nothing for.**
+The LESSONS rule the sentence came from ("a column of dashes carries one line
+saying what a dash means") governs a TABLE COLUMN, where rows must line up and
+a cell cannot be omitted; the verdict log tab keeps its unconditional sentence
+for exactly that reason. A labelled block is not a column.
+
+BUG-0092's actual invariant — no bare `EM_DASH` reaching the screen outside
+`lib/format.ts`'s dash element — is unchanged and still pinned, now at zero
+dashes rather than at one explained one.
+
+## 2026-10-24 (fourth) — the decision box is the app's one rounded container, and the verdict reads date before actor
+
+**`when` above `by`** in the settled verdict block (Ben). The action and its
+date are the record; who decided is attribution after it. Pinned in
+`verdict-inline.test.ts`, which caught the first attempt putting `by` after
+`evidence` rather than next to `when`.
+
+**The box is `chrome`, 6px, 12/8.** Three separate asks, one answer each:
+- *Looks the same as the evidence table below it* — the palette's fills nest
+  `page → chrome → surface`, and this box CONTAINS surface things (a
+  candidates table, an evidence field). On `surface` it was one flat white
+  panel continuous with the `surface` table in the next section. On `chrome` it
+  is the ground its own tables sit on.
+- *Round the corners a little more* — `--radius-panel: 6px`, a NAMED token
+  rather than a `rounded-md` at the call site. LOOK_AND_FEEL's radius bar says
+  containers are 0 and nothing in the app exceeds 4px, so a bare utility would
+  read as a slip for the next reader to "fix"; a token named for its job says a
+  human decided it. The bar now carries the exception and the reason: this is
+  the only container whose job is to say *these things are one act*, and the
+  only one that must separate from a square table directly beneath it.
+- *Less top/bottom padding* — `px-3 py-2` (12/8), a third off the 12 it
+  started at, both still on the 4px scale.
+
+**The door this closes:** a container may round its corners only by claiming
+`--radius-panel`'s job. The design doc's radius bar, spacing bar and the
+`/login` exception note were all amended, because all three asserted the thing
+that just stopped being true.
